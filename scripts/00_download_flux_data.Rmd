@@ -1,0 +1,318 @@
+---
+title: "download_Ameriflux"
+output: pdf_document
+date: "2025-01-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r raw data location}
+
+dir.rawdata <- '/Users/jw2946/Documents/stability_project/SiteData/'
+
+```
+
+
+
+```{r download datasets}
+packages <- c("ggplot2", "dplyr", "tidyr", "amerifluxr", "data.table", "pander", "lubridate")
+#
+for (pkg in packages) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg, dependencies = TRUE)
+    library(pkg, character.only = TRUE)
+  }
+}
+#
+# find the sites with > 6 year data, and non crop sites
+# sites <- amf_site_info()  # this is not complete
+#
+# this following meta file is downloaded from Ameriflux with the search criteria: FC=true, NEE=true, data length >= 5 years
+sites <- read.csv('../data/AmeriFlux-site-search-results-202501071742.csv')
+#
+# remove cropland "CRO", Cropland/natural vegetation mosaics "CVM", "BSV": Barren?, water: "WAT", Urban and built-up lands:"URB", Snow and ice: "SNO"
+sites.selected <- sites %>% filter(!Vegetation.Abbreviation..IGBP. %in% c("CRO", "CVM", "BSV", "WAT", "URB", "SNO")) %>% filter(Data.Use.Policy=='CC-BY-4.0')
+## 129 sites
+
+sites.selected.FLUXNET <- sites.selected %>% filter(AmeriFlux.FLUXNET.Data.End - AmeriFlux.FLUXNET.Data.Start >= 4)
+## 79 sites
+
+# I have fifty sites to download, gap fill and partition
+sites.selected.BASE <- sites.selected$Site.ID[(!sites.selected$Site.ID %in% sites.selected.FLUXNET$Site.ID)]
+# base data was accessed in 1/7/2025
+for (site in sites.selected.BASE) {
+  floc2 <- amf_download_base(
+  user_id = "wangjunna2013",
+  user_email = "wangjunna2013l@gmail.com",
+  site_id = site,
+  data_product = "BASE-BADM",
+  data_policy = "CCBY4.0",
+  agree_policy = TRUE,
+  intended_use = "other",
+  intended_use_text = "amerifluxr data synthesis",
+  verbose = TRUE,
+  out_dir = file.path(dir.rawdata, 'Ameriflux_BASE')
+)
+}
+
+##FLUXNET data from 95 sites was manually downloaded on 1/8/2025
+
+```
+
+
+```{r unzip AmeriFlux FLUXNET files, be careful, used only once}
+#### I am going to unzip all the files
+files <- list.files(file.path(dir.rawdata, "Ameriflux_FLUXNET"), pattern = "\\.zip$", full.names = T)
+exdir <- file.path(dir.rawdata, "Ameriflux_FLUXNET", "unzip")
+# 
+# files <- list.files(file.path(dir.rawdata, "FLUXNET2020"), pattern = "\\.zip$", full.names = T)
+# exdir <- file.path(dir.data, "FLUXNET2020", "unzip")
+#
+if (!file.exists(exdir)) {
+  dir.create(exdir)
+}
+for (i in 1:length(files)) {
+  unzip(files[i], exdir=exdir)
+}
+#
+```
+
+
+```{r European and American sites I want to use}
+
+
+## remove some long-term sites:
+## CA-TP1: Ontario - Turkey Point 2002 Plantation White Pine; 
+## US-Rpf: Poker Flat Research Range: Succession from fire scar to deciduous forest; 
+## US-Me6: this is a burned sites. Should I remove some disturbance years?
+## US-Myb: restored wetland. 
+#
+sites.long <- sites.long %>% filter(!Site.ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6', 'US-Myb'))
+
+```
+
+
+
+
+
+
+```{r check data quality of FLUXNET dataset}
+# I need to add roots into these files
+files.unzip.Ameri <- list.files(file.path(dir.rawdata, "Ameriflux_FLUXNET", "unzip"), full.names = T)
+files.unzip.Europ <- list.files(file.path(dir.rawdata, "FLUXNET2020", "unzip"), full.names = T)
+#
+sites.long <- sites.selected.FLUXNET
+sites.long$Source <- "Ameri"
+#
+processed.site <- read.csv('/Users/jw2946/Documents/stability_project/code_trend_analysis_old/long_term_ec_sites.csv')
+sites.long <- sites.long %>% filter(Site.ID %in% processed.site$Site.ID)
+#
+rm_years <- data.frame(Site.ID=character(), years=list())
+#
+for (i in 1:nrow(sites.long)) {
+#  i = 27
+  Site.ID <- sites.long$Site.ID[i]
+  print(Site.ID)
+  # AmeriFlux and European flux; Do I need to differentiate them? Hopefully they use the same notation
+  if (sites.long$Source[i] == "Ameri") {
+    if (Site.ID %in% c("US-Cop")) {
+      a_HH <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(Site.ID, "_FLUXNET_FULLSET_HR"), files.unzip.Ameri)])
+      a_DD <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(Site.ID, "_FLUXNET_FULLSET_DD"), files.unzip.Ameri)])
+      a_YY <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(Site.ID, "_FLUXNET_FULLSET_YY"), files.unzip.Ameri)])
+    } else {
+      a_HH <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(Site.ID, "_FLUXNET_FULLSET_HH"), files.unzip.Ameri)])
+      a_DD <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(Site.ID, "_FLUXNET_FULLSET_DD"), files.unzip.Ameri)])
+      a_YY <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(Site.ID, "_FLUXNET_FULLSET_YY"), files.unzip.Ameri)]) 
+    }
+  } else {
+    a_HH <- read.csv(files.unzip.Europ[grepl(pattern=paste0(Site.ID, "_FLUXNET2015_FULLSET_HH"), files.unzip.Europ)])
+    a_DD <- read.csv(files.unzip.Europ[grepl(pattern=paste0(Site.ID, "_FLUXNET2015_FULLSET_DD"), files.unzip.Europ)])
+    a_YY <- read.csv(files.unzip.Europ[grepl(pattern=paste0(Site.ID, "_FLUXNET2015_FULLSET_YY"), files.unzip.Europ)])
+  }
+  a_HH[a_HH==-9999] <- NA
+  a_DD[a_DD==-9999] <- NA
+  a_YY[a_YY==-9999] <- NA
+  #
+  a_DD$TIMESTAMP <- as.Date(as.character(a_DD$TIMESTAMP), "%Y%m%d")
+  a_DD$DOY       <- yday(a_DD$TIMESTAMP)
+  a_HH$TIMESTAMP <- ymd_hm(a_HH$TIMESTAMP_START) + (ymd_hm(a_HH$TIMESTAMP_END) - ymd_hm(a_HH$TIMESTAMP_START)) / 2.0
+  # "NEE_VUT_REF": CONVERT -9999 to NA values
+  #
+  par(mfrow = c(3, 4))
+  plot(a_YY$TIMESTAMP, a_YY$NEE_VUT_REF)
+  #
+  plot(a_YY$TIMESTAMP, a_YY$GPP_DT_VUT_REF)
+  plot(a_YY$TIMESTAMP, a_YY$GPP_NT_VUT_REF)
+  #
+  plot(a_YY$TIMESTAMP, a_YY$RECO_DT_VUT_REF)
+  plot(a_YY$TIMESTAMP, a_YY$RECO_NT_VUT_REF)
+  #
+  plot(a_YY$TIMESTAMP, a_YY$TA_F_MDS)
+  plot(a_YY$TIMESTAMP, a_YY$VPD_F_MDS)
+  plot(a_YY$TIMESTAMP, a_YY$P_F)
+  #
+  plot(a_DD$TIMESTAMP, a_DD$GPP_DT_VUT_REF)
+  plot(a_DD$TIMESTAMP, a_DD$GPP_DT_VUT_REF)
+  #
+  plot(a_HH$TIMESTAMP, a_HH$NEE_VUT_REF)
+  # 
+  #
+  plot(ymd_hm(a_HH$TIMESTAMP_START[a_HH$NEE_VUT_REF_QC==0]), a_HH$NEE_CUT_REF[a_HH$NEE_VUT_REF_QC==0])
+  #
+  #### Seasonal patterns; I think I will have one growing season, each year;
+  data.season <- a_DD %>% group_by(DOY) %>% summarise(NEE=mean(NEE_VUT_REF, na.rm=T), NEE_DT=mean(NEE_VUT_REF_DAY, na.rm=T), NEE_NT=mean(NEE_CUT_REF_NIGHT, na.rm=T),
+                                                      P=mean(P_F, na.rm=T), VPD=mean(VPD_F_MDS, na.rm=T), TA=mean(TA_F_MDS, na.rm=T), # TA=mean(TA_F_MDS, na.rm=T),
+                                                      GPP_NT=mean(GPP_NT_VUT_REF, na.rm=T), RECO_NT=mean(RECO_NT_VUT_REF, na.rm=T),
+                                                      GPP_DT=mean(GPP_DT_VUT_REF, na.rm=T), RECO_DT=mean(RECO_DT_VUT_REF, na.rm=T))
+  par(mfrow = c(2, 5))
+  for (i in 2:11) {
+    plot(data.season$DOY, t(data.season[, i]), main=names(data.season)[i])
+  }
+  #
+  #### the length of growing season: 20% of 0.975 of GPP.
+  quantile(a_DD$GPP_NT_VUT_REF, c(0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.975), na.rm=T)
+  quantile(a_DD$GPP_DT_VUT_REF, c(0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.975), na.rm=T)
+  #
+  #### for each year, the percentage of time when data is interpolated. 
+  f.data.measured <- a_HH %>% group_by(year(TIMESTAMP)) %>% summarise(f=sum(NEE_VUT_REF_QC==0) / n(), name=Site.ID)
+  print(f.data.measured)
+  #
+  tmp <- f.data.measured %>% filter(f > 0.1 & !is.na(f))
+  minf <- mean(tmp$f) * 0.45
+  # a year should have at least > 45 % of mean observed data; 
+  tmp <- f.data.measured$`year(TIMESTAMP)`[is.na(f.data.measured$f) | f.data.measured$f < minf]
+  print(tmp)
+  #
+  if (length(tmp) > 0) {
+    #### remove these < 0.1, and then < 40% of the mean of these points;
+    rm_years <- rbind(rm_years, data.frame(Site.ID=Site.ID, years=tmp))
+    ####
+  }
+  #
+}
+
+# remove extra years due to mannual check
+rm_years <- rbind(rm_years, data.frame(Site.ID="CA-Gro", years=c(2014)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Rwf", years=c(2014)))
+#
+# these years cannot pass further check
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-BZB", years=c(2022)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-BZF", years=c(2022)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-ICh", years=c(2007)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-ICs", years=c(2007)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-ICt", years=c(2007)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Kon", years=c(2016)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-UMd", years=c(2007)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="CH-Cha", years=c(2005, 2009)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="CH-Fru", years=c(2005)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="CH-Lae", years=c(2004)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="IL-Yat", years=c(2000)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Me2", years=c(2021, 2022)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Me6", years=c(2010)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Tw1", years=c(2011)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Tw4", years=c(2013, 2021)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Myb", years=c(2010, 2011)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Ton", years=c(2001)))   
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Var", years=c(2021)))   # 2021
+rm_years <- rbind(rm_years, data.frame(Site.ID="ES-Agu", years=c(2006, 2013, 2014, 2015, 2016, 2017)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="ES-LJu", years=c(2004)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="DK-Sor", years=c(1996)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="ES-LJu", years=c(2004)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="FI-Hyy", years=c(1996)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="FR-Fon", years=c(2014)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="IT-Tor", years=c(2008)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-EML", years=c(2008, 2015, 2020)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="CA-Ca2", years=c(2000, 2001)))
+
+# save the sites with >= 7 years data. 
+
+```
+
+## Selected qualifed FLUXNET sites
+```{r Ameriflux Fluxnet data quality check, echo=FALSE}
+sites.remove <- c('CA-SF2', "CA-TP1", "US-CdM", "US-Cop", "US-CS2", "US-KS2",   )
+# "CA-TP1" was removed because of planatation in 2002
+# "US-Cop": too short time series.
+# "US-Ho1" and "US-Ho2" has weird behaviors around 2010. 
+# 
+
+rm_years <- data.frame(Site.ID=character(), years=list())
+
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-BZB", years=c(2022)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-BZF", years=c(2022)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-ICh", years=c(2007)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-ICs", years=c(2007)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-ICt", years=c(2007)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Kon", years=c(2016)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-UMd", years=c(2007)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="CH-Cha", years=c(2005, 2009)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="CH-Fru", years=c(2005)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="CH-Lae", years=c(2004)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="IL-Yat", years=c(2000)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Me2", years=c(2021, 2022)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Me6", years=c(2010)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Tw1", years=c(2011)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Tw4", years=c(2013, 2021)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Myb", years=c(2010, 2011)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Ton", years=c(2001)))   
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Var", years=c(2000, 2021)))   # 2021
+rm_years <- rbind(rm_years, data.frame(Site.ID="ES-Agu", years=c(2006, 2013, 2014, 2015, 2016, 2017)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="ES-LJu", years=c(2004)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="DK-Sor", years=c(1996)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="ES-LJu", years=c(2004)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="FI-Hyy", years=c(1996)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="FR-Fon", years=c(2014)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="IT-Tor", years=c(2008)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-EML", years=c(2008, 2015, 2020)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="CA-Ca2", years=c(2000, 2001)))
+#
+rm_years <- rbind(rm_years, data.frame(Site.ID="CA-Cbo", years=c(1994, 1995, 2004)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="CA-Gro", years=c(2003, 2014)))        # 2014 is added, due to bad data quality. 
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Me6", years=c(2010)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-MOz", years=c(2004)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-NC3", years=c(2020, 2021)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-NC4", years=c(2020)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Rls", years=c(2014)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Rms", years=c(2014)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Rpf", years=c(2008)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Rwf", years=c(2014)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-Rws", years=c(2014)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-xAB", years=c(2017)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-xDJ", years=c(2017, 2019)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-xJR", years=c(2017)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-xTL", years=c(2017, 2018, 2019)))
+rm_years <- rbind(rm_years, data.frame(Site.ID="US-xWD", years=c(2018)))
+#
+
+
+
+# generate sites and years with reliable data
+
+
+
+# the sites we want to remove; the year we want to remove; 
+
+
+
+## What gap-filled data are required? What are the standard variable names for this dataset? What are standard fill name format?
+# AMF_CA-Ca1_FLUXNET_FULLSET_DD_1996-2010_EddyProc.csv
+# AMF_CA-Ca1_FLUXNET_FULLSET_HH_1996-2010_EddyProc.csv
+# AMF_CA-Ca1_FLUXNET_FULLSET_YY_1996-2010_EddyProc.csv
+
+
+# a_HH$TIMESTAMP_START, a_HH$TIMESTAMP_END, a_HH$NEE_VUT_REF, a_HH$NEE_VUT_REF_QC [qualification flag, this is important], daytime, GPP_NT_VUT_REF, RECO_NT_VUT_REF, GPP_DT_VUT_REF, RECO_DT_VUT_REF
+# how about variables related LE? CO2 concentration, meterological variables, TA_F_MDS, RH, WS_F, SW_IN_F_MDS, SWC
+
+# a_DD$TIMESTAMP
+
+
+
+
+# a_YY$TIMESTAMP, -a_YY$NEE_VUT_REF, a_YY$GPP_DT_VUT_REF, a_YY$GPP_NT_VUT_REF, a_YY$RECO_DT_VUT_REF, a_YY$RECO_NT_VUT_REF, a_YY$TA_F_MDS, a_YY$VPD_F_MDS, a_YY$P_F
+
+
+```
+
