@@ -6,7 +6,7 @@ This project uses global eddy covariance CO2 flux data from AmeriFlux, FLUXNET, 
 -   Identify the drivers of CO2 trends for different ecosystems.
 -   Estimate the frequency of abrupt change in CO2 fluxes across different periods
 
-## Folder structure
+## Structure of Rscript
 -   00_download_flux_data
 -   01_data_harmanization
     -   01_01_Ustar-filtering_gap-filling_AmeriFlux-BASE_sites
