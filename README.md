@@ -9,7 +9,7 @@ This project uses global eddy covariance CO2 flux data from AmeriFlux, FLUXNET, 
 ## Structure of Rscript
 -   00_download_flux_data
 -   01_data_harmanization
-    -   01_01_Ustar-filter_gap-fill_AmeriFlux-BASE_sites
+    -   01_01_Ustar-filter_gap-fill_partition_AmeriFlux-BASE_sites
     -   01_02_process_qualified_FLUXNET_ICOS_sites 
 -   02_Quantify_abrupt_change_in_CO2_fluxes_time-series
 -   03_Calculate_trend_of_CO2_fluxes_and_potential_drivers
