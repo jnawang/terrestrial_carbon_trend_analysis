@@ -1,0 +1,573 @@
+---
+title: "gapfill_partition"
+output: pdf_document
+date: "2025-01-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r raw data location}
+rm(list=ls())
+# change this location where the raw data will be saved accordingly
+dir_rawdata <- '/Users/jw2946/Documents/stability_project/SiteData/'
+#
+```
+
+
+```{r which sites I need to gap-fill}
+## at least 7 years of base data
+packages <- c("ggplot2", "dplyr", "tidyr", "lubridate")
+#
+for (pkg in packages) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg, dependencies = TRUE)
+    library(pkg, character.only = TRUE)
+  }
+}
+#
+# find the sites with > 6 year data, and non crop sites
+# this following meta file is downloaded from Ameriflux with the search criteria: FC=true, NEE=true, data length >= 5 years
+sites <- read.csv('../data/AmeriFlux-site-search-results-202501071742.csv')
+#
+# remove cropland "CRO", Cropland/natural vegetation mosaics "CVM", "BSV": Barren?, water: "WAT", Urban and built-up lands:"URB", Snow and ice: "SNO"
+sites_selected <- sites %>% filter(!Vegetation.Abbreviation..IGBP. %in% c("CRO", "CVM", "BSV", "WAT", "URB", "SNO")) %>% filter(Data.Use.Policy=='CC-BY-4.0')
+## 129 sites
+##
+## US-Ho3 and CA-SJ2 were removed because they are harvested
+## US-Ho3: Howland Forest (harvest site); shelterwood harvest clearly affect NEE (https://www.mdpi.com/2073-445X/10/4/436); 
+## CA-SJ2: Saskatchewan - Western Boreal, Jack Pine forest harvested in 2002; removed because they are a series of sites. 
+sites_selected_BASE <- sites_selected %>% filter(AmeriFlux.BASE.Data.End - AmeriFlux.BASE.Data.Start >= 6) %>% filter(AmeriFlux.FLUXNET.Data == "No") %>% filter(!Site.ID %in% c("US-Ho3", "CA-SJ2"))
+##
+
+```
+
+
+```{r a function calculate effective data duration}
+#
+# Function to calculate lengths of NA gaps
+na_gap_lengths <- function(vec) {
+  rle(is.na(vec))$lengths[which(rle(is.na(vec))$values)]
+}
+
+# this function calculate data duration and excluding long gaps (unit is days)
+data_duration_day <- function(dt, gap_thresh, time_series) {
+  #
+  id_start <- which(!is.na( time_series ))[1]
+  id_end   <- tail(which(!is.na( time_series )), 1)
+  # difftime return days of the difference
+  data_duration_day <- (id_end - id_start + 1) * dt
+#  print(data_duration_day)
+  # substract the gap times longer than half year
+  gap_lengths <- na_gap_lengths(time_series [id_start:id_end])
+  # convert gap_lengths to gap time
+  gap_times <- gap_lengths * dt
+  if (any(gap_times > gap_thresh)) {
+    gap_times_half_year <- sum(gap_times[gap_times > gap_thresh])
+    data_duration_day <- data_duration_day - gap_times_half_year
+  }
+  return(data_duration_day)
+}
+
+# # testing this function
+# data_duration_day(0.5/24, 182, data_BASE$FC_1_1_1)
+# plot(data_BASE$FC_1_1_1)
+
+```
+
+
+```{r remove sites with limited FC data}
+#
+packages <- c("amerifluxr")
+#
+for (pkg in packages) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg, dependencies = TRUE)
+    library(pkg, character.only = TRUE)
+  }
+}
+#
+FC_duration_thresh <- 6 * 365       # unit days
+gap_thresh <- 182                   # unit days
+#
+site_to_remove <- c()
+#
+# location to save Ameriflux Base data
+files <- list.files(file.path(dir_rawdata, 'Ameriflux_BASE'), pattern="zip", full.names = T)
+#
+for (i in 1:nrow(sites_selected_BASE)) {
+#  i = 8
+  name_site <- sites_selected_BASE$Site.ID[i]
+  print(name_site)
+  #
+  # read Ameriflux base files
+  data_BASE <- amf_read_base(files[grepl(name_site, files)], parse_timestamp=TRUE, unzip = T)
+  #  
+  var_names <- names(data_BASE)
+  #
+  FC_name <- var_names[grepl('^FC', var_names)]
+  #
+  dt <- as.numeric(difftime(data_BASE$TIMESTAMP[2], data_BASE$TIMESTAMP[1], units=c('days')))
+  FC_duration <- data_duration_day(dt, gap_thresh, data_BASE[,FC_name[1]])
+  # 
+  if (FC_duration < FC_duration_thresh) {
+    site_to_remove <- c(site_to_remove, name_site)
+  }
+  print(paste0(i, '  ', FC_duration))
+  # print(plot(data_BASE[,FC_name[1]]))
+}
+#
+sites_selected_BASE1 <- sites_selected_BASE %>% filter(!Site.ID %in% c(site_to_remove))
+# sites to remove: "CA-TP2" "US-xLE" "US-xNW" "US-xRN" (large gaps year after year)
+# this code will take ~10 min
+```
+
+
+```{r map each variable and their priority}
+#
+NEE_names_all   <- c( )         # NEE_names_order <- c( )
+LE_names_all    <- c( )
+H_names_all     <- c( )         # H (sensitive heatflux)
+PPFD_IN_names_all  <- c( )         # PPFD and SW_IN can be replaced with each other. 
+SW_IN_names_all <- c( )
+TA_names_all    <- c( )
+RH_names_all    <- c( )         # RH and VPD can be replaced with each other; relative humidity   
+VPD_names_all   <- c( )
+NETRAD_names_all  <- c( )       # (net radiation)
+USTAR_names_all   <- c( )       
+PA_names_all      <- c( )       # PA (air pressure)
+#
+#
+# location to save Ameriflux Base data
+files <- list.files(file.path(dir_rawdata, 'Ameriflux_BASE'), pattern="zip", full.names = T)
+#
+for (i in 1:nrow(sites_selected_BASE1)) {
+#  i = 1
+  name_site <- sites_selected_BASE$Site.ID[i]
+  #
+  # read Ameriflux base files
+  data_BASE <- amf_read_base(files[grepl(name_site, files)], parse_timestamp=TRUE, unzip = T)
+  #
+  # collect variable names and converted to uppercase
+  var_names <- toupper(names(data_BASE))
+  #
+  # collect relevant column names
+  NEE_names_all      <- c(NEE_names_all,     var_names[grepl('^NEE', var_names)])
+  LE_names_all       <- c(LE_names_all,      var_names[grepl('^LE',  var_names)])
+  # need to process differently for H
+  H_names_all        <- c(H_names_all,       var_names['H' == var_names | grepl('^H_', var_names)])
+  TA_names_all       <- c(TA_names_all,      var_names['TA' == var_names | grepl('^TA_',  var_names)])
+  PPFD_IN_names_all  <- c(PPFD_IN_names_all, var_names[grepl('^PPFD_IN',  var_names)])
+  SW_IN_names_all    <- c(SW_IN_names_all,   var_names[grepl('^SW_IN',  var_names)])
+  
+  RH_names_all       <- c(RH_names_all,      var_names[grepl('^RH',  var_names)])
+  VPD_names_all      <- c(VPD_names_all,     var_names[grepl('^VPD',  var_names)])
+  NETRAD_names_all   <- c(NETRAD_names_all,  var_names[grepl('^NETRAD',  var_names)])
+  USTAR_names_all    <- c(USTAR_names_all,   var_names[grepl('^USTAR',  var_names)])
+  PA_names_all       <- c(PA_names_all,      var_names[grepl('^PA',  var_names)])
+}
+#
+#######################################################################################################################
+# write a function to give priority to these variable names
+sort_var_names <- function(var_name, var_names) {
+  #
+  var_names <- unique(var_names)
+  sort_var_names <- c()
+  # the order of priority
+  # single name > single name with with PI > single name with with PI_F
+  # 
+  pattern        <- c(var_name, paste0(var_name, "_PI"), paste0(var_name, "_PI_F"))
+  #
+  for (i in 1:length(pattern)) {
+    sort_var_names_group <- c()
+    pattern_add    <- paste0("\\b", pattern[i], "(?:_\\d.*)?\\b")
+    if (any(grepl(pattern_add, var_names))) {
+      var_names_pattern <- var_names[grepl(pattern_add, var_names)]
+      # Priority 1: variable name == pattern
+      if (pattern[i] %in% var_names) {
+        sort_var_names_group <- c(sort_var_names_group, pattern[i])
+      }
+      ##############
+      # Priority 2: use data of the top two layers of observation.
+      # Check if there is numbers in variable names
+      if (any(grepl("[0-9]", var_names_pattern))) {
+        #
+        # get numbers in these column names: only use data of the top two layers of observation. 
+        for (j in 1:length(var_names_pattern)) {
+          var_name_split   <- strsplit(var_names_pattern[j], split = "_")
+          var_name_2number <- suppressWarnings(as.numeric(var_name_split[[1]]))
+          var_name_number  <- var_name_2number[!is.na(var_name_2number)]
+          # the variable name has to contain 3 numbers and the middle number is equal to 1 or 2
+          if (length(var_name_number) == 3) {
+            if (var_name_number[2] == 1 | var_name_number[2] == 2) {
+              sort_var_names_group <- c(sort_var_names_group, var_names_pattern[j])
+            }
+          }
+        }   ## finish the loop
+      }  ## finish the Priority 2
+      sort_var_names <- c(sort_var_names, sort(sort_var_names_group))
+    }  ## finish each pattern
+  }  ## finish all patterns
+  return(sort_var_names)
+}  ## finish the function
+#
+#################################################################################################################
+# use the function
+NEE_names_sort     <- sort_var_names("NEE",    NEE_names_all)
+LE_names_sort      <- sort_var_names("LE",     LE_names_all)
+H_names_sort       <- sort_var_names("H",      H_names_all)
+PPFD_IN_names_sort <- sort_var_names("PPFD_IN",   PPFD_IN_names_all)
+SW_IN_names_sort   <- sort_var_names("SW_IN",  SW_IN_names_all)
+TA_names_sort      <- sort_var_names("TA",     TA_names_all)
+RH_names_sort      <- sort_var_names("RH",     RH_names_all)
+VPD_names_sort     <- sort_var_names("VPD",    VPD_names_all)
+NETRAD_names_sort  <- sort_var_names("NETRAD", NETRAD_names_all)
+USTAR_names_sort   <- sort_var_names("USTAR",  USTAR_names_all)
+PA_names_sort      <- sort_var_names("PA",     PA_names_all)
+##
+#### NEE should be deal with specifically, if NEE values is not provided, but my sites all include NEE. 
+
+```
+
+## Make a notation here: download_ERA function from the ErikKusch/KrigR package may be useful. 
+
+
+```{r Ustar-filter, gap-fill, and partition}
+## A part of the code of this section is from Ammara Talib, 1/9/2025
+## use Ustar threshold for each year to be consistent with FLUXNET protocols
+packages <- c("Rcpp", "REddyProc", "amerifluxr")
+#
+#packageVersion("REddyProc") 1.3.3
+#
+#https://rdrr.io/cran/flux/man/gpp.html
+#https://rdrr.io/rforge/REddyProc/man/sEddyProc.example.html
+#
+for (i in 1:nrow(sites_selected_BASE1)) {
+#  i = 1
+  ####Step 0: Prepare for requested variables for each site: DateTime, NEE, Rg (shortwave radiation), Tair, Ustar, rH (relative humidity), VPD
+  ## LE (latent evapotraspiration), H (sensitive heatflux), PA (air pressure), NETRAD (net radiation)
+  name.site <- sites_selected_BASE$Site.ID[i]
+  # the site US-PFa should be processed separately, so skip it now. 
+  if (name.site == "US-PFa") { next }
+  #
+  # location to save Ameriflux Base data
+  files <- list.files(file.path(dir_rawdata, 'Ameriflux_BASE'), pattern="zip", full.names = T)
+  # read Ameriflux base files
+  data.BASE <- amf_read_base(files[grepl(name.site, files)], parse_timestamp=TRUE, unzip = T)
+  #
+  var_names <- names(data.BASE)
+  #
+  data.input.EddyProc <- data.frame(DateTime = ymd_hm(data.BASE$TIMESTAMP_END))
+  #
+  # select NEE column
+  NEE.name <- var.names[grepl('^NEE', var.names)]    # use the first one: "NEE_PI", "NEE_PI_F", "NEE_PI_1_1_1", "NEE_PI_1_2_1"
+  data.input.EddyProc$NEE <- data.BASE[,NEE.name[1]]
+  # US-NC2, we need to deal with it specifically. 
+  # US-Esm, US-Elm, deal with specifically using FC data
+  #
+  LE.name <- var.names[grepl('^FC', var.names)]
+  data.input.EddyProc$LE <- data.BASE[,LE.name[1]]
+  print(plot(data.input.EddyProc$NEE, main=name.site))
+  print(plot(data.input.EddyProc$LE, main=name.site))
+  #
+  
+  # print(name_site)                                  # there should be a statement. 
+  # print( var.names[grepl('^PPFD_IN', var.names)] )
+  
+  
+  #
+  ## deal with NEE name
+  # NEE.name <- var.names[grepl('^NEE', var.names)]    # use the first one: "NEE_PI", "NEE_PI_F", "NEE_PI_1_1_1", "NEE_PI_1_2_1" "NEE_PI_1_3_1"
+  # a[,NEE.name[1], drop=FALSE]
+  
+  ## deal with SW_IN, some sites may not SW? How to deal with this; there should be an if statement.
+  # NEE.name <- var.names[grepl('^SW_IN', var.names)]    # use the first one: "SW_IN_1_1_1"  "SW_IN_1_1_2"  "SW_IN_1_1_3"  "SW_IN_PI_F_1" "SW_IN_1_2_1"
+  # a[,NEE.name[1], drop=FALSE]
+  #######how to deal with missed SW_IN problem?######
+  
+  #######some sites has no TA perhaps other variables
+  # print( var.names[grepl('^TA', var.names)] )
+  
+  #######one sites has no RH############
+  # print( var.names[grepl('^RH', var.names)] )
+  
+  #######all sites have LE, but 3 sites has no H#####
+  # print( var.names[grepl('^LE', var.names)] )
+  # print( var.names['H' == var.names | grepl('^H_', var.names)] )
+  
+  ##################################################
+  # print( var.names[grepl('^PA', var.names)] )
+  # print( var.names[grepl('^NETRAD', var.names)] )
+  
+  ##################################################
+}
+
+
+
+
+
+
+  # the site US-PFa should be processed separately, so skip it now. 
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r }
+
+
+#
+# gap-fill and partition
+for (i in 1:nrow(sites_selected_BASE1)) {
+#  i = 1
+  ####Step 0: Prepare for requested variables for each site: DateTime, NEE, Rg (shortwave radiation), Tair, Ustar, rH (relative humidity), VPD
+  ## LE (latent evapotraspiration), H (sensitive heatflux), PA (air pressure), NETRAD (net radiation)
+  name.site <- sites_selected_BASE$Site.ID[i]
+  #
+  # location to save Ameriflux Base data
+  files <- list.files(file.path(dir_rawdata, 'Ameriflux_BASE'), pattern="zip", full.names = T)
+  # read Ameriflux base files
+  data.BASE <- amf_read_base(files[grepl(name.site, files)], parse_timestamp=TRUE, unzip = T)
+  #
+  var_names <- names(data.BASE)
+  #
+  data.input.EddyProc <- data.frame(DateTime = ymd_hm(data.BASE$TIMESTAMP_END))
+  #
+  # select NEE column
+  NEE.name <- var.names[grepl('^NEE', var.names)]    # use the first one: "NEE_PI", "NEE_PI_F", "NEE_PI_1_1_1", "NEE_PI_1_2_1"
+  data.input.EddyProc$NEE <- data.BASE[,NEE.name[1]]
+  # US-NC2, we need to deal with it specifically. 
+  # US-Esm, US-Elm, deal with specifically using FC data
+  #
+  LE.name <- var.names[grepl('^FC', var.names)]
+  data.input.EddyProc$LE <- data.BASE[,LE.name[1]]
+  print(plot(data.input.EddyProc$NEE, main=name.site))
+  print(plot(data.input.EddyProc$LE, main=name.site))
+  #
+  
+  # print(name_site)                                  # there should be a statement. 
+  # print( var.names[grepl('^PPFD_IN', var.names)] )
+  
+  
+  #
+  ## deal with NEE name
+  # NEE.name <- var.names[grepl('^NEE', var.names)]    # use the first one: "NEE_PI", "NEE_PI_F", "NEE_PI_1_1_1", "NEE_PI_1_2_1" "NEE_PI_1_3_1"
+  # a[,NEE.name[1], drop=FALSE]
+  
+  ## deal with SW_IN, some sites may not SW? How to deal with this; there should be an if statement.
+  # NEE.name <- var.names[grepl('^SW_IN', var.names)]    # use the first one: "SW_IN_1_1_1"  "SW_IN_1_1_2"  "SW_IN_1_1_3"  "SW_IN_PI_F_1" "SW_IN_1_2_1"
+  # a[,NEE.name[1], drop=FALSE]
+  #######how to deal with missed SW_IN problem?######
+  
+  #######some sites has no TA perhaps other variables
+  # print( var.names[grepl('^TA', var.names)] )
+  
+  #######one sites has no RH############
+  # print( var.names[grepl('^RH', var.names)] )
+  
+  #######all sites have LE, but 3 sites has no H#####
+  # print( var.names[grepl('^LE', var.names)] )
+  # print( var.names['H' == var.names | grepl('^H_', var.names)] )
+  
+  ##################################################
+  # print( var.names[grepl('^PA', var.names)] )
+  # print( var.names[grepl('^NETRAD', var.names)] )
+  
+  ##################################################
+}
+#
+# Here is the rule for NEE_PI names
+# 
+
+
+
+
+i <- 1
+####Step 0: Prepare for requested variables for each site: DateTime, NEE, Rg (shortwave radiation), Tair, Ustar, rH (relative humidity), VPD
+## LE (latent evapotraspiration), H (sensitive heatflux), PA (air pressure), NETRAD (net radiation)
+name_site <- sites_selected_BASE$Site.ID[i]
+#
+# location to save Ameriflux Base data
+files <- list.files(file.path(dir_rawdata, 'Ameriflux_BASE'), pattern="zip", full.names = T)
+# read Ameriflux base files
+a <- amf_read_base(files[grepl(name_site, files)], parse_timestamp=TRUE, unzip = T)
+#
+df <- data.frame(DateTime = ymd_hm(a$TIMESTAMP_END))
+
+# find all variables
+var.names <- names(a)
+var.names[grepl('NEE', var.names)]
+# NEE_PI, NEE_PI_F, 
+
+
+
+
+if ("NEE_PI" %in% names(a)) {
+  
+  
+  
+  
+}
+
+
+
+
+
+
+years  <- unique(ac$YEAR)
+seasonStarts <- data.frame(DOY = rep(c(gStart, gEnd), length(years)), YEAR=rep(years, each=2))
+#
+# create the data frame
+ac_u       <- data.frame(DateTime = ymd_hm(a$TIMESTAMP_END))   # The first dataset has to be 00:30, so weird. 
+ac_u$NEE   <- ac$NEE
+# ac_u$Rg    <- a$SW_IN_1_1_1              # I need to do a little bit change of this.    
+# ac_u$Rg[ac_u$Rg < 0] <- 0.0
+# incomplete SW_IN data, so I will use PPFD_IN_1_1_1
+ac_u$Rg    <- ac$SW_IN
+ac_u$Tair  <- ac$TA
+ac_u$Ustar <- ac$USTAR
+ac_u$rH    <- ac$RH
+#
+ac_u$VPD <- fCalcVPDfromRHandTair(ac_u$rH, ac_u$Tair)
+
+EProc    <- sEddyProc$new(name_site, ac_u, c('NEE', 'Rg', 'Tair', 'VPD', 'Ustar'))   # sometimes, DTS.n=24   
+# Rg should not have negative values. 
+EProc$sSetLocationInfo(LatDeg = lat_site, LongDeg = long_site, TimeZoneHour = tz$utc_offset_h)
+# 
+ac_u$season <- usCreateSeasonFactorYdayYear(
+  ac_u$DateTime - 15*60, starts = seasonStarts)  # it sets back 15 min. 
+uStarTh <- EProc$sEstUstarThold(seasonFactor = ac_u$season)
+#
+ac_u <- ac_u %>% left_join(uStarTh[,3:4], by="season")
+ac$uStarTh <- ac_u$uStar
+
+
+#### 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+data <-read.csv(file="C:/ammara_MD/a_yale/Research Project/data/california/gaps_US-EDN.csv",header=TRUE)
+
+df<-(data)
+
+df2=df[,-1]
+
+## get proper datetime format
+EddyDataWithPosix.F <- fConvertTimeToPosix(df2, 'YDH', Year.s = 'Year', Day.s = 'DoY', Hour.s = 'Hour')
+
+# include variables that you want to gap fill along with meteorological variables
+EddyProc.C<- sEddyProc$new('df2', EddyDataWithPosix.F, c('NEE','LE','H', 'Rg','Tair','VPD','Ustar','PA','NETRAD'),DTS=48)
+
+
+#############################################################################################333
+#ustar filtering step
+uStarTh <- EddyProc.C$sEstUstarThreshold()$uStarTh
+
+## gap fill individual variables
+EddyProc.C$sMDSGapFillAfterUstar('NEE') # 
+EddyProc.C$sExportResults()
+
+EddyProc.C$sMDSGapFillAfterUstar('LE')
+EddyProc.C$sExportResults()
+
+EddyProc.C$sMDSGapFill('Rg')
+EddyProc.C$sExportResults()
+
+#### need to gap fill Tair and VPD to use for GPP calculation
+
+EddyProc.C$sMDSGapFill('Tair', FillAll.b=FALSE)
+EddyProc.C$sExportResults()
+
+EddyProc.C$sMDSGapFill('VPD', FillAll.b=FALSE)
+EddyProc.C$sExportResults()
+
+filled1<- EddyProc.C$sExportResults()
+##########################################################################################
+
+### GPP part
+
+EddyProc.C$sSetLocationInfo(Lat_deg.n=37.6156, Long_deg.n=-122.1140, TimeZone_h.n=1)#US-EDN
+
+EddyProc.C$sMDSGapFillAfterUstar('NEE')
+EddyProc.C$sMDSGapFill('Tair', FillAll.b=FALSE)
+EddyProc.C$sMDSGapFill('VPD', FillAll.b=FALSE)
+
+EddyProc.C$sMRFluxPartition(Suffix.s='uStar')  # night time #Reichstein 2005
+EddyProc.C$sGLFluxPartition(Suffix.s='uStar') # day time  Reco_DT, GPP_DT #Lasslop, light response curve (preferred method where more sunlight)
+################################################################################################3
+
+## save gap filled variables in one dataframe
+filled1<- EddyProc.C$sExportResults()
+
+filled2=data.frame(cbind(DateTime=EddyDataWithPosix.F$DateTime, Year=EddyDataWithPosix.F$Year,
+DoY=EddyDataWithPosix.F$DoY,Hour=EddyDataWithPosix.F$Hour,NEE_f=filled1$NEE_uStar_f,LE_f=filled1$LE_uStar_f,
+Tair_f=filled1$Tair_f,VPD_f=filled1$VPD_f,Rg_f=filled1$Rg_f,GPP_DT=filled1$GPP_DT_uStar,
+GPP_nt=filled1$GPP_uStar_f,Reco_DT=filled1$Reco_DT_uStar,Reco_nt=filled1$Reco_uStar))
+
+
+write.csv(filled2,"C:/ammara_MD/a_yale/Research Project/data/california/fill_US-EDN.csv")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## write down the number of sites with partitioned data
+
+```
+
