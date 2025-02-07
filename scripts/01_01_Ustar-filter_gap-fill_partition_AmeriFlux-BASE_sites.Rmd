@@ -333,10 +333,12 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   key_name_list[[2]] <- LE_names_sort[LE_names_sort %in% var_names]
   key_name_list[[3]] <- H_names_sort[H_names_sort %in% var_names]
   #  only choose one from PPFD_IN and SW_IN; give priority to SW_IN?
+  PPFD_IN_used <- TRUE
   if ( any(PPFD_IN_names_sort %in% var_names) ) {
     key_name_list[[4]] <- PPFD_IN_names_sort[PPFD_IN_names_sort %in% var_names]
   } else {
     key_name_list[[4]] <- SW_IN_names_sort[SW_IN_names_sort %in% var_names]
+    PPFD_IN_used <- FALSE
   }
   key_name_list[[5]] <- TA_names_sort[TA_names_sort %in% var_names]
   key_name_list[[6]] <- RH_names_sort[RH_names_sort %in% var_names]
@@ -364,6 +366,9 @@ for (i in 1:nrow(sites_selected_BASE1)) {
     }
   }
   names(data_EddyProc) <- c("DateTime", col_names[col_names_used])
+  if (PPFD_IN_used) {
+    data_EddyProc$Rg <- data_EddyProc$Rg / 2.3             # convert this value to be equivalent to SW_IN. 
+  }
   #
   # check if VPD exists or if it is complete; if not, recalculate it using RH
   if (!col_names_used[7] | sum(!is.na(data_EddyProc$VPD)) + 365 * 24 < sum(!is.na(data_EddyProc$RH))) {
@@ -499,7 +504,9 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   a_HH <- data_BASE %>% select(c(TIMESTAMP_START, TIMESTAMP_END)) %>% filter(year(ymd_hm(TIMESTAMP_END)) >= year_first_NEE)
   # 
   # the units for hourly NEE: umolCO2 m-2 s-1
-  a_HH <- a_HH %>% mutate(TA_F=output$Tair_f, TA_F_QC=output$Tair_fqc, VPD_F=output$VPD_f, VPD_F_QC=output$VPD_fqc, 
+  a_HH <- a_HH %>% mutate(TA_F_MDS=output$Tair_f, TA_F_MDS_QC=output$Tair_fqc, 
+                          VPD_F_MDS=output$VPD_f, VPD_F_MDS_QC=output$VPD_fqc, 
+                          SW_IN_F_MDS=output$Rg_f, SW_IN_F_MDS_QC=output$Rg_fqc, 
                           LE_F_MDS=output$LE_uStar_f, LE_F_MDS_QC=output$LE_uStar_fqc, NIGHT=output$Rg_f < 10, 
                           NEE_VUT_REF=output$NEE_uStar_f, NEE_VUT_REF_QC=output$Ustar_uStar_fqc)
   # if CO2 is in the dataset
@@ -526,8 +533,9 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   # the units for daily NEE, GPP, and RECO: gC m-2 d-1 ; TIMESTAMP=sprintf("%04d%02d%02d", )
   a_DD <- a_HH %>% mutate(YEAR=year(ymd_hm(TIMESTAMP_START)), MONTH=month(ymd_hm(TIMESTAMP_START)),     
                           DAY=day(ymd_hm(TIMESTAMP_START)), TIMESTAMP=sprintf("%04d%02d%02d", YEAR, MONTH, DAY)) %>% 
-                   group_by(TIMESTAMP) %>% summarise(TA_F=mean(TA_F), VPD_F=mean(VPD_F), LE_F_MDS=mean(LE_F_MDS), 
-                            NEE_VUT_REF=sum(NEE_VUT_REF)*dt*0.0864*12)
+                   group_by(TIMESTAMP) %>% summarise(TA_F_MDS=mean(TA_F_MDS), VPD_F_MDS=mean(VPD_F_MDS), 
+                                                     SW_IN_F_MDS=mean(SW_IN_F_MDS), LE_F_MDS=mean(LE_F_MDS), 
+                                                     NEE_VUT_REF=sum(NEE_VUT_REF)*dt*0.0864*12)
   if (col_names_used[10]) {
     a_DD_CO2 <- a_HH %>% mutate(YEAR=year(ymd_hm(TIMESTAMP_START)), MONTH=month(ymd_hm(TIMESTAMP_START)),     
                                DAY=day(ymd_hm(TIMESTAMP_START)), TIMESTAMP=sprintf("%04d%02d%02d", YEAR, MONTH, DAY)) %>% 
@@ -566,8 +574,8 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   
   # yearly NEE, GPP, and RECO: gC m-2 year-1
   a_YY <- a_HH %>% mutate(TIMESTAMP=year(ymd_hm(TIMESTAMP_START))) %>% group_by(TIMESTAMP) %>% 
-                   summarise(TA_F=mean(TA_F), VPD_F=mean(VPD_F), LE_F_MDS=mean(LE_F_MDS), 
-                             NEE_VUT_REF=sum(NEE_VUT_REF)*dt*0.0864*12)
+                   summarise(TA_F_MDS=mean(TA_F_MDS), VPD_F_MDS=mean(VPD_F_MDS), SW_IN_F_MDS=mean(SW_IN_F_MDS), 
+                             LE_F_MDS=mean(LE_F_MDS), NEE_VUT_REF=sum(NEE_VUT_REF)*dt*0.0864*12)
   if (col_names_used[10]) {
     a_YY_CO2 <- a_HH %>% mutate(TIMESTAMP=year(ymd_hm(TIMESTAMP_START))) %>% group_by(TIMESTAMP) %>%
                         summarise(CO2_F_MDS=mean(CO2_F_MDS))
@@ -626,7 +634,7 @@ dt <- as.numeric(difftime(data_BASE$TIMESTAMP[2], data_BASE$TIMESTAMP[1], units=
 # need to gap-fill VPD, LE, PPFD, and CO2
 data_EddyProc <- data.frame(DateTime = ymd_hm(data_BASE$TIMESTAMP_END))
 data_EddyProc <- data_EddyProc %>% mutate(NEE = data_BASE$NEE_PI_F, Tair=data_BASE$TA_PI_F_1_3_1, Ustar=data_BASE$USTAR_PI_F_1_3_1, 
-                                          VPD = data_BASE$VPD_PI_F_1_3_1, LE = data_BASE$LE, Rg = data_BASE$PPFD_IN_1_1_1, 
+                                          VPD = data_BASE$VPD_PI_F_1_3_1, LE = data_BASE$LE, Rg = data_BASE$PPFD_IN_1_1_1/2.3, 
                                           CO2 = coalesce(data_BASE$CO2_1_3_1, data_BASE$CO2_1_2_1, data_BASE$CO2_1_1_1),
                                           GPP = data_BASE$GPP_PI_F, RECO = data_BASE$RECO_PI_F)
 EProc <- sEddyProc$new(name_site, data_EddyProc, c("NEE", "LE", "Rg", "Tair", "VPD", "Ustar", "CO2", "GPP", "RECO"), DTS=1/dt)
@@ -639,8 +647,9 @@ EProc$sMDSGapFill('CO2', FillAll=FALSE)
 output <- EProc$sExportResults()
 # the PI used nighttime partition from this paper: https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2022JG007014
 a_HH <- data_BASE %>% select(c(TIMESTAMP_START, TIMESTAMP_END)) %>% 
-  mutate(TA_F=data_BASE$TA_PI_F_1_3_1, TA_F_QC=ifelse(is.na(data_BASE$TA_1_3_1), 1, 0), 
-         VPD_F=output$VPD_f, VPD_F_QC=output$VPD_fqc, 
+  mutate(TA_F_MDS=data_BASE$TA_PI_F_1_3_1, TA_F_MDS_QC=ifelse(is.na(data_BASE$TA_1_3_1), 1, 0), 
+         VPD_F_MDS=output$VPD_f, VPD_F_MDS_QC=output$VPD_fqc, 
+         SW_IN_F_MDS=output$Rg_f, SW_IN_F_MDS_QC=output$Rg_fqc, 
          LE_F_MDS=output$LE_f, LE_F_MDS_QC=output$LE_fqc, NIGHT=output$Rg_f < 10, 
          NEE_VUT_REF=data_BASE$NEE_PI_F, NEE_VUT_REF_QC=ifelse(is.na(data_BASE$NEE_PI), 1, 0), 
          CO2_F_MDS=output$CO2_f, CO2_F_MDS_QC=output$CO2_fqc, 
@@ -648,14 +657,15 @@ a_HH <- data_BASE %>% select(c(TIMESTAMP_START, TIMESTAMP_END)) %>%
 # we use NA values in our daily estimates, but not on our annual estimates
 a_DD <- a_HH %>% mutate(YEAR=year(ymd_hm(TIMESTAMP_START)), MONTH=month(ymd_hm(TIMESTAMP_START)),     
                         DAY=day(ymd_hm(TIMESTAMP_START)), TIMESTAMP=sprintf("%04d%02d%02d", YEAR, MONTH, DAY)) %>% 
-                 group_by(TIMESTAMP) %>% summarise(TA_F=mean(TA_F), VPD_F=mean(VPD_F), 
+                 group_by(TIMESTAMP) %>% summarise(TA_F_MDS=mean(TA_F_MDS), VPD_F_MDS=mean(VPD_F_MDS), SW_IN_F_MDS=mean(SW_IN_F_MDS), 
                                                    LE_F_MDS=mean(LE_F_MDS), CO2_F_MDS=mean(CO2_F_MDS), 
                                                    NEE_VUT_REF=sum(NEE_VUT_REF)*dt*0.0864*12, 
                                                    GPP_NT_VUT_REF=sum(GPP_NT_VUT_REF)*dt*0.0864*12,
                                                    RECO_NT_VUT_REF=sum(RECO_NT_VUT_REF)*dt*0.0864*12)
 #
 a_YY <- a_HH %>% mutate(TIMESTAMP=year(ymd_hm(TIMESTAMP_START))) %>% group_by(TIMESTAMP) %>% 
-                   summarise(TA_F=mean(TA_F), VPD_F=mean(VPD_F), LE_F_MDS=mean(LE_F_MDS), CO2_F_MDS=mean(CO2_F_MDS), 
+                   summarise(TA_F_MDS=mean(TA_F_MDS), VPD_F_MDS=mean(VPD_F_MDS), SW_IN_F_MDS=mean(SW_IN_F_MDS), 
+                             LE_F_MDS=mean(LE_F_MDS), CO2_F_MDS=mean(CO2_F_MDS), 
                              NEE_VUT_REF=sum(NEE_VUT_REF)*dt*0.0864*12, GPP_NT_VUT_REF=sum(GPP_NT_VUT_REF)*dt*0.0864*12,
                              RECO_NT_VUT_REF=sum(RECO_NT_VUT_REF)*dt*0.0864*12)
 #
@@ -667,6 +677,25 @@ write.csv(a_DD, file.path(dir_rawdata, 'Ameriflux_BASE', "ReddyProcGapFill", fil
 file_name <- paste0('AMF_', name_site, '_EDDYPROC_FULLSET_YY.csv')
 write.csv(a_YY, file.path(dir_rawdata, 'Ameriflux_BASE', "ReddyProcGapFill", file_name), row.names = FALSE)
 #
+
+```
+
+
+```{r compare with PI partitioned data}
+#
+name_site <- "US-Los"    # , US-CMW, US-Los, "US-Uaf" "CA-Mer"(no pi data)
+#
+files <- list.files(file.path(dir_rawdata, 'Ameriflux_BASE'), pattern="zip", full.names = T)
+data_BASE <- amf_read_base(files[grepl(name_site, files)], parse_timestamp=TRUE, unzip = T)
+# set abnormal values (<=-9999) to NA
+data_BASE[data_BASE<=-9999] <- NA
+#
+Ymean <- data_BASE %>% group_by(YEAR) %>% summarise(NEE_PI_F=sum(NEE_PI_F)*1/48*0.0864*12,
+                                                    GPP_PI_F=sum(GPP_PI_F)*1/48*0.0864*12,
+                                                    RECO_PI_F=sum(as.numeric(RECO_PI_F))*1/48*0.0864*12)
+# Uaf, NEE is similar, GPP and RECO could be very different. 
+# US-CMW, similar for the three variables. 
+# US-Los, NEE and GPP are good, RECO by the PI may be problematic. 
 
 ```
 
