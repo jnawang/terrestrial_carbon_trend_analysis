@@ -119,6 +119,8 @@ for (i in 1:nrow(sites_selected_BASE)) {
 
 
 ```{r map each variable and their priority}
+library(librarian)
+shelf(amerifluxr)
 #
 # remove 4 sites that are not long enough, using results from the last chunk. 
 site_to_remove <- c("CA-TP2", "US-xLE", "US-xNW", "US-xRN")       # this is actually calculated before
@@ -282,7 +284,7 @@ shelf(Rcpp, REddyProc, amerifluxr, tidyverse, lutz)
 # location to save Ameriflux Base data
 files <- list.files(file.path(dir_rawdata, 'Ameriflux_BASE'), pattern="zip", full.names = T)
 for (i in 1:nrow(sites_selected_BASE1)) {
-#  i = 6
+  i = 18  # 12-13: US-Elm, US-Esm 1:nrow(sites_selected_BASE1)
   ####Step 0: Prepare for requested variables for each site: DateTime, NEE, Rg (shortwave radiation), Tair, Ustar, rH (relative humidity), and VPD
   name_site <- sites_selected_BASE1$Site.ID[i]
   print(name_site)
@@ -294,7 +296,15 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   # set abnormal values (<=-9999) to NA
   data_BASE[data_BASE<=-9999] <- NA
   #
-  dt <- as.numeric(difftime(data_BASE$TIMESTAMP[2], data_BASE$TIMESTAMP[1], units=c('days')))
+  dt <- as.numeric(difftime(ymd_hm(data_BASE$TIMESTAMP_END[2]), ymd_hm(data_BASE$TIMESTAMP_END[1]), units=c('days')))
+  #
+  # remove the low quality data for US-Elm and US-Esm due to the shift of time after 2016
+  # remove the low quality data for US-NC2 due to the incomplete and abnormal NEE values after 2020
+  if (name_site %in% c('US-Elm', 'US-Esm')) {
+    data_BASE <- data_BASE %>% filter(year(ymd_hm(data_BASE$TIMESTAMP_START)) <= 2016)
+  } else if (name_site %in% c('US-NC2')) {
+    data_BASE <- data_BASE %>% filter(year(ymd_hm(data_BASE$TIMESTAMP_START)) <= 2020)
+  }
   #
   var_names <- names(data_BASE)
   # 
@@ -366,8 +376,8 @@ for (i in 1:nrow(sites_selected_BASE1)) {
     }
   }
   names(data_EddyProc) <- c("DateTime", col_names[col_names_used])
-  if (PPFD_IN_used) {
-    data_EddyProc$Rg <- data_EddyProc$Rg / 2.3             # convert this value to be equivalent to SW_IN. 
+  if (!PPFD_IN_used) {
+    data_EddyProc$Rg <- data_EddyProc$Rg * 2.3             # convert SW_IN to be equivalent to PPFD_IN. 
   }
   #
   # check if VPD exists or if it is complete; if not, recalculate it using RH
@@ -377,17 +387,16 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   }
   #  set reasonable range of Rg, NEE values. 
   data_EddyProc$Rg <- pmax(data_EddyProc$Rg, 0.0)
-  data_EddyProc$NEE[abs(data_EddyProc$NEE) > 20] <- NA
+  data_EddyProc$NEE[abs(data_EddyProc$NEE) > 40] <- NA
   #
   #  remove some abnormal fluxes during very low temperature
   if (name_site == 'CA-Man') {
     data_EddyProc$NEE[abs(data_EddyProc$NEE) > 1 & data_EddyProc$Tair < -5] <- NA
   }
-  
+  #
   #  cut off the first few years without NEE/Ustar data; required, otherwise it does not gap fill.  
   year_first_NEE <- year(data_EddyProc$DateTime[which(!is.na(data_EddyProc$Ustar))[1]])
   data_EddyProc <- data_EddyProc %>% filter(year(DateTime) >= year_first_NEE)
-  #
   #
   EProc    <- sEddyProc$new(name_site, data_EddyProc, col_names[col_names_used], DTS=1/dt)
   ##################################################
@@ -405,8 +414,8 @@ for (i in 1:nrow(sites_selected_BASE1)) {
                                                                              year = year(data_EddyProc$DateTime), startMonth = c(1)), 
                                     ctrlUstarSub =usControlUstarSubsetting(taClasses = 7, UstarClasses = 20,
                                                                            swThr = 10, minRecordsWithinTemp = 10, 
-                                                                           minRecordsWithinSeason = 160, minRecordsWithinYear = 3000, 
-                                                                           isUsingOneBigSeasonOnFewRecords = TRUE))    # This works for no
+                                                                           minRecordsWithinSeason = 100, minRecordsWithinYear = 3000, 
+                                                                           isUsingOneBigSeasonOnFewRecords = TRUE)) 
   } else {
     uStarTh <- EProc$sEstUstarThold()
   }

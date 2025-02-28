@@ -1,0 +1,121 @@
+---
+title: "Connect European FLUXNET2020 with ICOS FLUXNET in recent years (2021~2024)"
+output: pdf_document
+date: "2025-02-18"
+author: "Junna Wang"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r raw data location}
+rm(list=ls())
+# change this location where the raw data will be saved accordingly
+# dir_rawdata <- '/Users/jw2946/Documents/stability_project/SiteData/'
+dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
+#
+```
+
+
+```{r add ICOS interrim flux into european flux}
+library(librarian)
+shelf(tidyverse)
+# citation can be find here: https://meta.icos-cp.eu/collections/5J8Kx5LlmEb1EjPJL7dKZBAL
+# 
+ICOS_interim_metadata <- read.csv('../data/Carbon Portal Search Result.csv')
+# get site_ID and start and end years
+ICOS_interim_metadata$site_ID <- unlist(lapply(ICOS_interim_metadata$fileName, function(x) substring(x, 9, 14)))
+ICOS_interim_metadata$start_year <- pmax(year(ymd_hms(ICOS_interim_metadata$timeStart) + days(1)), 2021)
+ICOS_interim_metadata$data_length <- 2024-ICOS_interim_metadata$start_year
+#
+files_Europ <- list.files(path =  file.path(dir_rawdata, "FLUXNET2020"), pattern = "\\.zip$")
+sites_Europ <- unlist(lapply(files_Europ, function(x) substring(x, 5, 10)))
+data_length <- unlist(lapply(files_Europ, function(x) (-as.numeric(substring(x, 32, 35))) + as.numeric(substring(x, 37, 40))))
+#
+sites_shared <- intersect(ICOS_interim_metadata$site_ID, sites_Europ)
+# 30 sites are shared 
+# sites_ICOSonly <- setdiff(ICOS_interim_metadata$site_ID, sites_Europ)
+# subset(ICOS_interim_metadata, site_ID %in% sites_ICOSonly)
+#
+# adding data to the 30 sites if the total number of years are longer than 7 years
+# all the sites have >= 8 years data, so do the data_connection
+files.unzip.Europ <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
+for (site_ID in sites_shared) {
+  #
+  # site_ID <- "SE-Svb" # "BE-Bra"
+  # 
+  print(data_length[which(site_ID==sites_Europ)])
+  print(data_length[which(site_ID==sites_Europ)] + ICOS_interim_metadata$data_length[ICOS_interim_metadata$site_ID==site_ID])
+  #
+  # read data from European FLUXNET2020
+  a_HH_2020 <- read.csv(files.unzip.Europ[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_HH"), files.unzip.Europ)])
+  a_DD_2020 <- read.csv(files.unzip.Europ[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_DD"), files.unzip.Europ)])
+  a_YY_2020 <- read.csv(files.unzip.Europ[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_YY"), files.unzip.Europ)])
+  #
+  # read data from ICOS FLUXNET after 2020
+  a_HH_zip <- file.path(dir_rawdata, "ICOS_FLUXNET", paste0("ICOSETC_", site_ID, "_FLUXNET_INTERIM_HH_L2.zip"))
+  a_HH_2023 <- read.csv(unz(a_HH_zip, paste0("ICOSETC_", site_ID, "_FLUXNET_INTERIM_HH_L2.csv")))
+  #
+  a_HH_2020[a_HH_2020<=-9999] <- NA
+  a_HH_2023[a_HH_2023<=-9999] <- NA
+  #
+  # merge them: first find where to merge
+  start_merge_index <- which(a_HH_2023$TIMESTAMP_START == a_HH_2020$TIMESTAMP_END[nrow(a_HH_2020)])
+  if (identical(start_merge_index, integer(0))) {
+    start_merge_index = 1
+  }
+  end_merge_index <- which(a_HH_2023$TIMESTAMP_END == 202401010000)
+  if (identical(end_merge_index, integer(0))) {
+    end_merge_index = nrow(end_merge_index)
+  }
+  a_HH <- bind_rows(a_HH_2020, a_HH_2023[start_merge_index:end_merge_index, ])
+  # calculate a_DD and a_YY
+  dt <- as.numeric(difftime(ymd_hm(a_HH$TIMESTAMP_END[2]), ymd_hm(a_HH$TIMESTAMP_END[1]), units=c('days')))
+  # I directly add TS and SWC if all the 30 sites have them. 
+  a_DD <- a_HH %>% mutate(YEAR=year(ymd_hm(TIMESTAMP_START)), MONTH=month(ymd_hm(TIMESTAMP_START)),     
+                          DAY=day(ymd_hm(TIMESTAMP_START)), TIMESTAMP=sprintf("%04d%02d%02d", YEAR, MONTH, DAY)) %>% 
+                   group_by(TIMESTAMP) %>% summarise(TA_F_MDS=mean(TA_F_MDS), VPD_F_MDS=mean(VPD_F_MDS), 
+                                                     SW_IN_F_MDS=mean(SW_IN_F_MDS), LE_F_MDS=mean(LE_F_MDS), 
+                                                     CO2_F_MDS=mean(CO2_F_MDS), P_F=sum(P_F),
+                                                     TS_F_MDS_1=mean(TS_F_MDS_1), SWC_F_MDS_1=mean(SWC_F_MDS_1), 
+                                                     NEE_VUT_REF=sum(NEE_VUT_REF)*dt*0.0864*12,
+                                                     GPP_DT_VUT_REF=sum(GPP_DT_VUT_REF)*dt*0.0864*12,
+                                                     RECO_DT_VUT_REF=sum(RECO_DT_VUT_REF)*dt*0.0864*12, 
+                                                     GPP_NT_VUT_REF=sum(GPP_NT_VUT_REF)*dt*0.0864*12,
+                                                     RECO_NT_VUT_REF=sum(RECO_NT_VUT_REF)*dt*0.0864*12)
+  # Yearly NEE, GPP, and RECO: gC m-2 year-1
+  a_YY <- a_HH %>% mutate(TIMESTAMP=year(ymd_hm(TIMESTAMP_START))) %>% group_by(TIMESTAMP) %>% 
+                   summarise(TA_F_MDS=mean(TA_F_MDS), VPD_F_MDS=mean(VPD_F_MDS), 
+                             SW_IN_F_MDS=mean(SW_IN_F_MDS), LE_F_MDS=mean(LE_F_MDS), 
+                             CO2_F_MDS=mean(CO2_F_MDS), P_F=sum(P_F),
+                             TS_F_MDS_1=mean(TS_F_MDS_1), SWC_F_MDS_1=mean(SWC_F_MDS_1), 
+                             NEE_VUT_REF=sum(NEE_VUT_REF)*dt*0.0864*12,
+                             GPP_DT_VUT_REF=sum(GPP_DT_VUT_REF)*dt*0.0864*12, 
+                             RECO_DT_VUT_REF=sum(RECO_DT_VUT_REF)*dt*0.0864*12,
+                             GPP_NT_VUT_REF=sum(GPP_NT_VUT_REF)*dt*0.0864*12,
+                             RECO_NT_VUT_REF=sum(RECO_NT_VUT_REF)*dt*0.0864*12)
+  # Daytime and Nighttime NEE
+  NEE_DAY <- a_HH %>% filter(NIGHT==0) %>% mutate(TIMESTAMP=year(ymd_hm(TIMESTAMP_START))) %>% group_by(TIMESTAMP) %>% 
+                      summarise(NEE_VUT_REF_DAY=sum(NEE_VUT_REF)*dt*0.0864*12)
+  NEE_NIGHT <- a_HH %>% filter(NIGHT==1) %>% mutate(TIMESTAMP=year(ymd_hm(TIMESTAMP_START))) %>% group_by(TIMESTAMP) %>% 
+                      summarise(NEE_VUT_REF_NIGHT=sum(NEE_VUT_REF)*dt*0.0864*12)
+  a_YY <- a_YY %>% left_join(NEE_DAY, by="TIMESTAMP") %>% left_join(NEE_NIGHT, by="TIMESTAMP")
+  # plot the daily and yearly time series to ensure it makes sense. 
+  plot(ymd_hm(a_HH$TIMESTAMP_START), a_HH$NEE_VUT_REF, main=site_ID)
+  plot(ymd(a_DD$TIMESTAMP), a_DD$NEE_VUT_REF, main=site_ID)
+  plot(a_YY$TIMESTAMP, a_YY$NEE_VUT_REF, main=site_ID)
+  #
+  # write the data out
+  file_name <- paste0('ICOSETC_', site_ID, '_FLUXNET_HH_L2.csv')
+  write.csv(a_HH, file.path(dir_rawdata, 'ICOS_FLUXNET', "unzip_connect2020", file_name), row.names = FALSE)
+  file_name <- paste0('ICOSETC_', site_ID, '_FLUXNET_DD_L2.csv')
+  write.csv(a_DD, file.path(dir_rawdata, 'ICOS_FLUXNET', "unzip_connect2020", file_name), row.names = FALSE)
+  file_name <- paste0('ICOSETC_', site_ID, '_FLUXNET_YY_L2.csv')
+  write.csv(a_YY, file.path(dir_rawdata, 'ICOS_FLUXNET', "unzip_connect2020", file_name), row.names = FALSE)
+}
+#
+# this means that I will have four data sources for all the sites
+
+```
