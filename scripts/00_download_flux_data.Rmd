@@ -91,16 +91,14 @@ files.unzip.Europ2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip
 files.unzip.Europ2023 <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET", "unzip_connect2020"), full.names = T)
 files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
 #
-sites.long <- read.csv('../data/long_term_ec_sites.csv')
+sites_long <- read.csv('../data/long_term_ec_sites.csv')
 #
-rm_years <- data.frame(Site.ID=character(), years=list())
-#
-for (i in 1:nrow(sites.long)) {
-  i = 52
-  site_ID <- sites.long$site_ID[i]
+for (i in 1:nrow(sites_long)) {
+  i = 89
+  site_ID <- sites_long$site_ID[i]
   print(site_ID)
   # AmeriFlux and European flux; Do I need to differentiate them? Hopefully they use the same notation
-  if (sites.long$source[i] == "AmeriFlux_FLUXNET") {
+  if (sites_long$source[i] == "AmeriFlux_FLUXNET") {
     if (site_ID %in% c("US-Cop")) {
       a_HH <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_HR"), files.unzip.Ameri)])
       a_DD <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_DD"), files.unzip.Ameri)])
@@ -177,12 +175,6 @@ for (i in 1:nrow(sites.long)) {
   # a year should have at least > 45 % of mean observed data; 
   tmp <- f.data.measured$`year(TIMESTAMP)`[is.na(f.data.measured$f) | f.data.measured$f < minf]
   print(tmp)
-  #
-  if (length(tmp) > 0) {
-    #### remove these < 0.1, and then < 40% of the mean of these points;
-    rm_years <- rbind(rm_years, data.frame(site_ID=site_ID, years=tmp))
-    ####
-  }
   #
 }
 #
