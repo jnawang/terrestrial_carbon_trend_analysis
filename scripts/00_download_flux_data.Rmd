@@ -180,6 +180,7 @@ for (i in 1:nrow(sites_long)) {
 #
 ```
 
+
 ## Selected qualifed FLUXNET sites
 ```{r Ameriflux Fluxnet data quality check, echo=FALSE}
 sites.remove <- c('CA-SF2', "CA-TP1", "US-CdM", "US-Cop", "US-CS2", "US-KS2" )
