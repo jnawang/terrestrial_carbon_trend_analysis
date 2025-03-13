@@ -1,0 +1,204 @@
+---
+title: "trend drivers"
+output: pdf_document
+date: "2025-03-12"
+author: "Junna Wang"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r raw data location}
+rm(list=ls())
+# change this location where the raw data will be saved accordingly
+# dir_rawdata <- '/Users/jw2946/Documents/stability_project/SiteData/'
+dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
+#
+library(librarian)
+shelf(tidyverse, ggpubr)
+#
+```
+
+
+```{r doy of southern hemisphere}
+#
+southern_hemisphere_doy <- function(dates) {
+  year_start <- ymd(paste(year(dates), "07-01", sep = "-"))  # July 1 of the same year
+  doy <- as.numeric(dates - year_start + 1)  # Compute DOY
+  
+  # Adjust for dates before July 1 (shift to previous year's DOY count)
+  doy[doy < 1] <- doy[doy < 1] + 365 + leap_year(year(dates[doy < 1]) - 1)
+  
+  return(doy)
+}
+#
+```
+
+
+```{r trend of environmental conditions}
+# read sub time series
+sub_time_series <- read.csv('data/sub_time_series.csv')
+#
+data_grow_season <- read.csv('data/growing_season_yearly.csv')
+#
+sites_long <- read.csv('data/long_term_ec_sites.csv')
+#
+rm_years   <- read.csv('data/years_to_remove.csv')
+#
+# add data source to sub_time_series
+if (!"source" %in% colnames(sub_time_series)) {
+  sub_time_series <- merge(sub_time_series, sites_long[, c('site_ID', "source", "Lat")], by="site_ID")
+}
+#
+# mutate many columns to sub_time_series
+sub_time_series <- sub_time_series %>% mutate(TA_t=NA, TA_p=NA, TA_gs_t=NA, TA_gs_p=NA, TA_ngs_t=NA, TA_ngs_p=NA,
+                   P_t=NA, P_p=NA, P_gs_t=NA, P_gs_p=NA, P_ngs_t=NA, P_ngs_p=NA,
+                   VPD_t=NA, VPD_p=NA, VPD_gs_t=NA, VPD_gs_p=NA, VPD_ngs_t=NA, VPD_ngs_p=NA,
+                   SW_t=NA, SW_p=NA, SW_gs_t=NA, SW_gs_p=NA, SW_ngs_t=NA, SW_ngs_p=NA,
+                   LE_t=NA, LE_p=NA, LE_gs_t=NA, LE_gs_p=NA, LE_ngs_t=NA, LE_ngs_p=NA,
+                   CO2_t=NA, CO2_p=NA, Lgs_t=NA, Lgs_p=NA, Lgs_piece_t=NA, Lgs_piece_p=NA,
+                   MAT=NA, MAP=NA, Height=NA, Age=NA)
+#
+# get the average start and end growing season for each site
+grow_season_site <- data_grow_season %>% group_by(site_ID) %>% 
+  summarise(sos=floor((mean(sos_DER) + mean(sos_TRS)) / 2), 
+            eos=ceiling((mean(eos_DER) + mean(eos_TRS)) / 2))
+########################Important information here########################
+# remember that one site CL-SDF is in the southern hemisphere; 
+# year long growing season: 'BR-Sa1', 'US-Esm', 'US-LL1', 'US-LL2', 'US-LL3', 'US-SP3', 'GF-Guy';
+# for these sites we assume growing and non-growing season have the same trend
+########################################################################## 
+# prepare for dataset
+files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), full.names = T)
+files.unzip.Europ2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
+files.unzip.Europ2023 <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET", "unzip_connect2020"), full.names = T)
+files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
+#
+## calculate trends of environmental drivers
+for (i in 1:nrow(sub_time_series)) {
+  print(i)
+  site_ID <- sub_time_series$site_ID[i]
+  print(site_ID)
+  ##
+  if (sub_time_series$source[i] == "AmeriFlux_FLUXNET") {
+    a_YY <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_YY"), files.unzip.Ameri)])
+    a_DD <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_DD"), files.unzip.Ameri)])
+  } else if (sub_time_series$source[i] == "EuropFlux_FLUXNET2020") {
+    a_YY <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_YY"), files.unzip.Europ2020)])
+    a_DD <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_DD"), files.unzip.Europ2020)])
+  } else if (sub_time_series$source[i] == "EuropFlux_FLUXNET2023") {
+    a_YY <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_YY"), files.unzip.Europ2023)])
+    a_DD <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_DD"), files.unzip.Europ2023)])
+  } else if (sub_time_series$source[i] == "AmeriFlux_BASE") {
+    a_YY <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_YY"), files.Ameri.ReddyProcGapFill)])
+    a_DD <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_DD"), files.Ameri.ReddyProcGapFill)])    
+  }
+  a_YY[a_YY==-9999] <- NA
+  a_DD[a_DD==-9999] <- NA
+  #
+  a_YY <- a_YY %>% filter(!TIMESTAMP %in% rm_years$years[rm_years$site_ID==site_ID]) %>%
+    filter(TIMESTAMP >= sub_time_series$year_start[i] & TIMESTAMP <= sub_time_series$year_end[i])
+  #
+  a_DD$TIMESTAMP <- as.Date(as.character(a_DD$TIMESTAMP), "%Y%m%d")
+  a_DD <- a_DD %>% mutate(year=year(a_DD$TIMESTAMP), doy=yday(a_DD$TIMESTAMP))
+  if (sub_time_series$Lat[i] < 0.0) {
+    a_DD$doy <- southern_hemisphere_doy(a_DD$TIMESTAMP)
+  }
+  #
+  # deal with missing variables
+  if (sum(!is.na(a_YY$VPD_F_MDS)) < 5)  {
+    a_YY$VPD_F_MDS <- a_YY$VPD_F
+  }
+  if (sum(!is.na(a_YY$SW_IN_F_MDS)) < 5)  {
+    a_YY$SW_IN_F_MDS <- a_YY$SW_IN_F
+  }
+  # US-SP3 missing CO2_F_MDS, using global average values, only one site misses this data. 
+  if (! 'CO2_F_MDS' %in% names(a_YY) ) {
+    a_YY$CO2_F_MDS <- 2.25 * a_YY$TIMESTAMP - 4132.00 
+  } else if ( sum(!is.na(a_YY$CO2_F_MDS)) < 5 ) {
+    a_YY$CO2_F_MDS[is.na(a_YY$CO2_F_MDS)] <- 2.25 * a_YY$TIMESTAMP[is.na(a_YY$CO2_F_MDS)] - 4132.00 
+  }
+  #
+  ## we differentiate TA, P, VPD, SW_IN, LE for growing and non-growing seasons
+  a_YY$year_center <- as.numeric(scale(a_YY$TIMESTAMP, scale=FALSE))
+  if (site_ID %in% c('BR-Sa1', 'US-Esm', "US-Elm", 'US-LL1', 'US-LL2', 'US-LL3', 'US-SP3', 'GF-Guy')) {
+    a_YY_gw <- a_YY
+    a_YY_ngw <- a_YY
+  } else {
+    # start and end of growing season
+    sos <- grow_season_site$sos[grow_season_site$site_ID == site_ID]
+    eos <- grow_season_site$eos[grow_season_site$site_ID == site_ID]
+    a_YY_gw <- a_DD %>% filter(doy >= sos & doy <= eos) %>% group_by(year) %>% 
+                        summarise(TA_F_MDS=mean(TA_F_MDS, na.rm=T), P_ERA=sum(P_ERA, na.rm=T), 
+                                  VPD_F_MDS=mean(VPD_F_MDS, na.rm=T), SW_IN_F_MDS=mean(SW_IN_F_MDS, na.rm=T), 
+                                  LE_F_MDS=mean(LE_F_MDS, na.rm=T))
+    a_YY_ngw <- a_DD %>% filter(doy < sos | doy > eos) %>% group_by(year) %>% 
+                        summarise(TA_F_MDS=mean(TA_F_MDS, na.rm=T), P_ERA=sum(P_ERA, na.rm=T), 
+                                  VPD_F_MDS=mean(VPD_F_MDS, na.rm=T), SW_IN_F_MDS=mean(SW_IN_F_MDS, na.rm=T), 
+                                  LE_F_MDS=mean(LE_F_MDS, na.rm=T))
+    #
+    a_YY_gw$year_center  <- as.numeric(scale(a_YY_gw$year, scale=FALSE))
+    a_YY_ngw$year_center <- as.numeric(scale(a_YY_ngw$year, scale=FALSE))
+  }
+  #
+  # Calculate trends
+  sub_time_series[i,12:13] <- summary(lm(data=a_YY, scale(TA_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i,14:15] <- summary(lm(data=a_YY_gw, scale(TA_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i,16:17] <- summary(lm(data=a_YY_ngw, scale(TA_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  #
+  sub_time_series[i,18:19] <- summary(lm(data=a_YY, scale(P_ERA) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i,20:21] <- summary(lm(data=a_YY_gw, scale(P_ERA) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i,22:23] <- summary(lm(data=a_YY_ngw, scale(P_ERA) ~ year_center))$coefficients[2, c(1,4)]
+  #
+  sub_time_series[i,24:25] <- summary(lm(data=a_YY, scale(VPD_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i,26:27] <- summary(lm(data=a_YY_gw, scale(VPD_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i,28:29] <- summary(lm(data=a_YY_ngw, scale(VPD_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  #
+  sub_time_series[i,30:31] <- summary(lm(data=a_YY, scale(SW_IN_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i,32:33] <- summary(lm(data=a_YY_gw, scale(SW_IN_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i,34:35] <- summary(lm(data=a_YY_ngw, scale(SW_IN_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  #
+  sub_time_series[i,36:37] <- summary(lm(data=a_YY, scale(LE_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i,38:39] <- summary(lm(data=a_YY_gw, scale(LE_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i,40:41] <- summary(lm(data=a_YY_ngw, scale(LE_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  #
+  ## we do not differentiate CO2, Lgs for growing and non-growing seasons
+  sub_time_series[i,42:43] <- summary(lm(data=a_YY, scale(CO2_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  if (site_ID %in% c('BR-Sa1', 'US-Esm', "US-Elm", 'US-LL1', 'US-LL2', 'US-LL3', 'US-SP3', 'GF-Guy')) {
+    sub_time_series[i,44:45] <- 0
+    sub_time_series[i,46:47] <- 0
+  } else {
+    subdata_grow_season <- data_grow_season %>% filter(site_ID==site_ID) %>% filter(year >= sub_time_series$year_start[i] & year <= sub_time_series$year_end[i])
+    if (nrow(subdata_grow_season) >= 5) {
+      sub_time_series[i,44:45] <- summary(lm(data=subdata_grow_season, scale(length_gs) ~ scale(year, scale=FALSE)))$coefficients[2, c(1,4)]
+      sub_time_series[i,46:47] <- summary(lm(data=subdata_grow_season, scale(length_gs_piece) ~ scale(year, scale=FALSE)))$coefficients[2, c(1,4)]
+    }
+  }
+  # Baseline conditions: MAT, MAP; use our values if we have >10 year data
+  if (is.na(sites_long$MAT[sites_long$site_ID==site_ID])) {
+    sub_time_series[i,48] <- mean(a_YY$TA_F_MDS, na.rm=T)
+    sub_time_series[i,49] <- mean(a_YY$P_ERA, na.rm=T)    
+  } else {
+    sub_time_series[i,48] <- sites_long$MAT[sites_long$site_ID==site_ID]
+    sub_time_series[i,49] <- sites_long$MAP[sites_long$site_ID==site_ID]
+  }
+  #
+}
+
+
+
+
+
+```
+
+
+
+```{r baseline conditions}
+
+```
+
+
+
+
