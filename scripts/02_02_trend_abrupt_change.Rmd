@@ -17,14 +17,13 @@ rm(list=ls())
 dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 #
 library(librarian)
-shelf(tidyverse, Kendall, Rbeast, cowplot, ggpubr)
+shelf(tidyverse, Kendall, Rbeast, cowplot, ggpubr, tidyterra, ggpubr, viridis, RColorBrewer, grid)
 #
 ```
 
 
 ```{r look at all annual NEE data }
-#### I need to pay attention to Reynold watershed sites####
-
+####I need to pay attention to Reynold watershed sites####
 
 sites_long <- read.csv('../data/long_term_ec_sites.csv')
 rm_years   <- read.csv('../data/years_to_remove.csv')
@@ -57,9 +56,9 @@ for (i in 1:nrow(sites_long)) {
   a_YY_good <- a_YY %>% filter(!TIMESTAMP %in% rm_years$years[rm_years$site_ID==site_ID])
   sites_long$nyear[i] <- sum(!is.na(a_YY_good$NEE_VUT_REF))
   #
-  plot(a_YY_good$TIMESTAMP, a_YY_good$NEE_VUT_REF, main=site_ID)
-  plot(a_YY_good$TIMESTAMP, a_YY_good$GPP_NT_VUT_REF, main=site_ID)
-  plot(a_YY_good$TIMESTAMP, a_YY_good$RECO_NT_VUT_REF, main=site_ID)
+  # plot(a_YY_good$TIMESTAMP, a_YY_good$NEE_VUT_REF, main=site_ID)
+  # plot(a_YY_good$TIMESTAMP, a_YY_good$GPP_NT_VUT_REF, main=site_ID)
+  # plot(a_YY_good$TIMESTAMP, a_YY_good$RECO_NT_VUT_REF, main=site_ID)
   #
   a_YY_all <- rbind(a_YY_all, data.frame(site_ID=site_ID, a_YY_good[, c("TIMESTAMP", "NEE_VUT_REF")]))
 }
@@ -67,12 +66,48 @@ for (i in 1:nrow(sites_long)) {
 ggplot(data=a_YY_all, aes(x=TIMESTAMP, y=NEE_VUT_REF, color=site_ID)) +
   geom_point() +
   geom_line() +
+  labs(x='Year', y='Net ecosystem exchange (g C/m2/year)') + 
   theme(legend.position = "none")
 
-# get site_years; it will be good to see this. where are these data
-a_YY_all %>% group_by(TIMESTAMP) %>% summarise(nyears=n())
+# get site_years; it will be good to see this. where are these data?
+a_YY_all %>% group_by(TIMESTAMP) %>% summarise(nSites=n()) %>% 
+  ggplot(aes(x=TIMESTAMP, y=nSites)) + 
+  geom_point() +
+  labs(x='Year', y='Number of sites') +
+  theme_bw()
 #
-# the trend using moving windows. 
+###############################################
+# make a plot for locations of these sites
+mundi <- vect(rnaturalearthdata::coastline110)
+mundi <- crop(mundi,ext(c(-180,180,-60,90)))
+#
+#
+p1 <- ggplot() +
+  geom_spatvector(data = mundi, linewidth = .2) +
+  geom_hline(yintercept=0, linetype = "dotted", colour = "grey") + 
+  geom_point(data=sites_long, aes(x=Long, y=Lat, fill=category), shape = 21, size = 2, stroke = 0.5, color='black') +
+  scale_fill_manual(values=c('wet' = "#4393C3", 'dry' = "#E4003A", 'cold' = "#B790D4"), 
+                    labels=c("wet"='Wet: temperate and tropical climates', 
+                             "dry"="Dry: semi-arid climate",
+                             "cold"="Cold: semi-arid climate")) + 
+  labs(x='Longitude', y='Latitude', fill='Climate category') +
+  coord_sf(expand=FALSE, xlim = c(-180, 90), ylim = c(-50, 90)) + 
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank(), panel.border = element_rect(colour = "black")) +
+  theme(legend.position = c(0.25, 0.2),
+        legend.text = element_text(size = 12), 
+        legend.background = element_rect(fill = alpha('white', 0.3)))
+# p1
+
+# number of sites for each climate category
+sites_long %>% group_by(category) %>% summarise(nSites=n())
+# 
+a_YY_all %>% group_by(site_ID) %>% summarise(nYears=n()) %>%  #    filter(nYears > 18)
+  ggplot(aes(x=nYears)) +
+  geom_histogram() + 
+  labs(x='Number of years', y='Number of sites') +
+  theme_bw()
+
 
 ```
 
@@ -94,27 +129,7 @@ files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BAS
 #
 #### trend outcome: only use linear regression. 
 #### I should have a column called period. 
-trend_result <- data.frame(site_ID=character(), NEE_start5=double(), NEE_end5=double(), NEE_all=double(), 
-                           NEE_tau=double(), NEE_sl=double(), 
-                           NEE_day_tau=double(), NEE_day_sl=double(), 
-                           NEE_night_tau=double(), NEE_night_sl=double(), 
-                           NEE_slp=double(), NEE_p=double(), 
-                           NEE_day_slp=double(), NEE_day_p=double(), 
-                           NEE_night_slp=double(), NEE_night_p=double(),
-                           GPP_DT_slp=double(), GPP_DT_p=double(), 
-                           GPP_NT_slp=double(), GPP_NT_p=double(), 
-                           RECO_DT_slp=double(), RECO_DT_p=double(), 
-                           RECO_NT_slp=double(), RECO_NT_p=double(),
-                           ##Trend of environmental drivers
-                           TA_slp=double(), TA_p=double(), 
-                           TS_slp=double(), TS_p=double(), 
-                           P_slp=double(), P_p=double(), 
-                           VPD_slp=double(), VPD_p=double(), 
-                           SWC_slp=double(), SWC_p=double(), 
-                           CO2_slp=double(), CO2_p=double(), 
-                           Lgs_slp=double(), Lgs_p=double(), 
-                           # The next lines are about broken points; this is the way of adding a column of data type list()
-                           ncp=integer(), cp=I(list()), cpPr=I(list()), cpAbruptChange=I(list()), Ytrend=I(list()))
+trend_result <- data.frame(site_ID=character(), ncp=integer(), cp=I(list()), cpPr=I(list()), cpAbruptChange=I(list()), Ytrend=I(list()))
 for (i in 1:nrow(sites_long)) {
 #  i = 53
   print(i)
@@ -210,16 +225,17 @@ for (id in index0) {
   #
 }
 #
-# if 
-abrupt_change$cpAbruptChange[abrupt_change$site_ID=="US-SFa"] <- 2007
+# Using 2007 as an abrupt change year for US-PFa, because of continuous drought in these years; this is consistent with model results.  
+# abrupt_change$cpAbruptChange[abrupt_change$site_ID=="US-PFa"] <- 2007
 #
 write.csv(abrupt_change, '../data/abrupt_change_years.csv', row.names = F)
 # How many long-term sites do we have? how many of them has abrupt changes?
 # set tseg.min at 7, 30 sites with abrupt change; 2 have 2 abrupt change points. 
 # set tseg.min at 7, 24 sites with abrupt change; all have 1 abrupt change point. 
 
-```
+hist(abrupt_change$cpAbruptChange)
 
+```
 
 ```{r reorganize the time series, fig.width==8, fig.height=4}
 # In this chunk, I want to get: all the sub-time series, start year, end year, and simple linear trend of each sub-time series
@@ -285,7 +301,7 @@ for (i in 1:nrow(sites_long)) {
         #
         # use daytime GPP and ER when it is available, otherwise use other time series
         # remove GPP and ER outliers
-        if (sum(!is.na(a_YY_sub$GPP_DT_VUT_REF)) >= 5 & !site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho2", "US-NC4")) {
+        if (sum(!is.na(a_YY_sub$GPP_DT_VUT_REF)) >= 5 & !site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae")) {
           a_YY_sub$GPP_DT_VUT_REF[a_YY_sub$GPP_DT_VUT_REF < 0] <- NA
           a_YY_sub$RECO_DT_VUT_REF[a_YY_sub$RECO_DT_VUT_REF < 0] <- NA          
           sub_time_series[isub_ts, 6:7] <- summary(lm(data=a_YY_sub, scale(GPP_DT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
@@ -335,13 +351,12 @@ for (i in 1:nrow(sites_long)) {
     sub_time_series[isub_ts, 4:5] <- summary(lm(data=a_YY_sub, NEE_scale ~ year_center))$coefficients[2, c(1,4)]
     #
     # use daytime GPP and ER when it is available, otherwise use other time series
-    #
-    if (sum(!is.na(a_YY_sub$GPP_DT_VUT_REF)) >= 5 & !site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho2", "US-NC4")) {
+    if (sum(!is.na(a_YY_sub$GPP_DT_VUT_REF)) >= 5 & !site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-Kon", "US-MOz", "CH-Lae", "US-NC4")) {
       a_YY_sub$GPP_DT_VUT_REF[a_YY_sub$GPP_DT_VUT_REF < 0] <- NA
       a_YY_sub$RECO_DT_VUT_REF[a_YY_sub$RECO_DT_VUT_REF < 0] <- NA            
       sub_time_series[isub_ts, 6:7] <- summary(lm(data=a_YY_sub, scale(GPP_DT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
       sub_time_series[isub_ts, 8:9] <- summary(lm(data=a_YY_sub, scale(RECO_DT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
-      #
+      # plot sites with very large trends
       if (abs(sub_time_series[isub_ts, 6]) > 0.25) {
         plot(a_YY_sub$TIMESTAMP, a_YY_sub$GPP_DT_VUT_REF, main=isub_ts)
       }
@@ -378,34 +393,35 @@ for (i in 1:nrow(sites_long)) {
   }
 }
 # 
-
+write.csv(sub_time_series, file = '../data/sub_time_series.csv', row.names = FALSE)
+#
 ```
 
-```{r analyzing trend results, fig.width=10, fig.height=4}
+```{r analyzing trend results, fig.width=10, fig.height=3}
 #
 # Do NEE and GPP have the same trends?
 boxplot(sub_time_series$NEEtrend_lm, sub_time_series$GPPtrend_lm, sub_time_series$ERtrend_lm)
 # use simple t-test
 t.test(sub_time_series$NEEtrend_lm, sub_time_series$GPPtrend_lm, paired=T)
-# p-value = 0.239; mean = -0.02395362
+# p-value = 0.08556; mean = -0.03682555 
 #
 t.test(sub_time_series$NEEtrend_lm, sub_time_series$ERtrend_lm, paired=T)
-# p-value = 0.6589; mean = -0.007850851
+# p-value = 0.2995; mean = -0.01872801
 #
 t.test(sub_time_series$GPPtrend_lm, sub_time_series$ERtrend_lm, paired=T)
-# p-value = p-value = 0.05909; mean = 0.01610277
+# p-value = p-value = 0.04606; mean = 0.01809754
 
 # correlation between NEE trend and GPP/ER trend
 cor.test(sub_time_series$NEEtrend_lm, sub_time_series$GPPtrend_lm)
-# cor:  -0.2342025; p-value = 0.008044
+# cor:  -0.3080559; p-value = 0.0004495
 plot(sub_time_series$NEEtrend_lm, sub_time_series$GPPtrend_lm)
 
 cor.test(sub_time_series$NEEtrend_lm, sub_time_series$ERtrend_lm)
-# cor:  0.09168244; p-value = 0.3053
+# cor:  0.05887721; p-value = 0.5125
 plot(sub_time_series$NEEtrend_lm, sub_time_series$ERtrend_lm)
 
 cor.test(sub_time_series$GPPtrend_lm, sub_time_series$ERtrend_lm)
-# cor:  0.7842134; p-value < 2.2e-16
+# cor:  0.7617628; p-value < 2.2e-16
 plot(sub_time_series$GPPtrend_lm, sub_time_series$ERtrend_lm)
 
 ################################################what if I group them into different climate classes#####################
@@ -428,6 +444,12 @@ p3
 #
 cowplot::plot_grid(p1, p2, p3, nrow=1, ncol=3)
 #
+sub_time_series %>% ggplot(aes(x=GPPtrend_lm, y=NEEtrend_lm)) +
+  geom_point() + 
+  geom_smooth(method = "lm") +
+  stat_cor(method = "pearson")
+
+# 
 sub_time_series %>% filter(!IGBP %in% c('WSA', 'CSH', "MF")) %>% ggplot(aes(x=GPPtrend_lm, y=NEEtrend_lm)) +
   geom_point() + 
   geom_smooth(method = "lm") +
@@ -491,23 +513,15 @@ ggplot(sub_time_series, aes(x=GPPtrend_lm, y=NEEtrend_lm, color=category)) +
   geom_point() + 
   geom_smooth(method = "lm")
 
-
-
-
-
 ```
 
 
-```{r analyzing trends in two different periods, fig.width=5, fig.height=5}
+```{r analyzing trends in two different periods, fig.width=3, fig.height=3}
 #
 # add periods to sub time series; use 2011 as a threshold. 
 sub_time_series_2period <- data.frame(site_ID=character(), year_start=integer(), year_end=integer(), trend_lm=double(), period=character())
 threshold_split_year <- 2011
 for (i in 1:nrow(sub_time_series)) {
-  # ignore one sub time series at US-PFa
-  if (sub_time_series$site_ID[i]=="US-PFa" & sub_time_series$year_start[i]==2008) {
-    next
-  }
   #
   if (sub_time_series$year_end[i] <= threshold_split_year+3) {
     sub_time_series_2period <- rbind(sub_time_series_2period, 
@@ -524,21 +538,45 @@ for (i in 1:nrow(sub_time_series)) {
   }
 }
 #
-ggplot(sub_time_series_2period, aes(x=period, y=trend_lm)) +
+sub_time_series_2period$period <- factor(sub_time_series_2period$period, levels=c("before_2011", "after_2011"))
+ggplot(sub_time_series_2period, aes(x=period, y=NEEtrend_lm)) +
   geom_jitter() +
-  geom_boxplot()
-#
+  geom_boxplot() +
+  labs(y='NEE trend')
+
+# for long-term sites with abrupt changes
 sub_time_series_2period_paired <- sub_time_series_2period %>% filter(site_ID %in% unique(abrupt_change$site_ID))
-sub_time_series_2period_paired_pivot <- sub_time_series_2period_paired %>% dplyr::select(c(-year_start, -year_end)) %>% pivot_wider(names_from = period, values_from = trend_lm) %>% filter(!is.na(before_2011) & !is.na(after_2011)) %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class")], by="site_ID")
-###
-### removing drylands, NEE trend increased a lot (carbon sequestration reduced). 
-sub_time_series_2period_paired_pivot <- sub_time_series_2period_paired_pivot %>% filter(Climate.class != "Csa")
-t.test(sub_time_series_2period_paired_pivot$before_2011, sub_time_series_2period_paired_pivot$after_2011, paired=T)
 #
-sub_time_series_2period_paired %>% ggplot(aes(x=period, y=trend_lm)) +
+
+sub_time_series_2period_paired_pivot <- sub_time_series_2period_paired %>% dplyr::select(c(-year_start, -year_end)) %>% pivot_wider(names_from = period, values_from = NEEtrend_lm) %>% filter(!is.na(before_2011) & !is.na(after_2011)) %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class")], by="site_ID")
+###
+#
+t.test(sub_time_series_2period_paired_pivot$before_2011, sub_time_series_2period_paired_pivot$after_2011, paired=T)
+# p-value = 0.6122
+
+### focusing on cold climate, NEE trend increased a lot (carbon sequestration reduced). 
+sub_time_series_2period_paired_pivot_climate <- sub_time_series_2period_paired_pivot %>% filter(Climate.class %in% c("Dfb", "Dfc", "Dwc"))
+t.test(sub_time_series_2period_paired_pivot_climate$before_2011, sub_time_series_2period_paired_pivot_climate$after_2011, paired=T)
+# p-value = 0.01689
+
+sub_time_series_2period_paired_pivot_veg <- sub_time_series_2period_paired_pivot %>% filter(IGBP %in% c("DBF", "ENF", "MF"))
+t.test(sub_time_series_2period_paired_pivot_veg$before_2011, sub_time_series_2period_paired_pivot_veg$after_2011, paired=T)
+# p-value = 0.1896
+
+### all sites with abrupt changes
+sub_time_series_2period_paired %>% ggplot(aes(x=period, y=NEEtrend_lm)) +
   geom_jitter() +
   geom_boxplot()
 #
+### the site in cold climate only
+data_plot <- sub_time_series_2period_paired_pivot_climate %>% pivot_longer(cols=2:3, names_to='period', values_to='NEEtrend') 
+data_plot$period <- factor(data_plot$period, levels=c("before_2011", "after_2011"))
+  ggplot(data=data_plot, aes(x=period, y=NEEtrend)) +
+  geom_jitter() +
+  geom_boxplot()
+
+
+
 ########does the trend vary significantly among vegetation, climate classes? #######
 sub_time_series_anova <- sub_time_series %>% left_join(sites_long[, c("site_ID", "Climate.class", "IGBP", "category")], by="site_ID")
 summary(aov(data=sub_time_series_anova, trend_lm ~ Climate.class))    # p = 0.647
@@ -577,17 +615,6 @@ summary(aov(data=sub_time_series_anova, trend_lm ~ vegetation))
 ```
 
 
-
-
-
-
-
-
-
-
-
-
-
 # Questions I want to ask myself:
 # How many time series lasted longer than two decades? wet: , dry: ; cold: ; forest: ; grassland: ;
 
@@ -608,8 +635,6 @@ sub_time_series_2period$subts_ID <- as.numeric(rownames(sub_time_series_2period)
 #
 #
 data_NEE_trend <- data_NEE_trend %>% left_join(sub_time_series_2period[, c("subts_ID", "period")], by="subts_ID")
-#
-data_NEE_trend$period[is.na(data_NEE_trend$period)] <- "cross_2011"
 #
 # mutate site_code, IGBP_code, and subts_code
 data_NEE_trend <- data_NEE_trend %>% mutate(site_code = as.numeric(as.factor(site_ID)), 
@@ -681,22 +706,17 @@ get_NEE_trend$trend_inla <- rowSums(get_NEE_trend[, c("trend_all", "trend_subts"
 trend_random <- sub_time_series %>% mutate(subts_ID=as.numeric(rownames(sub_time_series))) %>%
                     merge(get_NEE_trend[, c('subts_ID', 'trend_inla')], by='subts_ID',all.x = TRUE)
 # the two trends are highly correlated but inla values does not change as much as linear regression for large trends. 
-ggplot(data=trend_random, aes(x=trend_lm, y=trend_inla)) + 
+trend_random %>% na.omit %>% ggplot(aes(x=NEEtrend_lm, y=trend_inla)) + 
   geom_point()
-
+##
 #####Eventually, I need a function to calculate individual trends. 
 # what if I only work on the sites with abrupt changes
 data_NEE_trend_ac <- data_NEE_trend %>% subset(site_ID %in% unique(abrupt_change$site_ID)) 
 
-
 # across all the time series, there is no difference in NEE trend between before 2011  
 
-
-
-
-
-
 ```
+
 
 ```{r trend of environmental variables}
 

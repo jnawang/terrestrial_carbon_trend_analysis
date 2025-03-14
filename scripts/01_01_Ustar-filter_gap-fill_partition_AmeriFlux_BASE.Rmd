@@ -6,7 +6,7 @@ author: "Junna Wang"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 ```
 
 
@@ -27,7 +27,7 @@ shelf(ggplot2, dplyr, tidyr, lubridate)
 #
 # find the sites with > 6 year data, and non crop sites
 # this following meta file is downloaded from Ameriflux with the search criteria: FC=true, NEE=true, data length >= 5 years
-sites <- read.csv('../data/AmeriFlux-site-search-results-202501071742.csv')
+sites <- read.csv('data/AmeriFlux-site-search-results-202501071742.csv')
 #
 # remove cropland "CRO", Cropland/natural vegetation mosaics "CVM", "BSV": Barren?, water: "WAT", Urban and built-up lands:"URB", Snow and ice: "SNO"
 sites_selected <- sites %>% filter(!Vegetation.Abbreviation..IGBP. %in% c("CRO", "CVM", "BSV", "WAT", "URB", "SNO")) %>% filter(Data.Use.Policy=='CC-BY-4.0')
@@ -282,9 +282,10 @@ shelf(Rcpp, REddyProc, amerifluxr, tidyverse, lutz)
 #https://rdrr.io/rforge/REddyProc/man/sEddyProc.example.html
 #
 # location to save Ameriflux Base data
-files <- list.files(file.path(dir_rawdata, 'Ameriflux_BASE'), pattern="zip", full.names = T)
+files     <- list.files(file.path(dir_rawdata, 'Ameriflux_BASE'), pattern="zip", full.names = T)
+files_ERA <- list.files(file.path(dir_rawdata, 'ERA5_Tair_Prec'), pattern=".csv$", full.names = T)
 for (i in 1:nrow(sites_selected_BASE1)) {
-  i = 18  # 12-13: US-Elm, US-Esm 1:nrow(sites_selected_BASE1)
+#  i = 12  # 12-13: US-Elm, US-Esm 1:nrow(sites_selected_BASE1)
   ####Step 0: Prepare for requested variables for each site: DateTime, NEE, Rg (shortwave radiation), Tair, Ustar, rH (relative humidity), and VPD
   name_site <- sites_selected_BASE1$Site.ID[i]
   print(name_site)
@@ -360,7 +361,7 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   key_name_list[[12]] <- SWC_names_sort[SWC_names_sort %in% var_names]
   #
   # prepare data for ReddyProc
-  data_EddyProc <- data.frame(DateTime = ymd_hm(data_BASE$TIMESTAMP_END))
+  data_EddyProc <- data.frame(DateTime = ymd_hm(data_BASE$TIMESTAMP_START))
   col_names <- c("NEE", "LE", "H", "Rg", "Tair", "RH", "VPD", "NETRAD", "Ustar", "CO2", "TS", "SWC")
   col_names_used <- rep(FALSE, 12)
   for (j in 1:length(key_name_list)) {
@@ -510,7 +511,7 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   }
   #######################################################################################################
   ####Output hourly, daily, and yearly gap-filled data
-  a_HH <- data_BASE %>% select(c(TIMESTAMP_START, TIMESTAMP_END)) %>% filter(year(ymd_hm(TIMESTAMP_END)) >= year_first_NEE)
+  a_HH <- data_BASE %>% select(c(TIMESTAMP_START, TIMESTAMP_END)) %>% filter(year(ymd_hm(TIMESTAMP_START)) >= year_first_NEE)
   # 
   # the units for hourly NEE: umolCO2 m-2 s-1
   a_HH <- a_HH %>% mutate(TA_F_MDS=output$Tair_f, TA_F_MDS_QC=output$Tair_fqc, 
@@ -619,6 +620,22 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   NEE_NIGHT <- a_HH %>% filter(NIGHT) %>% mutate(TIMESTAMP=year(ymd_hm(TIMESTAMP_START))) %>% group_by(TIMESTAMP) %>% 
                       summarise(NEE_VUT_REF_NIGHT=sum(NEE_VUT_REF)*dt*0.0864*12)
   a_YY <- a_YY %>% left_join(NEE_DAY, by="TIMESTAMP") %>% left_join(NEE_NIGHT, by="TIMESTAMP")
+  #
+  #######################################################################################################
+  ##adding P_ERA into hourly, daily, or yearly data sets
+  if (!name_site %in% c("US-SP2")) {
+    df_prec <- read.csv(files_ERA[grepl(paste0(name_site, '_tp_'), files_ERA)])
+    a_HH <- a_HH %>% left_join(df_prec, by=c("TIMESTAMP_START" = "time"))
+    #
+    a_DD_P <- a_HH %>% mutate(YEAR=year(ymd_hm(TIMESTAMP_START)), MONTH=month(ymd_hm(TIMESTAMP_START)),     
+                               DAY=day(ymd_hm(TIMESTAMP_START)), TIMESTAMP=sprintf("%04d%02d%02d", YEAR, MONTH, DAY)) %>% 
+                        group_by(TIMESTAMP) %>% summarise(P_ERA=sum(P_ERA, na.rm=T))
+    a_DD <- a_DD %>% left_join(a_DD_P, by="TIMESTAMP")
+    #
+    a_YY_P <- a_HH %>% mutate(TIMESTAMP=year(ymd_hm(TIMESTAMP_START))) %>% group_by(TIMESTAMP) %>%
+                        summarise(P_ERA=sum(P_ERA, na.rm=T))
+    a_YY <- a_YY %>% left_join(a_YY_P, by="TIMESTAMP")
+  }
   # 
   # write out the three files. 
   file_name <- paste0('AMF_', name_site, '_EDDYPROC_FULLSET_HH.csv')
@@ -662,19 +679,23 @@ a_HH <- data_BASE %>% select(c(TIMESTAMP_START, TIMESTAMP_END)) %>%
          LE_F_MDS=output$LE_f, LE_F_MDS_QC=output$LE_fqc, NIGHT=output$Rg_f < 10, 
          NEE_VUT_REF=data_BASE$NEE_PI_F, NEE_VUT_REF_QC=ifelse(is.na(data_BASE$NEE_PI), 1, 0), 
          CO2_F_MDS=output$CO2_f, CO2_F_MDS_QC=output$CO2_fqc, 
-         GPP_NT_VUT_REF=data_BASE$GPP_PI_F, RECO_NT_VUT_REF=data_BASE$RECO_PI_F)   # 
+         GPP_NT_VUT_REF=data_BASE$GPP_PI_F, RECO_NT_VUT_REF=data_BASE$RECO_PI_F)   #
+# add ERA5 precipitation data
+df_prec <- read.csv(files_ERA[grepl(paste0(name_site, '_tp_'), files_ERA)])
+a_HH <- a_HH %>% left_join(df_prec, by=c("TIMESTAMP_START" = "time"))
+
 # we use NA values in our daily estimates, but not on our annual estimates
 a_DD <- a_HH %>% mutate(YEAR=year(ymd_hm(TIMESTAMP_START)), MONTH=month(ymd_hm(TIMESTAMP_START)),     
                         DAY=day(ymd_hm(TIMESTAMP_START)), TIMESTAMP=sprintf("%04d%02d%02d", YEAR, MONTH, DAY)) %>% 
                  group_by(TIMESTAMP) %>% summarise(TA_F_MDS=mean(TA_F_MDS), VPD_F_MDS=mean(VPD_F_MDS), SW_IN_F_MDS=mean(SW_IN_F_MDS), 
-                                                   LE_F_MDS=mean(LE_F_MDS), CO2_F_MDS=mean(CO2_F_MDS), 
+                                                   LE_F_MDS=mean(LE_F_MDS), CO2_F_MDS=mean(CO2_F_MDS), P_ERA=sum(P_ERA, na.rm=T), 
                                                    NEE_VUT_REF=sum(NEE_VUT_REF)*dt*0.0864*12, 
                                                    GPP_NT_VUT_REF=sum(GPP_NT_VUT_REF)*dt*0.0864*12,
                                                    RECO_NT_VUT_REF=sum(RECO_NT_VUT_REF)*dt*0.0864*12)
 #
 a_YY <- a_HH %>% mutate(TIMESTAMP=year(ymd_hm(TIMESTAMP_START))) %>% group_by(TIMESTAMP) %>% 
                    summarise(TA_F_MDS=mean(TA_F_MDS), VPD_F_MDS=mean(VPD_F_MDS), SW_IN_F_MDS=mean(SW_IN_F_MDS), 
-                             LE_F_MDS=mean(LE_F_MDS), CO2_F_MDS=mean(CO2_F_MDS), 
+                             LE_F_MDS=mean(LE_F_MDS), CO2_F_MDS=mean(CO2_F_MDS), P_ERA=sum(P_ERA, na.rm=T), 
                              NEE_VUT_REF=sum(NEE_VUT_REF)*dt*0.0864*12, GPP_NT_VUT_REF=sum(GPP_NT_VUT_REF)*dt*0.0864*12,
                              RECO_NT_VUT_REF=sum(RECO_NT_VUT_REF)*dt*0.0864*12)
 #
