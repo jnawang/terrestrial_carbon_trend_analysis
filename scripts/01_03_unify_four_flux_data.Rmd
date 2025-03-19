@@ -151,14 +151,14 @@ sites_long$Climate.class[sites_long$site_ID %in% c("US-Elm", "US-Esm")] <- "Cwa"
 ## US-Tw4: The Twitchell East End Wetland is a newly constructed restored wetland on Twitchell Island, CA. 
 ## US-SP2: Even aged slash pine (Pinus elliottii) plantation. Planted in Jan. 1999. data 1999-2009
 ## CL-SDP: Bad quality data, especially in 2020
-sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6', 'US-Myb', "CA-Ca2", "US-KLS", "US-NC1", "US-NC3", "US-Tw4", "US-SP2", "CL-SDP"))
+sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6', 'US-Myb', "CA-Ca2", "US-KLS", "US-NC1", "US-NC3", "US-Tw4", "US-SP2"))
 ##
-
 ```
 
 
 ```{r remove some years}
-##this chunk generates the years we should remove; it continues with the also check
+##this chunk generates the years we should remove; 
+# it takes about 1 hour.
 #
 files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), full.names = T)
 files.unzip.Europ2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
@@ -169,7 +169,7 @@ rm_years <- data.frame(site_ID=character(), years=list())
 rm_sites <- c()
 #
 for (i in 1:nrow(sites_long)) {
-#  i=7
+#  i=101
   print(i)
   site_ID <- sites_long$site_ID[i]
   print(site_ID)
@@ -186,52 +186,96 @@ for (i in 1:nrow(sites_long)) {
     a_HH <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_HH"), files.Ameri.ReddyProcGapFill)])
     a_YY <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_YY"), files.Ameri.ReddyProcGapFill)])
   }
-  a_HH[a_HH==-9999] <- NA
-  a_YY[a_YY==-9999] <- NA
+  a_HH[a_HH<=-9999] <- NA
+  a_YY[a_YY<=-9999] <- NA
   #
   #### The first rule to remove years: the percentage of measured data < 0.333 of the average percentage of measured data
   ## for each year, get the percentage of time when data is interpolated. 
   a_HH$TIMESTAMP <- ymd_hm(a_HH$TIMESTAMP_START) + (ymd_hm(a_HH$TIMESTAMP_END) - ymd_hm(a_HH$TIMESTAMP_START)) / 2.0
-  f.data.measured <- a_HH %>% group_by(year(TIMESTAMP)) %>% summarise(f=sum(NEE_VUT_REF_QC==0) / n())
+  f.data.measured <- a_HH %>% mutate(YEAR=year(TIMESTAMP)) %>% group_by(YEAR) %>% summarise(f=sum(NEE_VUT_REF_QC==0) / n())
 #  print(f.data.measured)
   #
   tmp <- f.data.measured %>% filter(f > 0.1 & !is.na(f))
   meanf <- mean(tmp$f)
   #
-  tmp <- f.data.measured$`year(TIMESTAMP)`[is.na(f.data.measured$f) | f.data.measured$f < 0.1]
+  tmp <- f.data.measured$YEAR[is.na(f.data.measured$f) | f.data.measured$f < max(0.1, meanf/3)]
   print(tmp)
   #
   #### The second rule to remove years: there are NA values in yearly data. 
   tmp <- c(tmp, a_YY$TIMESTAMP[is.na(a_YY$NEE_VUT_REF)])
-  #### The third rule to remove years with extreme outliers: a year's NEE outside of 3 * sd, and data is less than the average. 
-#  outlier <- abs(a_YY$NEE_VUT_REF - mean(a_YY$NEE_VUT_REF, na.rm=T)) > 3 * sd(a_YY$NEE_VUT_REF, na.rm=T)
-  # detect outliers: Using the Interquartile Range (IQR) Method
+  #
+  #### The third rule to remove years with extreme NEE outliers: a year's NEE outside of 3 * sd, and data is less than the average. 
+  # detect outliers: Using the Interquartile Range (IQR) Method, NOT the sd method
   Q1 <- quantile(a_YY$NEE_VUT_REF, 0.25, na.rm=T)
   Q3 <- quantile(a_YY$NEE_VUT_REF, 0.75, na.rm=T)
   IQR <- Q3 - Q1
-  outlier <- a_YY$NEE_VUT_REF < Q1 - 1.5 * IQR | a_YY$NEE_VUT_REF > Q3 + 1.5 * IQR
+  outlier <- !between(a_YY$NEE_VUT_REF, Q1 - 1.5 * IQR, Q3 + 1.5 * IQR)
   tmp <- c(tmp, a_YY$TIMESTAMP[which(outlier & f.data.measured$f < meanf * 0.5)])
   #
-  outlier_extreme <- a_YY$NEE_VUT_REF < Q1 - 3 * IQR | a_YY$NEE_VUT_REF > Q3 + 3 * IQR
+  outlier_extreme <- !between(a_YY$NEE_VUT_REF, Q1 - 3 * IQR, Q3 + 3 * IQR)
   tmp <- c(tmp, a_YY$TIMESTAMP[which(outlier_extreme & f.data.measured$f < meanf)])   # have to have enough observations.
+  #
   #### the fourth rule: if the outlier is in the first year, discard it; the first year measurement has lots of uncertainties.
-  if (!is.na(outlier[1]) & outlier[1]) {
+  if (!is.na(outlier[1]) & outlier[1] & f.data.measured$f[1] < 0.5) {
     tmp <- c(tmp, a_YY$TIMESTAMP[1])
   }
-  #### the fifth rule: monthly average NEE during daytime between 11 and 14 should be within a bound ###
-  # monthly_NEE_day <- a_HH %>% filter(NIGHT==0 & SW_IN_F_MDS > 10 & hour(TIMESTAMP) >= 11 & hour(TIMESTAMP) <= 13) %>%
-  #   mutate(YEAR=year(TIMESTAMP), MONTH=month(TIMESTAMP)) %>% group_by(YEAR, MONTH) %>%
-  #   summarise(NEE=mean(NEE_VUT_REF, na.rm=T))
-  # monthly_NEE_day_pattern <- monthly_NEE_day %>% group_by(MONTH) %>%
-  #   summarise(Q1=quantile(NEE,0.25, na.rm=T), Q3=quantile(NEE,0.75, na.rm=T)) %>%
-  #   mutate(lowlimit=Q1 - 3.5 * (Q3 - Q1), uplimit=Q3 + 3.5 * (Q3 - Q1))
-  # #
-  # monthly_NEE_day <- monthly_NEE_day %>% left_join(monthly_NEE_day_pattern[,c(1,4:5)], by="MONTH") %>% filter(NEE > uplimit) %>% group_by(YEAR) %>% summarise(n=n()) %>% filter(n>=2)
-  # #### a year has >= 3 month outliers
-  # if (nrow(monthly_NEE_day) > 0) {
-  #   tmp <- c(tmp, monthly_NEE_day$YEAR)
-  #   print(paste0('remove monthly outliters: ', site_ID, monthly_NEE_day$YEAR))
-  # }
+  #
+  #### the fifth rule: the first and the last year must have at least 50% of average data
+  year1 <- min((setdiff(a_YY$TIMESTAMP, unique(tmp))))
+  if (f.data.measured$f[a_YY$TIMESTAMP==year1] < meanf * 0.5) {
+    tmp <- c(tmp, year1)
+  }
+  year1 <- max((setdiff(a_YY$TIMESTAMP, unique(tmp))))
+  if (f.data.measured$f[a_YY$TIMESTAMP==year1] < meanf * 0.5) {
+    tmp <- c(tmp, year1)
+  }
+  #
+  #### the six rule: there should be enough monthly variations
+  monthly_NEE_day <- a_HH %>% mutate(YEAR=year(TIMESTAMP), MONTH=month(TIMESTAMP)) %>%
+    group_by(YEAR, MONTH) %>% summarise(NEE=mean(NEE_VUT_REF, na.rm=T))
+  # remove incomplete years
+  monthly_NEE_day <- monthly_NEE_day %>% group_by(YEAR) %>% summarise(n=n()) %>% merge(monthly_NEE_day, by="YEAR") %>% filter(n==12) %>% select(-n)
+  #
+  monthly_NEE_day_pattern <- monthly_NEE_day %>% filter(!YEAR %in% unique(tmp)) %>% group_by(MONTH) %>%
+    summarise(Q2=quantile(NEE, 0.5, na.rm=T), Q1=quantile(NEE, 0.25, na.rm=T), Q3=quantile(NEE, 0.75, na.rm=T)) %>%
+    mutate(lowlimit=Q1 - 2.0 * (Q3 - Q1), uplimit=Q3 + 2.0 * (Q3 - Q1))
+  #
+  monthly_NEE_var <- monthly_NEE_day %>% group_by(YEAR) %>% summarise(sd=sd(NEE, na.rm=T)) %>% 
+    filter(sd < (sd(monthly_NEE_day_pattern$Q1)+sd(monthly_NEE_day_pattern$Q3))/10)
+  if (nrow(monthly_NEE_var) > 0) {
+    tmp <- c(tmp, monthly_NEE_var$YEAR)
+    print(paste0('remove no monthly variation: ', site_ID, monthly_NEE_var$YEAR))
+  }
+  #
+  #### the seventh rule: monthly average NEE should be within a bound
+  monthly_NEE_range <- monthly_NEE_day %>% left_join(monthly_NEE_day_pattern[,c(1,5:6)], by="MONTH") %>% filter(NEE > uplimit | NEE < lowlimit) %>% group_by(YEAR) %>% summarise(n=n()) %>% filter(n>=3)
+  #### a year has >= 1 month outliers and an outlier year
+  year1 <- intersect(monthly_NEE_range$YEAR, a_YY$TIMESTAMP[which(outlier)])
+  if (length(year1) > 0) {
+    tmp <- c(tmp, year1)
+    print(paste0('remove monthly outliters: ', site_ID, year1))
+  }
+  #
+  #### the eighth rule: monthly average NEE should be similar to average seasonal patterns ####
+  #### only applies sites with seasonal pattern, not in tropical and subtropical
+  if (!site_ID %in% c("BR-Sa1", "US-LL3", "US-LL1", "US-LL2", "GF-Guy")) {
+    monthly_NEE_var <- monthly_NEE_day %>% group_by(YEAR) %>% summarise(cor=cor(NEE, monthly_NEE_day_pattern$Q2)) 
+    Q1 <- as.numeric(quantile(monthly_NEE_var$cor, 0.25, na.rm=T))
+    Q3 <- as.numeric(quantile(monthly_NEE_var$cor, 0.75, na.rm=T))
+    monthly_NEE_var_extreme <- monthly_NEE_var %>% filter(!between(cor, Q1 - 3*(Q3-Q1), Q3 + 3*(Q3-Q1)) & cor < 0.5 | is.na(cor))
+    if (nrow(monthly_NEE_var_extreme) > 0) {
+      tmp <- c(tmp, monthly_NEE_var_extreme$YEAR)
+      print(paste0('remove monthly extreme low correlation: ', site_ID, monthly_NEE_var_extreme$YEAR))
+    }
+    #
+    monthly_NEE_var_extreme <- monthly_NEE_var %>% left_join(f.data.measured, by='YEAR') %>% 
+      filter(!between(cor, Q1 - 1.5*(Q3-Q1), Q3 + 1.5*(Q3-Q1)) & f < meanf & cor < 0.45)
+    if (nrow(monthly_NEE_var_extreme) > 0) {
+      tmp <- c(tmp, monthly_NEE_var_extreme$YEAR)
+      print(paste0('remove monthly low correlation and less data: ', site_ID, monthly_NEE_var_extreme$YEAR))
+    }
+  }
+  #
   #
   #########process the removed years, and put them into dataframe
   tmp <- unique(tmp)
@@ -244,7 +288,7 @@ for (i in 1:nrow(sites_long)) {
   plot(a_YY_good$TIMESTAMP, a_YY_good$NEE_VUT_REF, main=site_ID)
   #
   # also check partitioned GPP data
-  if (!site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-NC4", "CA-Man", "US-LL1", "US-LL2", "US-PFa", "US-Uaf")) {
+  if (!site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-Kon", "US-MOz", "CH-Lae", "US-NC4", "CA-Man", "US-LL1", "US-LL2", "US-PFa", "US-Uaf")) {
     plot(a_YY_good$TIMESTAMP, a_YY_good$GPP_DT_VUT_REF, main=site_ID)
   } else {
     plot(a_YY_good$TIMESTAMP, a_YY_good$GPP_NT_VUT_REF, main=site_ID)
@@ -255,9 +299,8 @@ for (i in 1:nrow(sites_long)) {
   }
 }
 ##
-##
 sites_long <- sites_long %>% filter(!site_ID %in% rm_sites)
-write.csv(rm_years, file = '../data/years_to_remove_NEE.csv', row.names = F)
+write.csv(rm_years, file = '../data/years_to_remove.csv', row.names = F)
 ##
 
 ```

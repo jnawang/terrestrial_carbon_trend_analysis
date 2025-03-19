@@ -73,4 +73,10 @@ client.retrieve(dataset, request).download(target=output_file)
 
 ##########################################################################################################
 
+###R code to generate year series and coordinates for ERA5 API. 
+# cat(paste0('"', 1998:2024, '"', collapse = ", "))
+# 
+# coor <- round(c(45.8059,	-90.0799), 2)
+# 
+# paste(as.character(round(c(coor[1] + 0.006, coor[2]-0.006, coor[1] - 0.006, coor[2]+0.006), 2)), collapse = ", ")
 

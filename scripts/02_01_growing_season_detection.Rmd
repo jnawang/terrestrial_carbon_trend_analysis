@@ -92,9 +92,8 @@ print(l_pheno$doy$Gu)
 
 ```{r use GPP to calculate start and end of growing season}
 ####it turns out I cannot use NEE for this software. 
-#
+## This will take 10-20 mins to finish running. 
 # a function to merge multiple growing seasons within one year
-merge_gs_threshold <- 60    # two months
 merge_pheno <- function(df=data.frame()) {
   df$year <- year(df$origin)
   # merge multiple growing seasons within one year
@@ -183,7 +182,7 @@ for (i in 1:nrow(sites_long)) {
   #
   # using nighttime GPP for the following sites
   # have at least 5-year data and not in the bad daytime partitioned sites and GPP should be positive
-  if (sum(!is.na(a_DD$GPP_DT_VUT_REF)) >= 5*365 & !site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-NC4")) {
+  if (sum(!is.na(a_DD$GPP_DT_VUT_REF)) >= 5*365 & !site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae")) {
     a_DD$GPP <- pmax(a_DD$GPP_DT_VUT_REF, 0.0)
   } else {
     a_DD$GPP <- pmax(a_DD$GPP_NT_VUT_REF, 0.0)
@@ -302,9 +301,10 @@ write.csv(data_grow_season, '../data/growing_season_yearly.csv', row.names = F)
 
 ```
 
-
 ```{r look at the trends of growing season}
 ####
+data_grow_season <- read.csv('../data/growing_season_yearly.csv')
+#
 gw_trend <- data.frame()
 for (i in 1:length(unique(data_grow_season$site_ID))) {
   site_ID0 <- unique(data_grow_season$site_ID)[i]
@@ -324,19 +324,22 @@ for (i in 1:length(unique(data_grow_season$site_ID))) {
 gw_trend %>% left_join(sites_long, by="site_ID") %>% filter(category=='cold') %>%
   pivot_longer(cols=2:7, names_to = "gs_metric", values_to = "trend") %>%
   ggplot(aes(x=gs_metric, y=trend)) +
-  geom_boxplot()
+  geom_boxplot() +
+  labs(title='Cold climate')
 
 #
 gw_trend %>% left_join(sites_long, by="site_ID") %>% filter(category=='dry') %>%
   pivot_longer(cols=2:7, names_to = "gs_metric", values_to = "trend") %>%
   ggplot(aes(x=gs_metric, y=trend)) +
-  geom_boxplot()
+  geom_boxplot() +
+  labs(title='Dry climate')
 
 #
 gw_trend %>% left_join(sites_long, by="site_ID") %>% filter(category=='wet') %>%
   pivot_longer(cols=2:7, names_to = "gs_metric", values_to = "trend") %>%
   ggplot(aes(x=gs_metric, y=trend)) +
-  geom_boxplot()
+  geom_boxplot() +
+  labs(title='wet climate')
 
 
 gw_trend %>% left_join(sites_long, by="site_ID") %>% filter(category=='cold') %>%
@@ -345,47 +348,17 @@ gw_trend %>% left_join(sites_long, by="site_ID") %>% filter(category=='cold') %>
   geom_smooth(method='lm') +
   stat_cor(method = "pearson")
 
+## How are they different between ENF and DBF ?
+sites_20 <- data_grow_season %>% group_by(site_ID) %>% summarise(data_duration=max(year, na.rm=T)-min(year, na.rm=T)+1) %>% filter(data_duration > 19)
+
+## What if we only look at sites longer than 15 years
+gw_trend %>% filter(site_ID %in% sites_20$site_ID) %>% left_join(sites_long, by="site_ID") %>% filter(category=='cold') %>%
+  pivot_longer(cols=2:7, names_to = "gs_metric", values_to = "trend") %>%
+  ggplot(aes(x=gs_metric, y=trend)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter() +
+  labs(title='Growing season trends of > 20-year sites')
+
+# Drylands are unique; category!='dry'  
 
 ```
-
-
-
-
-
-```{r try to use daytime NEE}
-
-# a simple function to generate years and coordinates
-cat(paste0('"', 1998:2024, '"', collapse = ", "))
-
-coor <- round(c(45.8059,	-90.0799), 2)
-
-paste(as.character(round(c(coor[1] + 0.006, coor[2]-0.006, coor[1] - 0.006, coor[2]+0.006), 2)), collapse = ", ")
-```
-
-
-```{r try to use daytime NEE}
-#### read nc files
-library(ncdf4)
-#
-nc_file <- nc_open("/Users/jw2946/Downloads/e85972292775e955f9a612c42e47685.nc")
-#
-print(names(nc_file$var))
-#
-nc_file$name
-#
-prec <- ncvar_get(nc_file, "tp")  # precipitation unit m
-#
-time <- ncvar_get(nc_file, "valid_time")
-#
-lat <- ncvar_get(nc_file, "latitude")
-lon <- ncvar_get(nc_file, "longitude")
-#
-time_origin <- ncatt_get(nc_file, "valid_time", "units")$value
-#
-time_converted <- as.POSIXct(time, origin = gsub("seconds since ", "", time_origin), tz = "UTC")
-# I need to change time zone
-
-
-```
-
-

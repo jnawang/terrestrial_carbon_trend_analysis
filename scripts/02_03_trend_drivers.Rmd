@@ -3,10 +3,13 @@ title: "trend drivers"
 output: pdf_document
 date: "2025-03-12"
 author: "Junna Wang"
+editor_options: 
+  chunk_output_type: inline
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
 ```
 
 
@@ -17,23 +20,63 @@ rm(list=ls())
 dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 #
 library(librarian)
-shelf(tidyverse, ggpubr)
+shelf(tidyverse, ggpubr, MuMIn, car, fBasics, olsrr, lme4, Hmisc, corrplot)
 #
 ```
 
 
 ```{r doy of southern hemisphere}
-#
+# this function calculates day of year for the southern hemisphere using July 1st as doy = 1
 southern_hemisphere_doy <- function(dates) {
-  year_start <- ymd(paste(year(dates), "07-01", sep = "-"))  # July 1 of the same year
+  year_start <-
+    ymd(paste(year(dates), "07-01", sep = "-"))  # July 1 of the same year
   doy <- as.numeric(dates - year_start + 1)  # Compute DOY
   
   # Adjust for dates before July 1 (shift to previous year's DOY count)
-  doy[doy < 1] <- doy[doy < 1] + 365 + leap_year(year(dates[doy < 1]) - 1)
+  doy[doy < 1] <-
+    doy[doy < 1] + 365 + leap_year(year(dates[doy < 1]) - 1)
   
   return(doy)
 }
 #
+```
+
+
+```{r identify outlier years}
+# This function calculates outlier years based on percentiles. 
+OutlierYearsTA <- function(years, values) {
+  # rule 1: no occasional outliers
+  Q1 <- quantile(values, 0.25, na.rm=T)
+  Q3 <- quantile(values, 0.75, na.rm=T)
+  # IQR should be at least 2 C
+  IQR <- max(Q3 - Q1, 1.8)
+  outlier <- !between(values, Q1 - 1.5 * IQR, Q3 + 1.5 * IQR)
+  if (length(outlier) > 0) {
+    OutlierYearsTA <- years[outlier]    
+  }
+  # rule 2: no jumping outliers
+  Q2  <- quantile(values, 0.5, na.rm=T)
+  IQR <- max((Q2 - Q1) * 2, 1.8)
+  outlier <- !between(values, Q1 - 1.5 * IQR, Q2 + Q2 - Q1 + 1.5 * IQR)
+  if (length(outlier) > 0) {
+    OutlierYearsTA <- unique(c(OutlierYearsTA, years[outlier]))
+  }
+  return(OutlierYearsTA[!is.na(OutlierYearsTA)])
+}
+#
+# the function to get LE outlier
+OutlierYearsLE <- function(years, values) {
+  # rule 1: no occasional outliers
+  Q1 <- quantile(values, 0.25, na.rm=T)
+  Q3 <- quantile(values, 0.75, na.rm=T)
+  IQR <- Q3 - Q1
+  outlier <- !between(values, Q1 - 2.5 * IQR, Q3 + 2.5 * IQR)
+  if (length(outlier) > 0) {
+    OutlierYearsLE <- years[outlier]    
+  }
+  return(OutlierYearsLE[!is.na(OutlierYearsLE)])
+}
+
 ```
 
 
@@ -46,6 +89,9 @@ data_grow_season <- read.csv('data/growing_season_yearly.csv')
 sites_long <- read.csv('data/long_term_ec_sites.csv')
 #
 rm_years   <- read.csv('data/years_to_remove.csv')
+#
+# plant height information
+canopyHeight <- read.csv('data/CanopyHeight_Lang.csv')
 #
 # add data source to sub_time_series
 if (!"source" %in% colnames(sub_time_series)) {
@@ -62,7 +108,8 @@ sub_time_series <- sub_time_series %>% mutate(TA_t=NA, TA_p=NA, TA_gs_t=NA, TA_g
                    MAT=NA, MAP=NA, Height=NA, Age=NA)
 #
 # get the average start and end growing season for each site
-grow_season_site <- data_grow_season %>% group_by(site_ID) %>% 
+grow_season_site <- data_grow_season %>%
+  group_by(site_ID) %>% 
   summarise(sos=floor((mean(sos_DER) + mean(sos_TRS)) / 2), 
             eos=ceiling((mean(eos_DER) + mean(eos_TRS)) / 2))
 ########################Important information here########################
@@ -75,8 +122,17 @@ files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unz
 files.unzip.Europ2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
 files.unzip.Europ2023 <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET", "unzip_connect2020"), full.names = T)
 files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
-#
+
+# total number of site-years removed
+TA_site_years_removed <- 0
+
+# set na options for linear regression
+options(na.action = na.omit)
+
 ## calculate trends of environmental drivers
+# some sites have bad CO2 data
+# iSites <- c(1, 5, 25, 29, 32, 38, 39, 47, 48, 71, 76, 83)
+# for (i in iSites) {
 for (i in 1:nrow(sub_time_series)) {
   print(i)
   site_ID <- sub_time_series$site_ID[i]
@@ -93,7 +149,7 @@ for (i in 1:nrow(sub_time_series)) {
     a_DD <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_DD"), files.unzip.Europ2023)])
   } else if (sub_time_series$source[i] == "AmeriFlux_BASE") {
     a_YY <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_YY"), files.Ameri.ReddyProcGapFill)])
-    a_DD <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_DD"), files.Ameri.ReddyProcGapFill)])    
+    a_DD <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_DD"), files.Ameri.ReddyProcGapFill)])
   }
   a_YY[a_YY==-9999] <- NA
   a_DD[a_DD==-9999] <- NA
@@ -107,20 +163,101 @@ for (i in 1:nrow(sub_time_series)) {
     a_DD$doy <- southern_hemisphere_doy(a_DD$TIMESTAMP)
   }
   #
+  # remove bad years and select the correct years
+  a_DD <- a_DD %>% filter(!year %in% rm_years$years[rm_years$site_ID==site_ID]) %>% 
+    filter(year >= sub_time_series$year_start[i] & year <= sub_time_series$year_end[i])
+  # print(plot(a_DD$CO2_F_MDS, main=site_ID))
+  #
   # deal with missing variables
   if (sum(!is.na(a_YY$VPD_F_MDS)) < 5)  {
     a_YY$VPD_F_MDS <- a_YY$VPD_F
+    a_DD$VPD_F_MDS <- a_DD$VPD_F
   }
   if (sum(!is.na(a_YY$SW_IN_F_MDS)) < 5)  {
     a_YY$SW_IN_F_MDS <- a_YY$SW_IN_F
+    a_DD$SW_IN_F_MDS <- a_DD$SW_IN_F
   }
-  # US-SP3 missing CO2_F_MDS, using global average values, only one site misses this data. 
+  # US-SP3 missing CO2_F_MDS, using global average values, only a few sites miss this data. 
   if (! 'CO2_F_MDS' %in% names(a_YY) ) {
     a_YY$CO2_F_MDS <- 2.25 * a_YY$TIMESTAMP - 4132.00 
   } else if ( sum(!is.na(a_YY$CO2_F_MDS)) < 5 ) {
     a_YY$CO2_F_MDS[is.na(a_YY$CO2_F_MDS)] <- 2.25 * a_YY$TIMESTAMP[is.na(a_YY$CO2_F_MDS)] - 4132.00 
   }
+  
+  #####This is a big section to remove outliers in environmental conditions#####
+  # replace TA and VPD outliers with ERA5 data
+  outlier_years_TA <- OutlierYearsTA(a_YY$TIMESTAMP, a_YY$TA_F_MDS)
+  if (length(outlier_years_TA) > 0) {
+    TA_site_years_removed <- TA_site_years_removed + length(outlier_years_TA)
+    print(paste0('Site ', site_ID, ' has TA outliers in years ', outlier_years_TA))
+    #
+    if (!"TA_ERA" %in% names(a_DD)) {
+        a_DD$TA_F_MDS[a_DD$year %in% outlier_years_TA] <- NA
+        a_DD$VPD_F_MDS[a_DD$year %in% outlier_years_TA] <- NA
+        a_DD$SW_IN_F_MDS[a_DD$year %in% outlier_years_TA] <- NA
+        a_YY$TA_F_MDS[a_YY$TIMESTAMP %in% outlier_years_TA] <- NA
+        a_YY$VPD_F_MDS[a_YY$TIMESTAMP %in% outlier_years_TA] <- NA
+        a_YY$SW_IN_F_MDS[a_YY$TIMESTAMP %in% outlier_years_TA] <- NA
+        print('no_ERA5')
+    } else {
+      if (length(outlier_years_TA) <= 2) {
+        # replace with ERA5 data
+        a_DD$TA_F_MDS[a_DD$year %in% outlier_years_TA] <- a_DD$TA_ERA[a_DD$year %in% outlier_years_TA]
+        a_DD$VPD_F_MDS[a_DD$year %in% outlier_years_TA] <- a_DD$VPD_ERA[a_DD$year %in% outlier_years_TA]
+        a_DD$SW_IN_F_MDS[a_DD$year %in% outlier_years_TA] <- a_DD$SW_IN_F_MDS[a_DD$year %in% outlier_years_TA]
+        a_YY$TA_F_MDS[a_YY$TIMESTAMP %in% outlier_years_TA] <- a_YY$TA_ERA[a_YY$TIMESTAMP %in% outlier_years_TA]
+        a_YY$VPD_F_MDS[a_YY$TIMESTAMP %in% outlier_years_TA] <- a_YY$VPD_ERA[a_YY$TIMESTAMP %in% outlier_years_TA]
+        a_YY$SW_IN_F_MDS[a_YY$TIMESTAMP %in% outlier_years_TA] <- a_YY$SW_IN_F_MDS[a_YY$TIMESTAMP %in% outlier_years_TA]
+      } else if (length(outlier_years_TA) > 2) {
+        # directly use ERA5 data
+        a_DD$TA_F_MDS <- a_DD$TA_ERA
+        a_DD$VPD_F_MDS <- a_DD$VPD_ERA
+        a_DD$SW_IN_F_MDS <- a_DD$SW_IN_ERA
+        a_YY$TA_F_MDS <- a_YY$TA_ERA
+        a_YY$VPD_F_MDS <- a_YY$VPD_ERA
+        a_YY$SW_IN_F_MDS <- a_YY$SW_IN_ERA
+      }
+    }    
+  }
+
+  # remove extreme LE outliers using the simplest method
+  outlier_years_LE <- OutlierYearsLE(a_YY$TIMESTAMP, a_YY$LE_F_MDS)
+  
+  # remove years with bad data quality based QC flag
+  if ('LE_F_MDS_QC' %in% names(a_YY)) {
+    lackdata_years <- a_YY$TIMESTAMP[a_YY$LE_F_MDS_QC < 0.5 & !is.na(a_YY$LE_F_MDS_QC)]
+    if (length(lackdata_years) > 0) {
+      outlier_years_LE <- unique(c(outlier_years_LE, lackdata_years))
+    }
+  }
+  
+  # set NA to these years' LE
+  if (length(outlier_years_LE) > 0) {
+    a_DD$LE_F_MDS[a_DD$year %in% outlier_years_LE] <- NA
+    a_YY$LE_F_MDS[a_YY$TIMESTAMP %in% outlier_years_LE] <- NA
+    print(paste0('Site ', site_ID, ' has LE outliers in years ', outlier_years_LE))
+  }
   #
+  # #############start plot figures for data quality check##########
+  # plot(a_DD$TIMESTAMP, a_DD$TA_F_MDS, main=site_ID)
+  # plot(a_YY$TIMESTAMP, a_YY$TA_F_MDS, main=site_ID)
+  # #
+  # plot(a_DD$TIMESTAMP, a_DD$VPD_F_MDS, main=site_ID)
+  # plot(a_YY$TIMESTAMP, a_YY$VPD_F_MDS, main=site_ID)  
+  # #
+  # plot(a_DD$TIMESTAMP, a_DD$SW_IN_F_MDS, main=site_ID)
+  # plot(a_YY$TIMESTAMP, a_YY$SW_IN_F_MDS, main=site_ID)
+  # #
+  # plot(a_DD$TIMESTAMP, a_DD$LE_F_MDS, main=site_ID)
+  # plot(a_YY$TIMESTAMP, a_YY$LE_F_MDS, main=site_ID)
+  # #
+  # plot(a_DD$TIMESTAMP, a_DD$P_ERA, main=site_ID)
+  # plot(a_YY$TIMESTAMP, a_YY$P_ERA, main=site_ID)
+  # #
+  # plot(a_DD$TIMESTAMP, a_DD$CO2_F_MDS, main=site_ID)
+  # plot(a_YY$TIMESTAMP, a_YY$CO2_F_MDS, main=site_ID)
+  # #############end plot figures for data quality check##########
+  
   ## we differentiate TA, P, VPD, SW_IN, LE for growing and non-growing seasons
   a_YY$year_center <- as.numeric(scale(a_YY$TIMESTAMP, scale=FALSE))
   if (site_ID %in% c('BR-Sa1', 'US-Esm', "US-Elm", 'US-LL1', 'US-LL2', 'US-LL3', 'US-SP3', 'GF-Guy')) {
@@ -131,13 +268,13 @@ for (i in 1:nrow(sub_time_series)) {
     sos <- grow_season_site$sos[grow_season_site$site_ID == site_ID]
     eos <- grow_season_site$eos[grow_season_site$site_ID == site_ID]
     a_YY_gw <- a_DD %>% filter(doy >= sos & doy <= eos) %>% group_by(year) %>% 
-                        summarise(TA_F_MDS=mean(TA_F_MDS, na.rm=T), P_ERA=sum(P_ERA, na.rm=T), 
-                                  VPD_F_MDS=mean(VPD_F_MDS, na.rm=T), SW_IN_F_MDS=mean(SW_IN_F_MDS, na.rm=T), 
-                                  LE_F_MDS=mean(LE_F_MDS, na.rm=T))
+          summarise(TA_F_MDS=mean(TA_F_MDS, na.rm=T), P_ERA=sum(P_ERA, na.rm=T), 
+                    VPD_F_MDS=mean(VPD_F_MDS, na.rm=T), SW_IN_F_MDS=mean(SW_IN_F_MDS, na.rm=T), 
+                    LE_F_MDS=mean(LE_F_MDS, na.rm=T))
     a_YY_ngw <- a_DD %>% filter(doy < sos | doy > eos) %>% group_by(year) %>% 
-                        summarise(TA_F_MDS=mean(TA_F_MDS, na.rm=T), P_ERA=sum(P_ERA, na.rm=T), 
-                                  VPD_F_MDS=mean(VPD_F_MDS, na.rm=T), SW_IN_F_MDS=mean(SW_IN_F_MDS, na.rm=T), 
-                                  LE_F_MDS=mean(LE_F_MDS, na.rm=T))
+          summarise(TA_F_MDS=mean(TA_F_MDS, na.rm=T), P_ERA=sum(P_ERA, na.rm=T), 
+                    VPD_F_MDS=mean(VPD_F_MDS, na.rm=T), SW_IN_F_MDS=mean(SW_IN_F_MDS, na.rm=T), 
+                    LE_F_MDS=mean(LE_F_MDS, na.rm=T))
     #
     a_YY_gw$year_center  <- as.numeric(scale(a_YY_gw$year, scale=FALSE))
     a_YY_ngw$year_center <- as.numeric(scale(a_YY_ngw$year, scale=FALSE))
@@ -170,11 +307,17 @@ for (i in 1:nrow(sub_time_series)) {
     sub_time_series[i,44:45] <- 0
     sub_time_series[i,46:47] <- 0
   } else {
-    subdata_grow_season <- data_grow_season %>% filter(site_ID==site_ID) %>% filter(year >= sub_time_series$year_start[i] & year <= sub_time_series$year_end[i])
+    subdata_grow_season <- data_grow_season[data_grow_season$site_ID==site_ID, ] %>% filter(year >= sub_time_series$year_start[i] & year <= sub_time_series$year_end[i])
     if (nrow(subdata_grow_season) >= 5) {
       sub_time_series[i,44:45] <- summary(lm(data=subdata_grow_season, scale(length_gs) ~ scale(year, scale=FALSE)))$coefficients[2, c(1,4)]
       sub_time_series[i,46:47] <- summary(lm(data=subdata_grow_season, scale(length_gs_piece) ~ scale(year, scale=FALSE)))$coefficients[2, c(1,4)]
     }
+    
+    # ###########################start plot figures for data quality check##################
+    # plot(subdata_grow_season$year, subdata_grow_season$length_gs, main=site_ID)
+    # plot(subdata_grow_season$year, subdata_grow_season$length_gs_piece, main=site_ID)
+    # ###########################end plot figures for data quality check####################
+    
   }
   # Baseline conditions: MAT, MAP; use our values if we have >10 year data
   if (is.na(sites_long$MAT[sites_long$site_ID==site_ID])) {
@@ -184,8 +327,207 @@ for (i in 1:nrow(sub_time_series)) {
     sub_time_series[i,48] <- sites_long$MAT[sites_long$site_ID==site_ID]
     sub_time_series[i,49] <- sites_long$MAP[sites_long$site_ID==site_ID]
   }
-  #
+  # plant height
+  sub_time_series[i,50] <- canopyHeight$canopyH_Lang[canopyHeight$site_ID==site_ID]
 }
+#
+print(paste0('total number of site years with TA outliers is removed: ', TA_site_years_removed))
+
+# remove poor-quality CO2 data
+sub_time_series$CO2_t[sub_time_series$CO2_t < 0.05] <- NA
+
+```
+
+
+```{r drivers of trend in cold climate, echo=TRUE, fig.height=8, fig.width=8}
+#
+data <- sub_time_series %>% left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>% 
+  filter(category=='cold') %>% mutate(Latabs = abs(Lat)) %>%
+        dplyr::select(c("NEEtrend_lm", "GPPtrend_lm", "ERtrend_lm", 
+                            "TA_t", "P_t", "VPD_t", "SW_t", "LE_t", 
+                            "TA_gs_t", "P_gs_t", "VPD_gs_t", "SW_gs_t", "LE_gs_t", 
+                            "TA_ngs_t", "P_ngs_t", "VPD_ngs_t", "SW_ngs_t", "LE_ngs_t", 
+                            "Lgs_t", "Lgs_piece_t", "MAT", "MAP", "Height", "Latabs"))
+# "CO2_t", 
+
+rcorr_results <- rcorr(as.matrix(data))
+cor_matrix <- rcorr_results$r
+p_matrix <- rcorr_results$P
+
+# Print correlation matrix
+print(cor_matrix)
+
+# Print p-value matrix
+print(p_matrix)
+
+#
+data_use <- na.omit(data)
+#
+M=cor(data_use)
+testRes = cor.mtest(data_use, conf.level = 0.95)
+#
+plot <- corrplot(M, p.mat = testRes$p, method = 'circle', insig='blank',
+         diag = FALSE)
+plot
+
+# NEE trends in wet climate are very easy to predict: precipitation, VPD, solar radiation, TA, short radiations.
+# What's wrong with the cold climate data? P and SW during the non-growing season matter?
+options(na.action = na.fail)
+#
+data_use <- subset(data_use, select=-c(GPPtrend_lm, ERtrend_lm))
+#
+model <- lm(NEEtrend_lm ~ ., data = data_use)
+summary(model)
+#
+vif_values <- vif(model)
+vif_values
+
+# these pairs cannot coexist
+sexpr <- expression(!( (Lgs_t && Lgs_piece_t) ||
+                         (TA_t && TA_ngs_t) || (TA_t && TA_gs_t) ||
+                         (P_t && P_ngs_t) || (P_t && P_gs_t) ||
+                         (VPD_t && VPD_ngs_t) || (VPD_t && VPD_gs_t) ||
+                         (SW_t && SW_ngs_t) || (SW_t && SW_gs_t) ||
+                         (LE_t && LE_ngs_t) || (LE_t && LE_gs_t)))
+
+system.time(dd <- dredge(model, subset = sexpr, rank = "AICc"))    # , cluster = cl
+dd
+
+#
+model_best <- lm(NEEtrend_lm ~ P_ngs_t + SW_ngs_t + VPD_ngs_t, data = data_use)
+summary(model_best)
+# this is the worse model
+
+```
+
+```{r trend driver for dry climate }
+# identify trend drivers for dry climate
+data <- sub_time_series %>% left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>% 
+  filter(category=='dry') %>% mutate(Latabs = abs(Lat)) %>%
+        dplyr::select(c("NEEtrend_lm", "GPPtrend_lm", "ERtrend_lm", 
+                            "TA_t", "P_t", "VPD_t", "SW_t", "LE_t", 
+                            "TA_gs_t", "P_gs_t", "VPD_gs_t", "SW_gs_t", "LE_gs_t", 
+                            "TA_ngs_t", "P_ngs_t", "VPD_ngs_t", "SW_ngs_t", "LE_ngs_t", 
+                            "Lgs_t", "Lgs_piece_t", "MAT", "MAP", "Height", "Latabs"))
+
+rcorr_results <- rcorr(as.matrix(data))
+cor_matrix <- rcorr_results$r
+p_matrix <- rcorr_results$P
+
+# Print correlation matrix
+print(cor_matrix)
+
+# Print p-value matrix
+print(p_matrix)
+
+#
+data_use <- na.omit(data)
+#
+M=cor(data_use)
+testRes = cor.mtest(data_use, conf.level = 0.95)
+#
+plot <- corrplot(M, p.mat = testRes$p, method = 'circle', insig='blank',
+         diag = FALSE)
+plot
+#
+options(na.action = na.fail)
+#
+# TA variables, MAT, MAP, Height are NOT important, can only have 18 variables in. 
+data_use <- subset(data_use, select=-c(GPPtrend_lm, ERtrend_lm, Latabs, TA_t, TA_gs_t, TA_ngs_t))
+#
+model <- lm(NEEtrend_lm ~ ., data = data_use)
+summary(model)
+#
+vif_values <- vif(model)
+vif_values
+ 
+# adding coexistence rules
+sexpr <- expression(!(   (Lgs_t && Lgs_piece_t) || 
+#                         (TA_t && TA_ngs_t) || (TA_t && TA_gs_t) ||
+                         (P_t && P_ngs_t) || (P_t && P_gs_t) ||
+                         (VPD_t && VPD_ngs_t) || (VPD_t && VPD_gs_t) ||
+                         (SW_t && SW_ngs_t) || (SW_t && SW_gs_t) ||
+                         (LE_t && LE_ngs_t) || (LE_t && LE_gs_t) ))
+#                         (TA_t && VPD_t) || (TA_gs_t && VPD_gs_t) ||  (TA_ngs_t && VPD_ngs_t)
+# these pairs cannot coexist 
+system.time(dd <- dredge(model, subset = sexpr, rank = "AICc"))    # , cluster = cl
+dd
+
+#
+model_best <- lm(NEEtrend_lm ~ LE_ngs_t + P_gs_t + P_ngs_t + SW_ngs_t + VPD_t, data = data_use)
+summary(model_best)
+
+```
+
+```{r trend driver for wet climate }
+# identify trend drivers for dry climate
+data <- sub_time_series %>% left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>% 
+  filter(category=='wet') %>% mutate(Latabs = abs(Lat)) %>%
+        dplyr::select(c("NEEtrend_lm", "GPPtrend_lm", "ERtrend_lm", 
+                            "TA_t", "P_t", "VPD_t", "SW_t", "LE_t", 
+                            "TA_gs_t", "P_gs_t", "VPD_gs_t", "SW_gs_t", "LE_gs_t", 
+                            "TA_ngs_t", "P_ngs_t", "VPD_ngs_t", "SW_ngs_t", "LE_ngs_t", 
+                            "Lgs_t", "Lgs_piece_t", "MAT", "MAP", "Height"))  # , "Latabs" because not enough meaning.
+
+rcorr_results <- rcorr(as.matrix(data))
+cor_matrix <- rcorr_results$r
+p_matrix <- rcorr_results$P
+
+# Print correlation matrix
+print(cor_matrix)
+
+# Print p-value matrix
+print(p_matrix)
+
+#
+data_use <- na.omit(data)
+#
+M=cor(data_use)
+testRes = cor.mtest(data_use, conf.level = 0.95)
+#
+plot <- corrplot(M, p.mat = testRes$p, method = 'circle', insig='blank',
+         diag = FALSE)
+plot
+#
+options(na.action = na.fail)
+#
+# TA variables, MAT, MAP, Height are NOT important, can only have 18 variables in. 
+data_use <- subset(data_use, select=-c(GPPtrend_lm, ERtrend_lm))
+#
+model <- lm(NEEtrend_lm ~ ., data = data_use)
+summary(model)
+#
+vif_values <- vif(model)
+vif_values
+ 
+# adding coexistence rules
+sexpr <- expression(!(   (Lgs_t && Lgs_piece_t) || 
+                         (TA_t && TA_ngs_t) || (TA_t && TA_gs_t) ||
+                         (P_t && P_ngs_t) || (P_t && P_gs_t) ||
+                         (VPD_t && VPD_ngs_t) || (VPD_t && VPD_gs_t) ||
+                         (SW_t && SW_ngs_t) || (SW_t && SW_gs_t) ||
+                         (LE_t && LE_ngs_t) || (LE_t && LE_gs_t) ))
+# these pairs cannot coexist 
+
+# this will take ~5min
+system.time(dd <- dredge(model, subset = sexpr, rank = "AICc"))    # , cluster = cl
+dd
+
+
+model_best <- lm(NEEtrend_lm ~ LE_gs_t + P_gs_t + MAP, data = data_use)
+summary(model_best)
+
+```
+
+
+
+
+
+
+```{r also use linear mixed model }
+###with varying slopes and intercepts for each site
+###
+
 
 
 
@@ -194,11 +536,11 @@ for (i in 1:nrow(sub_time_series)) {
 ```
 
 
+```{r how about differentiate vegetation types}
 
-```{r baseline conditions}
+
+
+
 
 ```
-
-
-
 

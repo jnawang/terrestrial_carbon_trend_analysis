@@ -24,7 +24,7 @@ library(librarian)
 shelf(tidyverse)
 # citation can be find here: https://meta.icos-cp.eu/collections/5J8Kx5LlmEb1EjPJL7dKZBAL
 # 
-ICOS_interim_metadata <- read.csv('../data/Carbon Portal Search Result.csv')
+ICOS_interim_metadata <- read.csv('data/Carbon Portal Search Result.csv')
 # get site_ID and start and end years
 ICOS_interim_metadata$site_ID <- unlist(lapply(ICOS_interim_metadata$fileName, function(x) substring(x, 9, 14)))
 ICOS_interim_metadata$start_year <- pmax(year(ymd_hms(ICOS_interim_metadata$timeStart) + days(1)), 2021)
@@ -78,7 +78,8 @@ for (site_ID in sites_shared) {
                           DAY=day(ymd_hm(TIMESTAMP_START)), TIMESTAMP=sprintf("%04d%02d%02d", YEAR, MONTH, DAY)) %>% 
                    group_by(TIMESTAMP) %>% summarise(TA_F_MDS=mean(TA_F_MDS), VPD_F_MDS=mean(VPD_F_MDS), 
                                                      SW_IN_F_MDS=mean(SW_IN_F_MDS), LE_F_MDS=mean(LE_F_MDS), 
-                                                     CO2_F_MDS=mean(CO2_F_MDS), P_F=sum(P_F),
+                                                     CO2_F_MDS=mean(CO2_F_MDS), P_ERA=sum(P_ERA),
+                                                     TA_ERA=mean(TA_ERA), VPD_ERA=mean(VPD_ERA), 
                                                      TS_F_MDS_1=mean(TS_F_MDS_1), SWC_F_MDS_1=mean(SWC_F_MDS_1), 
                                                      NEE_VUT_REF=sum(NEE_VUT_REF)*dt*0.0864*12,
                                                      GPP_DT_VUT_REF=sum(GPP_DT_VUT_REF)*dt*0.0864*12,
@@ -89,7 +90,8 @@ for (site_ID in sites_shared) {
   a_YY <- a_HH %>% mutate(TIMESTAMP=year(ymd_hm(TIMESTAMP_START))) %>% group_by(TIMESTAMP) %>% 
                    summarise(TA_F_MDS=mean(TA_F_MDS), VPD_F_MDS=mean(VPD_F_MDS), 
                              SW_IN_F_MDS=mean(SW_IN_F_MDS), LE_F_MDS=mean(LE_F_MDS), 
-                             CO2_F_MDS=mean(CO2_F_MDS), P_F=sum(P_F),
+                             CO2_F_MDS=mean(CO2_F_MDS), P_ERA=sum(P_ERA),
+                             TA_ERA=mean(TA_ERA), VPD_ERA=mean(VPD_ERA), 
                              TS_F_MDS_1=mean(TS_F_MDS_1), SWC_F_MDS_1=mean(SWC_F_MDS_1), 
                              NEE_VUT_REF=sum(NEE_VUT_REF)*dt*0.0864*12,
                              GPP_DT_VUT_REF=sum(GPP_DT_VUT_REF)*dt*0.0864*12, 

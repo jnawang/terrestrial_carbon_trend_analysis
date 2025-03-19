@@ -94,7 +94,7 @@ files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BAS
 sites_long <- read.csv('../data/long_term_ec_sites.csv')
 #
 for (i in 1:nrow(sites_long)) {
-  i = 89
+#  i = 30
   site_ID <- sites_long$site_ID[i]
   print(site_ID)
   # AmeriFlux and European flux; Do I need to differentiate them? Hopefully they use the same notation
@@ -153,14 +153,14 @@ for (i in 1:nrow(sites_long)) {
   plot(ymd_hm(a_HH$TIMESTAMP_START[a_HH$NEE_VUT_REF_QC==0]), a_HH$NEE_CUT_REF[a_HH$NEE_VUT_REF_QC==0], ylab='NEE_obsv')
   #
   #### Seasonal patterns; I think I will have one growing season, each year;
-  data.season <- a_DD %>% group_by(DOY) %>% summarise(NEE=mean(NEE_VUT_REF, na.rm=T), NEE_DT=mean(NEE_VUT_REF_DAY, na.rm=T), NEE_NT=mean(NEE_CUT_REF_NIGHT, na.rm=T),
-                                                      P=mean(P_F, na.rm=T), VPD=mean(VPD_F_MDS, na.rm=T), TA=mean(TA_F_MDS, na.rm=T), # TA=mean(TA_F_MDS, na.rm=T),
-                                                      GPP_NT=mean(GPP_NT_VUT_REF, na.rm=T), RECO_NT=mean(RECO_NT_VUT_REF, na.rm=T),
-                                                      GPP_DT=mean(GPP_DT_VUT_REF, na.rm=T), RECO_DT=mean(RECO_DT_VUT_REF, na.rm=T))
-  par(mfrow = c(2, 5))
-  for (i in 2:11) {
-    plot(data.season$DOY, t(data.season[, i]), main=names(data.season)[i])
-  }
+  # data.season <- a_DD %>% group_by(DOY) %>% summarise(NEE=mean(NEE_VUT_REF, na.rm=T), NEE_DT=mean(NEE_VUT_REF_DAY, na.rm=T), NEE_NT=mean(NEE_CUT_REF_NIGHT, na.rm=T),
+  #                                                     P=mean(P_F, na.rm=T), VPD=mean(VPD_F_MDS, na.rm=T), TA=mean(TA_F_MDS, na.rm=T), # TA=mean(TA_F_MDS, na.rm=T),
+  #                                                     GPP_NT=mean(GPP_NT_VUT_REF, na.rm=T), RECO_NT=mean(RECO_NT_VUT_REF, na.rm=T),
+  #                                                     GPP_DT=mean(GPP_DT_VUT_REF, na.rm=T), RECO_DT=mean(RECO_DT_VUT_REF, na.rm=T))
+  # par(mfrow = c(2, 5))
+  # for (i in 2:11) {
+  #   plot(data.season$DOY, t(data.season[, i]), main=names(data.season)[i])
+  # }
   #
   #### the length of growing season: 20% of 0.975 of GPP.
   quantile(a_DD$GPP_NT_VUT_REF, c(0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.975), na.rm=T)
@@ -180,15 +180,13 @@ for (i in 1:nrow(sites_long)) {
 #
 ```
 
-
 ## Selected qualifed FLUXNET sites
-```{r Ameriflux Fluxnet data quality check, echo=FALSE}
+```{r Ameriflux Fluxnet data quality check-this is not used, echo=FALSE}
 sites.remove <- c('CA-SF2', "CA-TP1", "US-CdM", "US-Cop", "US-CS2", "US-KS2" )
 # "CA-TP1" was removed because of planatation in 2002
 # "US-Cop": too short time series.
 # "US-Ho1" and "US-Ho2" has weird behaviors around 2010. 
 # 
-
 rm_years <- data.frame(Site.ID=character(), years=list())
 
 rm_years <- rbind(rm_years, data.frame(Site.ID="US-BZB", years=c(2022)))
