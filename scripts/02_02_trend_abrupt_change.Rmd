@@ -25,8 +25,8 @@ shelf(tidyverse, Kendall, Rbeast, cowplot, ggpubr, tidyterra, ggpubr, viridis, R
 ```{r look at all annual NEE data }
 ####I need to pay attention to Reynold watershed sites####
 
-sites_long <- read.csv('../data/long_term_ec_sites.csv')
-rm_years   <- read.csv('../data/years_to_remove.csv')
+sites_long <- read.csv('/data/long_term_ec_sites.csv')
+rm_years   <- read.csv('/data/years_to_remove.csv')
 #
 files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), full.names = T)
 files.unzip.Europ2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
@@ -241,16 +241,16 @@ hist(abrupt_change$cpAbruptChange)
 # In this chunk, I want to get: all the sub-time series, start year, end year, and simple linear trend of each sub-time series
 threshold_nyear <- 7
 #
-abrupt_change <- read.csv('../data/abrupt_change_years.csv')
-sites_long    <- read.csv('../data/long_term_ec_sites.csv')
+abrupt_change <- read.csv('data/abrupt_change_years.csv')
+sites_long    <- read.csv('data/long_term_ec_sites.csv')
 # How many sub time series do we have?
-rm_years   <- read.csv('../data/years_to_remove.csv')
+rm_years   <- read.csv('data/years_to_remove.csv')
 #
 # a data frame about sub time series
 sub_time_series <- data.frame(site_ID=character(), year_start=integer(), year_end=integer(), 
-                              NEEtrend_lm=double(), NEEp=double(), 
-                              GPPtrend_lm=double(), GPPp=double(), 
-                              ERtrend_lm=double(), ERp=double())
+                              NEE=double(), NEEtrend_lm=double(), NEEp=double(), 
+                              GPP=double(), GPPtrend_lm=double(), GPPp=double(), 
+                              ER=double(), ERtrend_lm=double(), ERp=double())
 #
 data_NEE_trend <- data.frame(NEE=double(), year=integer(), site_ID=character(), IGBP=character(), subts_ID=integer())
 #
@@ -258,6 +258,9 @@ files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unz
 files.unzip.Europ2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
 files.unzip.Europ2023 <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET", "unzip_connect2020"), full.names = T)
 files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
+#
+# set NA option for linear regression
+options(na.action = na.omit)
 #
 isub_ts <- 1
 for (i in 1:nrow(sites_long)) {
@@ -290,41 +293,48 @@ for (i in 1:nrow(sites_long)) {
     for (iyear_ac in 1:length(years_abrupt_change)) {
       if (years_abrupt_change[iyear_ac] - year_start + 1 >= threshold_nyear - 1) {
         # put it into data frame: sub_time_series
-        sub_time_series[isub_ts, 1] <- site_ID
-        sub_time_series[isub_ts, 2] <- year_start
-        sub_time_series[isub_ts, 3] <- years_abrupt_change[iyear_ac] - 1
-        a_YY_sub <- a_YY_good %>% filter(TIMESTAMP >= sub_time_series[isub_ts, 2] & 
-                                         TIMESTAMP <= sub_time_series[isub_ts, 3]) %>% 
+        sub_time_series[isub_ts, "site_ID"] <- site_ID
+        sub_time_series[isub_ts, "year_start"] <- year_start
+        sub_time_series[isub_ts, "year_end"] <- years_abrupt_change[iyear_ac] - 1
+        a_YY_sub <- a_YY_good %>% filter(TIMESTAMP >= sub_time_series[isub_ts, "year_start"] & 
+                                         TIMESTAMP <= sub_time_series[isub_ts, "year_end"]) %>% 
                                   filter(!is.na(NEE_VUT_REF)) %>% 
                                   mutate(NEE_scale = scale(NEE_VUT_REF), year_center = scale(TIMESTAMP, scale=FALSE))
-        sub_time_series[isub_ts, 4:5] <- summary(lm(data=a_YY_sub, NEE_scale ~ year_center))$coefficients[2, c(1,4)]
+        sub_time_series[isub_ts, "NEE"] <- mean(a_YY_sub$NEE_VUT_REF, na.rm=T)
+        sub_time_series[isub_ts, c("NEEtrend_lm", "NEEp")] <- summary(lm(data=a_YY_sub, NEE_scale ~ year_center))$coefficients[2, c(1,4)]
         #
         # use daytime GPP and ER when it is available, otherwise use other time series
         # remove GPP and ER outliers
         if (sum(!is.na(a_YY_sub$GPP_DT_VUT_REF)) >= 5 & !site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae")) {
           a_YY_sub$GPP_DT_VUT_REF[a_YY_sub$GPP_DT_VUT_REF < 0] <- NA
-          a_YY_sub$RECO_DT_VUT_REF[a_YY_sub$RECO_DT_VUT_REF < 0] <- NA          
-          sub_time_series[isub_ts, 6:7] <- summary(lm(data=a_YY_sub, scale(GPP_DT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
-          sub_time_series[isub_ts, 8:9] <- summary(lm(data=a_YY_sub, scale(RECO_DT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
+          a_YY_sub$RECO_DT_VUT_REF[a_YY_sub$RECO_DT_VUT_REF < 0] <- NA
+          sub_time_series[isub_ts, "GPP"] <- mean(a_YY_sub$GPP_DT_VUT_REF, na.rm=T)
+          sub_time_series[isub_ts, c("GPPtrend_lm", "GPPp")] <- summary(lm(data=a_YY_sub, scale(GPP_DT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
+          sub_time_series[isub_ts, "ER"] <- mean(a_YY_sub$RECO_DT_VUT_REF, na.rm=T)
+          sub_time_series[isub_ts, c("ERtrend_lm", "ERp")] <- summary(lm(data=a_YY_sub, scale(RECO_DT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
           #
-          if (abs(sub_time_series[isub_ts, 6]) > 0.25) {
+          # check trend outliers
+          if (abs(sub_time_series[isub_ts, "GPPtrend_lm"]) > 0.25) {
             plot(a_YY_sub$TIMESTAMP, a_YY_sub$GPP_DT_VUT_REF, main=isub_ts)
           }
-          if (abs(sub_time_series[isub_ts, 8]) > 0.25) {
+          if (abs(sub_time_series[isub_ts, "ERtrend_lm"]) > 0.25) {
             plot(a_YY_sub$TIMESTAMP, a_YY_sub$RECO_DT_VUT_REF, main=isub_ts)
           }          
           
         } else {
+          # use nighttime partitioned GPP and ER
           if (sum(!is.na(a_YY_sub$GPP_NT_VUT_REF)) >= 5) {
             a_YY_sub$GPP_NT_VUT_REF[a_YY_sub$GPP_NT_VUT_REF < 0] <- NA
-            a_YY_sub$RECO_NT_VUT_REF[a_YY_sub$RECO_NT_VUT_REF < 0] <- NA            
-            sub_time_series[isub_ts, 6:7] <- summary(lm(data=a_YY_sub, scale(GPP_NT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
-            sub_time_series[isub_ts, 8:9] <- summary(lm(data=a_YY_sub, scale(RECO_NT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
+            a_YY_sub$RECO_NT_VUT_REF[a_YY_sub$RECO_NT_VUT_REF < 0] <- NA
+            sub_time_series[isub_ts, "GPP"] <- mean(a_YY_sub$GPP_NT_VUT_REF, na.rm=T)
+            sub_time_series[isub_ts, c("GPPtrend_lm", "GPPp")] <- summary(lm(data=a_YY_sub, scale(GPP_NT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
+            sub_time_series[isub_ts, "ER"] <- mean(a_YY_sub$RECO_NT_VUT_REF, na.rm=T)
+            sub_time_series[isub_ts, c("ERtrend_lm", "ERp")] <- summary(lm(data=a_YY_sub, scale(RECO_NT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
             #
-            if (abs(sub_time_series[isub_ts, 6]) > 0.25) {
+            if (abs(sub_time_series[isub_ts, "GPPtrend_lm"]) > 0.25) {
               plot(a_YY_sub$TIMESTAMP, a_YY_sub$GPP_NT_VUT_REF, main=isub_ts)
             }
-            if (abs(sub_time_series[isub_ts, 8]) > 0.25) {
+            if (abs(sub_time_series[isub_ts, "ERtrend_lm"]) > 0.25) {
               plot(a_YY_sub$TIMESTAMP, a_YY_sub$RECO_NT_VUT_REF, main=isub_ts)
             } 
           }
@@ -341,40 +351,44 @@ for (i in 1:nrow(sites_long)) {
   }
   # no abrupt change or the last section of abrupt change
   if (year_end - year_start + 1 >= threshold_nyear - 1) {
-    sub_time_series[isub_ts, 1] <- site_ID
-    sub_time_series[isub_ts, 2] <- year_start
-    sub_time_series[isub_ts, 3] <- year_end
-    a_YY_sub <- a_YY_good %>% filter(TIMESTAMP >= sub_time_series[isub_ts, 2] & 
-                                     TIMESTAMP <= sub_time_series[isub_ts, 3]) %>% 
+    sub_time_series[isub_ts, "site_ID"] <- site_ID
+    sub_time_series[isub_ts, "year_start"] <- year_start
+    sub_time_series[isub_ts, "year_end"] <- year_end
+    a_YY_sub <- a_YY_good %>% filter(TIMESTAMP >= sub_time_series[isub_ts, "year_start"] & 
+                                     TIMESTAMP <= sub_time_series[isub_ts, "year_end"]) %>% 
                               filter(!is.na(NEE_VUT_REF)) %>% 
                               mutate(NEE_scale = scale(NEE_VUT_REF), year_center = scale(TIMESTAMP, scale=FALSE))
-    sub_time_series[isub_ts, 4:5] <- summary(lm(data=a_YY_sub, NEE_scale ~ year_center))$coefficients[2, c(1,4)]
+    sub_time_series[isub_ts, "NEE"] <- mean(a_YY_sub$NEE_VUT_REF, na.rm=T)
+    sub_time_series[isub_ts, c("NEEtrend_lm", "NEEp")] <- summary(lm(data=a_YY_sub, NEE_scale ~ year_center))$coefficients[2, c(1,4)]
     #
     # use daytime GPP and ER when it is available, otherwise use other time series
     if (sum(!is.na(a_YY_sub$GPP_DT_VUT_REF)) >= 5 & !site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-Kon", "US-MOz", "CH-Lae", "US-NC4")) {
       a_YY_sub$GPP_DT_VUT_REF[a_YY_sub$GPP_DT_VUT_REF < 0] <- NA
-      a_YY_sub$RECO_DT_VUT_REF[a_YY_sub$RECO_DT_VUT_REF < 0] <- NA            
-      sub_time_series[isub_ts, 6:7] <- summary(lm(data=a_YY_sub, scale(GPP_DT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
-      sub_time_series[isub_ts, 8:9] <- summary(lm(data=a_YY_sub, scale(RECO_DT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
+      a_YY_sub$RECO_DT_VUT_REF[a_YY_sub$RECO_DT_VUT_REF < 0] <- NA 
+      sub_time_series[isub_ts, "GPP"] <- mean(a_YY_sub$GPP_DT_VUT_REF, na.rm=T)
+      sub_time_series[isub_ts, c("GPPtrend_lm", "GPPp")] <- summary(lm(data=a_YY_sub, scale(GPP_DT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
+      sub_time_series[isub_ts, "ER"] <- mean(a_YY_sub$RECO_DT_VUT_REF, na.rm=T)
+      sub_time_series[isub_ts, c("ERtrend_lm", "ERp")] <- summary(lm(data=a_YY_sub, scale(RECO_DT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
       # plot sites with very large trends
-      if (abs(sub_time_series[isub_ts, 6]) > 0.25) {
+      if (abs(sub_time_series[isub_ts, "GPPtrend_lm"]) > 0.25) {
         plot(a_YY_sub$TIMESTAMP, a_YY_sub$GPP_DT_VUT_REF, main=isub_ts)
       }
-      if (abs(sub_time_series[isub_ts, 8]) > 0.25) {
+      if (abs(sub_time_series[isub_ts, "ERtrend_lm"]) > 0.25) {
         plot(a_YY_sub$TIMESTAMP, a_YY_sub$RECO_DT_VUT_REF, main=isub_ts)
-      }          
-      
+      }
     } else {
       if (sum(!is.na(a_YY_sub$GPP_NT_VUT_REF)) >= 5) {
         a_YY_sub$GPP_NT_VUT_REF[a_YY_sub$GPP_NT_VUT_REF < 0] <- NA
         a_YY_sub$RECO_NT_VUT_REF[a_YY_sub$RECO_NT_VUT_REF < 0] <- NA            
-        sub_time_series[isub_ts, 6:7] <- summary(lm(data=a_YY_sub, scale(GPP_NT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
-        sub_time_series[isub_ts, 8:9] <- summary(lm(data=a_YY_sub, scale(RECO_NT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
+        sub_time_series[isub_ts, "GPP"] <- mean(a_YY_sub$GPP_NT_VUT_REF, na.rm=T)
+        sub_time_series[isub_ts, c("GPPtrend_lm", "GPPp")] <- summary(lm(data=a_YY_sub, scale(GPP_NT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
+        sub_time_series[isub_ts, "ER"] <- mean(a_YY_sub$RECO_NT_VUT_REF, na.rm=T)
+        sub_time_series[isub_ts, c("ERtrend_lm", "ERp")] <- summary(lm(data=a_YY_sub, scale(RECO_NT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
         #
-        if (abs(sub_time_series[isub_ts, 6]) > 0.25) {
+        if (abs(sub_time_series[isub_ts, "GPPtrend_lm"]) > 0.25) {
           plot(a_YY_sub$TIMESTAMP, a_YY_sub$GPP_NT_VUT_REF, main=isub_ts)
         }
-        if (abs(sub_time_series[isub_ts, 8]) > 0.25) {
+        if (abs(sub_time_series[isub_ts, "ERtrend_lm"]) > 0.25) {
           plot(a_YY_sub$TIMESTAMP, a_YY_sub$RECO_NT_VUT_REF, main=isub_ts)
         } 
       }
@@ -393,7 +407,7 @@ for (i in 1:nrow(sites_long)) {
   }
 }
 # 
-write.csv(sub_time_series, file = '../data/sub_time_series.csv', row.names = FALSE)
+write.csv(sub_time_series, file = 'data/sub_time_series.csv', row.names = FALSE)
 #
 ```
 
@@ -716,34 +730,4 @@ data_NEE_trend_ac <- data_NEE_trend %>% subset(site_ID %in% unique(abrupt_change
 # across all the time series, there is no difference in NEE trend between before 2011  
 
 ```
-
-
-```{r trend of environmental variables}
-
-trend_result <- data.frame(site_ID=character(), NEE_start5=double(), NEE_end5=double(), NEE_all=double(), 
-                           NEE_tau=double(), NEE_sl=double(), 
-                           NEE_day_tau=double(), NEE_day_sl=double(), 
-                           NEE_night_tau=double(), NEE_night_sl=double(), 
-                           NEE_slp=double(), NEE_p=double(), 
-                           NEE_day_slp=double(), NEE_day_p=double(), 
-                           NEE_night_slp=double(), NEE_night_p=double(),
-                           GPP_DT_slp=double(), GPP_DT_p=double(), 
-                           GPP_NT_slp=double(), GPP_NT_p=double(), 
-                           RECO_DT_slp=double(), RECO_DT_p=double(), 
-                           RECO_NT_slp=double(), RECO_NT_p=double(),
-                           ##Trend of environmental drivers
-                           TA_slp=double(), TA_p=double(), 
-                           TS_slp=double(), TS_p=double(), 
-                           P_slp=double(), P_p=double(), 
-                           VPD_slp=double(), VPD_p=double(), 
-                           SWC_slp=double(), SWC_p=double(), 
-                           CO2_slp=double(), CO2_p=double(), 
-                           Lgs_slp=double(), Lgs_p=double(), 
-                           # The next lines are about broken points; this is the way of adding a column of data type list()
-                           ncp=integer(), cp=I(list()), cpPr=I(list()), cpAbruptChange=I(list()), Ytrend=I(list()))
-
-
-```
-
-
 
