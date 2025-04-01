@@ -120,7 +120,7 @@ a_YY_all %>% group_by(site_ID) %>% summarise(nYears=n()) %>%  #    filter(nYears
 # If a time series is less than 14 years, I do not need to cut it into two segments, because one segment will be too short to use. 
 # I only use the section with more than 7 years data??
 threshold_nyear_ac <- 8
-sites_long <- read.csv('../data/long_term_ec_sites.csv')
+sites_long <- read.csv('data/long_term_ec_sites.csv')
 #
 files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), full.names = T)
 files.unzip.Europ2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
@@ -202,7 +202,7 @@ for (i in 1:nrow(sites_long)) {
   #
   plot_grid(p1, p23, nrow=1, ncol=2)
   #
-  ggsave(paste0("../graphs/beast_trend/", site_ID, '.png'))
+  ggsave(paste0("graphs/beast_trend/", site_ID, '.png'))
 #
 }
 # a new data frame to store abrupt change information
@@ -228,7 +228,7 @@ for (id in index0) {
 # Using 2007 as an abrupt change year for US-PFa, because of continuous drought in these years; this is consistent with model results.  
 # abrupt_change$cpAbruptChange[abrupt_change$site_ID=="US-PFa"] <- 2007
 #
-write.csv(abrupt_change, '../data/abrupt_change_years.csv', row.names = F)
+write.csv(abrupt_change, 'data/abrupt_change_years.csv', row.names = F)
 # How many long-term sites do we have? how many of them has abrupt changes?
 # set tseg.min at 7, 30 sites with abrupt change; 2 have 2 abrupt change points. 
 # set tseg.min at 7, 24 sites with abrupt change; all have 1 abrupt change point. 
