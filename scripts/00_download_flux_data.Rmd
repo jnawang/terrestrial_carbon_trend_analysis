@@ -91,7 +91,7 @@ files.unzip.Europ2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip
 files.unzip.Europ2023 <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET", "unzip_connect2020"), full.names = T)
 files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
 #
-sites_long <- read.csv('../data/long_term_ec_sites.csv')
+sites_long <- read.csv('data/long_term_ec_sites.csv')
 #
 for (i in 1:nrow(sites_long)) {
 #  i = 30

@@ -54,7 +54,7 @@ sites_long <- data.frame(site_ID = c(sites_Ameri, sites_Ameri_BASE, sites_Europ2
                                      rep("EuropFlux_FLUXNET2020", length(sites_Europ2020))) )
 #
 # get climate and vegetation information for these sites
-sites_info_Ameri <- read.delim("../data/AmeriFlux-site-search-results-202502051229.tsv", header=T)
+sites_info_Ameri <- read.delim("data/AmeriFlux-site-search-results-202502051229.tsv", header=T)
 #
 # rename some of these columns
 sites_info_Ameri <- sites_info_Ameri %>% rename("Lat"="Latitude..degrees.", "Long"="Longitude..degrees.",
@@ -63,14 +63,14 @@ sites_info_Ameri <- sites_info_Ameri %>% rename("Lat"="Latitude..degrees.", "Lon
                                                 "MAT"="Mean.Average.Temperature..degrees.C.",  
                                                 "MAP"="Mean.Average.Precipitation..mm.")
 #
-sites_info_Europ <- read.csv("../data/European_SitesList.csv")
+sites_info_Europ <- read.csv("data/European_SitesList.csv")
 #
 sites_info_Europ <- sites_info_Europ %>% rename("Site.ID"="Site.Code", "Lat"="Site.Latitude",
                                                 "Long"="Site.Longitude", "IGBP"="IGBP.Code", 
                                                 "MAT" = "Mean.Annual.Temperature", 
                                                 "MAP" = "Mean.Annual.Precpitation")
 # get climate classes for these locations
-climate_koppen   <- terra::rast('../data/koppen_geiger_0p00833333.tif')
+climate_koppen   <- terra::rast('data/koppen_geiger_0p00833333.tif')
 # plot(climate_koppen)
 #
 # get climate for the European coordinates
@@ -151,7 +151,8 @@ sites_long$Climate.class[sites_long$site_ID %in% c("US-Elm", "US-Esm")] <- "Cwa"
 ## US-Tw4: The Twitchell East End Wetland is a newly constructed restored wetland on Twitchell Island, CA. 
 ## US-SP2: Even aged slash pine (Pinus elliottii) plantation. Planted in Jan. 1999. data 1999-2009
 ## CL-SDP: Bad quality data, especially in 2020
-sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6', 'US-Myb', "CA-Ca2", "US-KLS", "US-NC1", "US-NC3", "US-Tw4", "US-SP2"))
+## DE-Hzd: a strong storm cleared this site
+sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6', 'US-Myb', "CA-Ca2", "US-KLS", "US-NC1", "US-NC3", "US-Tw4", "US-SP2", "DE-Hzd"))
 ##
 ```
 
@@ -300,7 +301,7 @@ for (i in 1:nrow(sites_long)) {
 }
 ##
 sites_long <- sites_long %>% filter(!site_ID %in% rm_sites)
-write.csv(rm_years, file = '../data/years_to_remove.csv', row.names = F)
+write.csv(rm_years, file = 'data/years_to_remove.csv', row.names = F)
 ##
 
 ```
@@ -310,57 +311,92 @@ write.csv(rm_years, file = '../data/years_to_remove.csv', row.names = F)
 # cold sites: "ET", "Dwc", "Dfa", "Dfb", "Dfc", "Dfd"
 # dry sites: "Bsh", "Bsk", "BWh", "Cwa", "Csa"
 # wet sites: "Am", other "Cs"
+####
+# I should use hourly pattern, or daily data to calculate PET
+####
 #
 # the threshold of P/ETP: > 0.65 wet regions, 0.5-0.65 mediate regions, and < 0.5 dry regions.
 # aridity index calculation using PenmanMonteith
-library(Evapotranspiration)
+library(librarian)
+shelf(amerifluxr, Evapotranspiration)
 data(constants)
 #
-sites_long <- read.csv('../data/long_term_ec_sites.csv')
+sites_long <- read.csv('data/long_term_ec_sites.csv')
 #
 # solar radiation should have the unit mega-joule / m2
 # 1 W = 1 J/s; daily data is the average of subhourly data
 # I need to get Tmin, Tmax, RHmin, RHmax, uz (ERA, the height wind speed is measured at 10m), u2, n or Cd, solar radiation;
 #
 files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), full.names = T)
-files.unzip.Europ <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
+files.unzip.Europ2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
+files.unzip.Europ2023 <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET", "unzip_connect2020"), full.names = T)
 files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
+files.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_BASE"), pattern=".zip$", full.names=T)
 #
 # water characteristics
 water_flux <- data.frame(site_ID=character(), PET=double(), AET=double(), AI=double())
-#nrow(sites_long)
-for (i in 1:34) {
+#1:nrow(sites_long)
+for (i in 1:nrow(sites_long)) {
 #  i = 9
-  if (i %in% c(15, 16, 35)) {next}  # 16, 35, 
+#  if (i %in% c(15, 16, 35)) {next}  # 16, 35, 
   print(i)
   site_ID <- sites_long$site_ID[i]
   water_flux[i,1] <- site_ID
   # AmeriFlux and European flux; Do I need to differentiate them? Hopefully they use the same notation
   if (sites_long$source[i] == "AmeriFlux_FLUXNET") {
     a_HH <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_HH"), files.unzip.Ameri)])
-    a_DD <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_DD"), files.unzip.Ameri)])
     a_YY <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_YY"), files.unzip.Ameri)])
-  } else if (sites_long$source[i] == "EuropFlux_FLUXNET") {
+  } else if (sites_long$source[i] == "EuropFlux_FLUXNET2020") {
     a_HH <- read.csv(files.unzip.Europ[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_HH"), files.unzip.Europ)])
-    a_DD <- read.csv(files.unzip.Europ[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_DD"), files.unzip.Europ)])
     a_YY <- read.csv(files.unzip.Europ[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_YY"), files.unzip.Europ)])
-  } 
-  
-  # else if (sites_long$source[i] == "AmeriFlux_BASE") {
-  #   a_HH <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_HH"), files.Ameri.ReddyProcGapFill)])
-  #   a_DD <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_DD"), files.Ameri.ReddyProcGapFill)])
-  #   a_YY <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_YY"), files.Ameri.ReddyProcGapFill)])
-  # }
+  } else if (sites_long$source[i] == "EuropFlux_FLUXNET2023") {
+    a_HH <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_HH"), files.unzip.Europ2023)])
+    a_YY <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_YY"), files.unzip.Europ2023)])
+  } else if (sites_long$source[i] == "AmeriFlux_BASE") {
+    a_HH <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_HH"), files.Ameri.ReddyProcGapFill)])
+    a_YY <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_YY"), files.Ameri.ReddyProcGapFill)])
+    a_BASE <- amf_read_base(files.Ameri[grepl(site_ID, files.Ameri)], parse_timestamp=TRUE, unzip = T)
+    a_BASE[a_BASE<=-9999] <- NA
+    if (!site_ID %in% c("US-Los")) {
+      RHname <- sort(names(a_BASE)[grepl("RH", names(a_BASE))])[1]
+      WSname <- sort(names(a_BASE)[grepl("WS", names(a_BASE))])[1]
+      print(WSname)
+      a_HH <- a_HH %>% merge(a_BASE[, c("TIMESTAMP_START", RHname, WSname)], by="TIMESTAMP_START", all.x=T) %>% 
+        rename("RH" = RHname, "WS_F" = WSname)
+    } else {
+      # calculate RH from VPD
+      a_HH$RH <- pmax(100 - a_HH$VPD_F_MDS / 10 / (0.6108 * exp(17.27 * a_HH$TA_F_MDS / (a_HH$TA_F_MDS + 237.3))) * 100, 10.0)
+      a_HH <- a_HH %>% merge(a_BASE[, c("TIMESTAMP_START", "WS_1_1_1")], by="TIMESTAMP_START", all.x=T) %>% 
+        rename("WS_F" = "WS_1_1_1")
+    }
+    # in this data set SW_IN represent PPFD_IN, so convert PPFD_IN to SW_IN to be consistent with FLUXNET
+    a_HH$SW_IN_F_MDS <- a_HH$SW_IN_F_MDS / 2.3 
+  }
   a_HH[a_HH==-9999] <- NA
-  a_DD[a_DD==-9999] <- NA
   a_YY[a_YY==-9999] <- NA
   #
   a_HH$TIMESTAMP <- ymd_hm(a_HH$TIMESTAMP_START) + (ymd_hm(a_HH$TIMESTAMP_END) - ymd_hm(a_HH$TIMESTAMP_START)) / 2.0
-  a_HH$DATE      <- as.Date(a_HH$TIMESTAMP)
-  a_DD$TIMESTAMP <- as.Date(as.character(a_DD$TIMESTAMP), "%Y%m%d")
+  # aggregate these data into average hourly within a pattern year
+  climate_hourly <-
+    a_HH %>% mutate(
+      Month = month(a_HH$TIMESTAMP),
+      Day = day(a_HH$TIMESTAMP),
+      Hour = hour(a_HH$TIMESTAMP),
+      Rs = a_HH$SW_IN_F_MDS * 0.0864,      # convert SW_IN to MJ m-2 day-1
+      RH = a_HH$RH,
+      uz = a_HH$WS_F
+    ) %>%
+    group_by(Month, Day, Hour) %>%
+    summarise(
+      Temp = mean(TA_F_MDS, na.rm = T),
+      Rs = mean(Rs, na.rm = T),
+      RH = mean(RH, na.rm = T),
+      uz = mean(WS_F, na.rm = T)
+    ) %>% mutate(Year=2000)
+
   ####
-  climate_hourly <- data.frame(Year=year(a_HH$TIMESTAMP), Month=month(a_HH$TIMESTAMP), Day=day(a_HH$TIMESTAMP), Hour=hour(a_HH$TIMESTAMP), Minute=minute(a_HH$TIMESTAMP)/60, Temp=a_HH$TA_F_MDS, Rs = a_HH$SW_IN_F_MDS*0.0864, RH=a_HH$RH, uz=a_HH$WS_F)
-  climate_hourly <- climate_hourly %>% group_by(Year, Month, Day, Hour) %>% summarise(Temp=mean(Temp,na.rm=T), Rs=mean(Rs,na.rm=T), RH=mean(RH,na.rm=T), uz=mean(uz,na.rm=T))
+  # climate_hourly <- data.frame(Year=year(a_HH$TIMESTAMP), Month=month(a_HH$TIMESTAMP), Day=day(a_HH$TIMESTAMP), Hour=hour(a_HH$TIMESTAMP), Minute=minute(a_HH$TIMESTAMP)/60, Temp=a_HH$TA_F_MDS, Rs = a_HH$SW_IN_F_MDS*0.0864, RH=a_HH$RH, uz=a_HH$WS_F)
+  # climate_hourly <- climate_hourly %>% group_by(Year, Month, Day, Hour) %>% summarise(Temp=mean(Temp,na.rm=T), Rs=mean(Rs,na.rm=T), RH=mean(RH,na.rm=T), uz=mean(uz,na.rm=T))
 #  climate_hourly$Tdew <- climate_hourly$Temp - (100 - climate_hourly$RH) / 5.0
 #  
   #### Rs - incoming solar radiation in Megajoules per square metres per day: "Tdew";        
@@ -372,47 +408,63 @@ for (i in 1:34) {
       abnormal_method = 'DoY average',
       message = "yes")
   ####Penman-Monteith FAO56 Reference Crop ET
-  if (sites_long$IGBP[i] %in% c("WET", "GRA")) {
+  if (sites_long$IGBP[i] %in% c("WET", "GRA", "OSH")) {
     try(results_crop <- ET.PenmanMonteith(mydata_PET, constants, ts='daily', solar='data', crop = "short", save.csv="no"))  ###reference crop ET; short=grass, tall=standard crop; 
   } else {
-    try(results_crop <- ET.PenmanMonteith(mydata_PET, constants, ts='daily', solar='data', crop = "tall", save.csv="no"))  ###reference crop ET; short=grass, tall=standard crop; 
+    if (sites_long$MAT[i] > 5) {
+      #
+      try(results_crop <- ET.PenmanMonteith(mydata_PET, constants, ts='daily', solar='data', crop = "tall", save.csv="no"))  ###reference crop ET; short=grass, tall=standard crop;
+    } else {
+      #  
+      try(results_crop <- ET.PriestleyTaylor(mydata_PET, constants, ts='daily', solar='data', alpha=0.23,
+message="yes", AdditionalStats="yes", save.csv="no"))  ###reference crop ET; short=grass, tall=standard crop; 
+    }
   }
   # result_PT <- ET.PriestleyTaylor(mydata_PET, constants, ts="daily",
   # solar="data", alpha=0.23, message="yes", AdditionalStats="yes", save.csv="no") 
 #### get the actual ET values:
   # conversion of LE = λ ET, λ=(2.501−0.00237∗Tair)^106; LE: W/m2; ET: kg m-2 s-1
   # lambda latent heat of evaporisationin = 2.45 MJ.kg^-1 at 20 degree Celcius,
-  water_flux$AET[i] <- mean(a_YY$LE_F_MDS / 2.45 * 0.0864 * 365.25, na.rm=T)
+  lambda <- 2.501 - 0.00237 * mean(a_YY$TA_F_MDS, na.rm=T)
+  water_flux$AET[i] <- mean(a_YY$LE_F_MDS / lambda * 0.0864 * 365.25, na.rm=T)
   water_flux$PET[i] <- mean(results_crop$ET.Annual,  na.rm=T)
 }
 water_flux$AI <- water_flux$AET / water_flux$PET
 #####what is the best method for PET calculation in the field? 
-write.csv(water_flux, '../data/water_flux_AI.csv', row.names = F)
+write.csv(water_flux, 'data/water_flux_AI.csv', row.names = F)
 #
 ```
 
 
 ```{r dry, wet, and cold sites classification}
 #
-water_flux <- read.csv('../data/water_flux_AI_old.csv')
+water_flux <- read.csv('data/water_flux_AI.csv')
 #
-sites_long <- sites_long %>% left_join(water_flux[, -5], by='site_ID')
+sites_long <- sites_long %>% left_join(water_flux, by='site_ID')
 #
-sites_long <- sites_long %>% mutate(category=case_when(Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "ET", "Dwc")  ~ 'cold',
-                             !Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "ET", "Dwc") & AI < 0.45 ~ 'dry',
-                             !Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "ET", "Dwc") & AI >= 0.45 ~ 'wet', 
-                              Climate.class %in% c("Am", "Cwa") ~ "wet", 
-                              Climate.class %in% c("Bsh") ~ "dry"))
-sites_long$category[is.na(sites_long$category) & sites_long$Climate.class %in% c('Cfa', 'Cfb')] <- 'wet'
-sites_long$category[is.na(sites_long$category) & sites_long$Climate.class %in% c('Csa')] <- 'dry'
+sites_long <- sites_long %>% 
+  mutate(category=case_when(Climate.class %in% c("Csa", "Csb", "Bsh", "Bsk", "BWh") & AI < 0.5 ~ 'dry',
+                            Climate.class %in% c("Csa", "Csb", "Bsh", "Bsk", "BWh") & AI >= 0.5 ~ 'wet', 
+                            Climate.class %in% c("Am", "Cwa") ~ "wet", 
+                            Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "ET", "Dwc") ~ "cold",
+                            Climate.class %in% c("Cfa") ~ "wet",
+                            Climate.class %in% c("Cfb") ~ "cold"         # those sites has winters and in high latitudes
+                            ))
+# CL-SDF should be in wet climate, because it is tropical forests.         
+sites_long$category[sites_long$site_ID=='CL-SDF'] <- "wet"
 #
-# disputable sites: US-MOz, US-Rms, US-Rwf; Reynold's creek. 4 sites in this experiment have different climate conditions. 
-# write.csv(sites_long[, c(1:8, 12)], '../data/long_term_ec_sites.csv', row.names = F)
-# we have 14 dry sites. US-Rms and US-Rwf should be wet or dry sites? that way we have 16 dry sites. 
-# we have 39 wet sites.
-# we have 57 cold sites.
-write.csv(sites_long, file = '../data/long_term_ec_sites.csv', row.names = F)
-##
+# sites_long <- sites_long %>% mutate(category=case_when(Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "ET", "Dwc")  ~ 'cold',
+#                              !Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "ET", "Dwc") & AI < 0.4 ~ 'dry',
+#                              !Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "ET", "Dwc") & AI >= 0.4 ~ 'wet', 
+#                               Climate.class %in% c("Am", "Cwa") ~ "wet", 
+#                               Climate.class %in% c("Bsh") ~ "dry"))
+# sites_long$category[is.na(sites_long$category) & sites_long$Climate.class %in% c('Cfa', 'Cfb')] <- 'wet'
+# sites_long$category[is.na(sites_long$category) & sites_long$Climate.class %in% c('Csa')] <- 'dry'
+#
+# we have 13 dry sites. 
+# we have 17 wet sites.
+# we have 73 cold sites. 
+write.csv(sites_long, file = 'data/long_term_ec_sites.csv', row.names = F)
 
 ```
 
