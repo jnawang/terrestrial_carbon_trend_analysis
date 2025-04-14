@@ -1,0 +1,1108 @@
+---
+title: "identify trend drivers using causal inference"
+output: pdf_document
+date: "2025-04-08"
+author: "Junna Wang"
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+
+```{r raw data location}
+rm(list=ls())
+# change this location where the raw data will be saved accordingly
+# dir_rawdata <- '/Users/jw2946/Documents/stability_project/SiteData/'
+dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
+#
+library(librarian)
+shelf(tidyverse, ggpubr, lme4, dagitty)
+#
+```
+
+
+```{r create DAGs for different climates}
+DAG_cold_forest <- dagitty("dag {
+  Age -> Height -> NEE_trend
+  TA_gs_t -> LE_gs_t <- P_gs_t
+  TA_gs_t -> NEE_trend
+  P_gs_t -> NEE_trend
+  LE_gs_t -> NEE_trend
+  SW_gs_t -> NEE_trend
+  TA_gs_t -> Lgs_t -> NEE_trend
+  MAT -> Height
+  MAP -> Height
+  MAT -> MAP -> LE_gs_t
+  MAT -> SW_gs_t
+}")
+
+plot(graphLayout(DAG_cold_forest))
+
+#-------------------------------------------Causal inference is interesting.   
+
+DAG_cold_nonforest <- dagitty("dag {
+  TA_gs_t -> LE_gs_t <- P_gs_t
+  TA_gs_t -> NEE_trend
+  P_gs_t -> NEE_trend
+  LE_gs_t -> NEE_trend
+  SW_gs_t -> NEE_trend
+  TA_ngs_t -> LE_ngs_t <- P_ngs_t
+  TA_ngs_t -> NEE_trend
+  P_ngs_t -> NEE_trend
+  LE_ngs_t -> NEE_trend
+  TA_t -> Lgs_t -> NEE_trend
+  MAT -> NEE_trend
+  MAP -> NEE_trend
+  Nmean -> NEE_trend
+}")
+plot(graphLayout(DAG_cold_nonforest))
+
+DAG_dry <- dagitty("dag {
+  TA_gs_t -> LE_gs_t <- P_gs_t
+  TA_gs_t -> NEE_trend
+  P_gs_t -> NEE_trend
+  LE_gs_t -> NEE_trend
+  SW_gs_t -> NEE_trend
+  TA_ngs_t -> LE_ngs_t <- P_ngs_t
+  TA_ngs_t -> NEE_trend
+  P_ngs_t -> NEE_trend
+  LE_ngs_t -> NEE_trend
+  TA_t -> Lgs_t -> NEE_trend
+  MAT -> NEE_trend
+  MAP -> NEE_trend
+  MAP -> Nmean -> NEE_trend
+}")
+plot(graphLayout(DAG_dry))
+
+DAG_wet <- dagitty("dag {
+  TA_t -> LE_t <- P_t
+  TA_t -> NEE_trend
+  P_t -> NEE_trend
+  LE_t -> NEE_trend
+  SW_t -> NEE_trend
+  MAT -> NEE_trend
+  MAP -> NEE_trend
+  Nmean -> NEE_trend
+}")
+plot(graphLayout(DAG_wet))
+
+# lingering question: should I remove SW_t to further simplify this? 
+
+# I should remove non-growing season LE because GPP is not that important during this time. Or using VPD during the growing season. 
+
+
+```
+```{r read data}
+#-------------------------------------------------------------------------------
+sub_time_series <- read.csv("data/sub_time_series_potential_drivers.csv")
+sites_long <- read.csv('data/long_term_ec_sites.csv')
+if (! "category" %in% names(sub_time_series)) {
+  sub_time_series <- sub_time_series %>% 
+    left_join(sites_long[, c("site_ID", "category")]) %>%
+    rename("NEE_trend"="NEEtrend_lm")
+}
+
+data <- sub_time_series %>% 
+  select(c("NEE_trend", "TA_t", "TA_gs_t", "TA_ngs_t", "P_t", "P_gs_t", "P_ngs_t", 
+           "VPD_gs_t", "VPD_ngs_t", 
+           "SW_t", "SW_gs_t", "SW_ngs_t", "LE_t", "LE_gs_t", "LE_ngs_t", "Lgs_t", 
+           "MAT", "MAP", "Height", "Age", "Nmean", "IGBP", "category"))
+
+```
+
+
+
+
+```{r Evergreen forests in cold climate}
+
+DAG_cold_forest <- dagitty("dag {
+  Age -> NEE_trend
+  Age -> Height -> NEE_trend
+  TA_gs_t -> LE_gs_t <- P_gs_t
+  TA_gs_t -> NEE_trend
+  P_gs_t -> NEE_trend
+  LE_gs_t -> NEE_trend
+  TA_gs_t -> Lgs_t -> NEE_trend
+  Height -> TA_gs_t
+  Height -> LE_gs_t
+  Height -> Lgs_t
+}")
+
+  #   Age -> Lgs_t
+  # MAT -> Height
+  # MAP -> Height
+  # MAT -> MAP -> LE_gs_t
+  # MAT -> SW_gs_t
+  # MAT -> TA_gs_t
+  # NEE_trend
+  # SW_gs_t -> TA_gs_t
+  # P_gs_t -> SW_gs_t -> NEE_trend
+
+plot(graphLayout(DAG_cold_forest))
+#----------------------------------------------
+data_cold_ENF_noAge <- data %>% 
+  filter(IGBP %in% c('ENF', 'EBF') & category == "cold") %>% 
+  select(-c("category", "P_t", "SW_t", "LE_t"))
+
+data_cold_ENF <- data %>% 
+  filter(IGBP %in% c('ENF', 'EBF') & category == "cold") %>% 
+  select(-c("category", "P_t", "SW_t", "LE_t")) %>% filter(!is.na(Age) & !is.na(Lgs_t))
+
+data_cold_ENF_DAG <- data_cold_ENF %>% select(-c("IGBP"))
+
+# data_cold_ENF$MAT <- scale(data_cold_ENF$MAT)
+# data_cold_ENF$MAP <- scale(data_cold_ENF$MAP)
+# data_cold_ENF$Height <- scale(data_cold_ENF$Height)
+# data_cold_ENF$Age <- scale(data_cold_ENF$Age)
+# data_cold_ENF$Nmean <- scale(data_cold_ENF$Nmean)
+
+r <- localTests(x = DAG_cold_forest, data=data_cold_ENF_DAG, type='cis', abbreviate.names = F)
+plotLocalTestResults(r)
+print(subset(r, p.value < 0.05))
+
+#-------------------------------------------------------------------------------
+
+for (i in 1:ncol(data_cold_ENF)) {
+  if (names(data_cold_ENF)[i] != 'IGBP') {
+    data_cold_ENF[, i] <- scale(data_cold_ENF[, i])
+  }
+}
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "LE_gs_t",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+)  # { P_gs_t, TA_gs_t, Height }
+
+summary(lm(data=data_cold_ENF, NEE_trend ~ LE_gs_t + P_gs_t + TA_gs_t + Height))
+#              Estimate Std. Error t value Pr(>|t|)  
+# (Intercept)  3.938e-16  1.486e-01   0.000   1.0000  
+# LE_gs_t     -1.004e-01  1.571e-01  -0.639   0.5273   (use this)
+# P_gs_t      -4.110e-01  1.545e-01  -2.660   0.0121 *
+# TA_gs_t      8.532e-02  1.557e-01   0.548   0.5876  
+# Height      -3.247e-01  1.560e-01  -2.082   0.0455 *
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "P_gs_t",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+)  # { Height, LE_gs_t, SW_gs_t, TA_gs_t }
+summary(lm(data=data_cold_ENF, NEE_trend ~ LE_gs_t + P_gs_t + TA_gs_t + Height + SW_gs_t))
+#               Estimate Std. Error t value Pr(>|t|)  
+# (Intercept)  4.323e-16  1.448e-01   0.000   1.0000  
+# LE_gs_t     -1.155e-01  1.533e-01  -0.754   0.4568  
+# P_gs_t      -3.534e-01  1.545e-01  -2.288   0.0291 *  (use this)
+# TA_gs_t      2.940e-02  1.554e-01   0.189   0.8512  
+# Height      -3.647e-01  1.539e-01  -2.370   0.0242 *
+# SW_gs_t      2.604e-01  1.578e-01   1.651   0.1089  
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "TA_gs_t",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+)  # { Height, LE_gs_t, Lgs_t, P_gs_t }
+summary(lm(data=data_cold_ENF, NEE_trend ~ LE_gs_t + P_gs_t + TA_gs_t + Height + Lgs_t))
+#               Estimate Std. Error t value Pr(>|t|)  
+# LE_gs_t     -8.166e-02  1.548e-01  -0.528  0.60155   
+# P_gs_t      -4.777e-01  1.583e-01  -3.017  0.00506 **
+# TA_gs_t      7.422e-02  1.531e-01   0.485  0.63132   (use this)
+# Height      -2.837e-01  1.557e-01  -1.823  0.07802 . 
+# Lgs_t       -2.327e-01  1.578e-01  -1.475  0.15040   
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "Lgs_t",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+) # { Height, TA_gs_t }
+
+summary(lm(data=data_cold_ENF, NEE_trend ~ Lgs_t + Height + TA_gs_t))
+# Lgs_t       -1.019e-01  1.660e-01  -0.614    0.544  (use this)
+# Height      -2.517e-01  1.662e-01  -1.514    0.139
+# TA_gs_t      1.777e-01  1.636e-01   1.086    0.285
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "Height",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+) # { Age, LE_gs_t, Lgs_t, P_gs_t, TA_gs_t }
+
+summary(lm(data=data_cold_ENF, NEE_trend ~ Age + LE_gs_t + P_gs_t + TA_gs_t + Lgs_t + Height))
+# (Intercept)  3.336e-16  1.419e-01   0.000  1.00000   
+# Age         -2.771e-01  1.658e-01  -1.671  0.10514   
+# LE_gs_t     -1.564e-01  1.570e-01  -0.996  0.32701   
+# P_gs_t      -5.068e-01  1.549e-01  -3.271  0.00269 **
+# TA_gs_t     -9.529e-03  1.571e-01  -0.061  0.95204   
+# Lgs_t       -3.232e-01  1.627e-01  -1.986  0.05623 . 
+# Height      -2.573e-01  1.522e-01  -1.690  0.10132   (use this)
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "Age",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+) # { Height }
+
+summary(lm(data=data_cold_ENF, NEE_trend ~ Age + Height))
+# Age's effect is not significant
+# (Intercept)  4.142e-16  1.614e-01   0.000    1.000
+# Age         -1.657e-01  1.635e-01  -1.014    0.318  (use this)
+# Height      -2.589e-01  1.635e-01  -1.584    0.122
+
+# even total effect is not significant
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "Age",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("total")
+)
+summary(lm(data=data_cold_ENF, NEE_trend ~ Age))
+# (Intercept)  1.960e-17  1.635e-01   0.000    1.000
+# Age         -1.970e-01  1.657e-01  -1.188    0.243  (use this)
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "Age",
+outcome = "Height",
+type = c("minimal"),
+effect = c("direct")
+)
+summary(lm(data=data_cold_ENF, Height ~ Age))
+
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "Height",
+outcome = "Lgs_t",
+type = c("minimal"),
+effect = c("direct")
+) # { TA_gs_t }
+summary(lm(data=data_cold_ENF, Lgs_t ~ Height + TA_gs_t))
+# (Intercept)  4.364e-18  1.664e-01   0.000    1.000
+# Height       1.788e-01  1.689e-01   1.058    0.297
+# TA_gs_t     -4.468e-03  1.689e-01  -0.026    0.979
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "TA_gs_t",
+outcome = "LE_gs_t",
+type = c("minimal"),
+effect = c("direct")
+) # { Height }
+summary(lm(data=data_cold_ENF, LE_gs_t ~ Height + TA_gs_t))
+# (Intercept) -4.527e-17  1.630e-01   0.000    1.000
+# Height      -2.344e-01  1.654e-01  -1.417    0.166
+# TA_gs_t     -1.432e-01  1.654e-01  -0.866    0.393
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "P_gs_t",
+outcome = "LE_gs_t",
+type = c("minimal"),
+effect = c("direct")
+) # {  }
+summary(lm(data=data_cold_ENF, LE_gs_t ~ P_gs_t))
+# (Intercept) -3.540e-17  1.666e-01   0.000    1.000
+# P_gs_t      -4.417e-02  1.689e-01  -0.262    0.795
+
+ggplot(data=data_cold_ENF, aes(x=P_gs_t, y=NEE_trend, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='red')
+
+ggplot(data=data_cold_ENF, aes(x=Height, y=NEE_trend, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='red')
+
+```
+
+```{r cold DBF and MF}
+data_cold_DBF_MF_noAge <- data %>% 
+  filter(IGBP %in% c("MF", "DBF") & category == "cold") %>%  # "DBF", "MF"
+  select(-c("category", "P_t", "SW_t", "LE_t"))
+
+data_cold_DBF_MF <- data %>% 
+  filter(IGBP %in% c("MF", "DBF") & category == "cold") %>%  # "DBF", "MF"
+  select(-c("category", "P_t", "SW_t", "LE_t")) %>% filter(!is.na(Age))
+
+data_cold_DBF_MF_DAG <- data_cold_DBF_MF %>% select(-c("IGBP"))
+
+r <- localTests(x = DAG_cold_forest, data=data_cold_DBF_MF_DAG, type='cis', abbreviate.names = F)
+plotLocalTestResults(r)
+print(subset(r, p.value < 0.05))
+#------------------------------------------------------------------------------- 
+
+for (i in 1:ncol(data_cold_DBF_MF)) {
+  if (names(data_cold_DBF_MF)[i] != 'IGBP') {
+    data_cold_DBF_MF[, i] <- scale(data_cold_DBF_MF[, i])
+  }
+}
+
+ggplot(data=data_cold_DBF_MF, aes(y=NEE_trend, x=IGBP)) + 
+  geom_boxplot()
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "LE_gs_t",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+)  # { P_gs_t, TA_gs_t, Height }
+
+summary(lm(data=data_cold_DBF_MF, NEE_trend ~ LE_gs_t + P_gs_t + TA_gs_t + Height + IGBP))
+#               Estimate Std. Error t value Pr(>|t|)  
+# (Intercept)  0.22840    0.23890   0.956   0.3494  
+# LE_gs_t     -0.41679    0.20014  -2.082   0.0491 *  (use this)
+# P_gs_t       0.08671    0.19719   0.440   0.6644  
+# TA_gs_t      0.14610    0.19965   0.732   0.4720  
+# Height      -0.11083    0.21637  -0.512   0.6136  
+# IGBPMF      -0.58139    0.39657  -1.466   0.1568  
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "P_gs_t",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+)  # { Height, LE_gs_t, TA_gs_t }     use result from the last equation
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "TA_gs_t",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+)  # { Height, LE_gs_t, Lgs_t, P_gs_t }
+summary(lm(data=data_cold_DBF_MF, NEE_trend ~ LE_gs_t + P_gs_t + TA_gs_t + Height + Lgs_t + IGBP))
+# (Intercept)  4.145e-17  1.887e-01   0.000   1.0000  
+# (Intercept)  0.22417    0.24367   0.920   0.3680  
+# LE_gs_t     -0.40196    0.20690  -1.943   0.0656 . 
+# P_gs_t       0.09912    0.20305   0.488   0.6305  
+# TA_gs_t      0.11694    0.21461   0.545   0.5916  (use this)
+# Height      -0.08108    0.23124  -0.351   0.7294  
+# Lgs_t       -0.08888    0.20805  -0.427   0.6736  
+# IGBPMF      -0.57062    0.40493  -1.409   0.1734  
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "Lgs_t",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+) # {Height, TA_gs_t }
+
+summary(lm(data=data_cold_DBF_MF, NEE_trend ~ Lgs_t + Height + TA_gs_t + IGBP))
+# (Intercept)  0.18891    0.25457   0.742    0.466
+# Lgs_t       -0.13548    0.21526  -0.629    0.535 (use this)
+# Height       0.07937    0.23070   0.344    0.734
+# TA_gs_t      0.08358    0.22594   0.370    0.715
+# IGBPMF      -0.48085    0.41684  -1.154    0.261
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "Height",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+) # { Age, LE_gs_t, Lgs_t, P_gs_t, TA_gs_t }
+
+summary(lm(data=data_cold_DBF_MF, NEE_trend ~ Age + LE_gs_t + P_gs_t + TA_gs_t + Lgs_t + Height + IGBP))
+# (Intercept)  0.27723    0.24088   1.151   0.2633  
+# Age          0.31886    0.22445   1.421   0.1708  
+# LE_gs_t     -0.32184    0.20978  -1.534   0.1407  
+# P_gs_t       0.07442    0.19906   0.374   0.7124  
+# TA_gs_t      0.20605    0.21877   0.942   0.3575  
+# Lgs_t        0.04354    0.22354   0.195   0.8475  
+# Height      -0.14968    0.23094  -0.648   0.5243  (use this)
+# IGBPMF      -0.70568    0.40673  -1.735   0.0981 . 
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "Age",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+) # { Height}
+
+summary(lm(data=data_cold_DBF_MF, NEE_trend ~ Age + Height + IGBP))
+# Age's effect is not significant
+# Age          0.38216    0.19023   2.009   0.0559 .
+# Height       0.04033    0.19100   0.211   0.8346  
+# IGBPMF      -0.69067    0.38980  -1.772   0.0891 .
+
+# total effect of Age
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "Age",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("total")
+)  # {}
+
+summary(lm(data=data_cold_DBF_MF, NEE_trend ~ Age + IGBP))
+# (Intercept)   0.2639     0.2288   1.154   0.2596  
+# Age           0.3872     0.1851   2.093   0.0467 *
+# IGBPMF       -0.6718     0.3721  -1.805   0.0831 .
+# this result is great!
+
+#-------------------------------------------------------
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "Age",
+outcome = "Height",
+type = c("minimal"),
+effect = c("direct")
+) # {}
+summary(lm(data=data_cold_DBF_MF, Height ~ Age + IGBP))
+#             Estimate Std. Error t value Pr(>|t|)
+# (Intercept)  -0.1838     0.2443  -0.752    0.459
+# Age           0.1261     0.1976   0.638    0.529
+# IGBPMF        0.4678     0.3973   1.177    0.250
+
+#-------------------------------------------------------
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "TA_gs_t",
+outcome = "LE_gs_t",
+type = c("minimal"),
+effect = c("direct")
+) # { Height }
+summary(lm(data=data_cold_DBF_MF, LE_gs_t ~ TA_gs_t + Height + IGBP))
+# TA_gs_t      0.01851    0.20678   0.090    0.929
+# Height      -0.33242    0.21434  -1.551    0.134
+# IGBPMF      -0.08595    0.40151  -0.214    0.832
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "P_gs_t",
+outcome = "LE_gs_t",
+type = c("minimal"),
+effect = c("direct")
+) # 
+summary(lm(data=data_cold_DBF_MF, LE_gs_t ~ P_gs_t + IGBP))
+# (Intercept)  0.05513    0.24759   0.223    0.826
+# P_gs_t      -0.22450    0.20092  -1.117    0.274
+# IGBPMF      -0.14032    0.40398  -0.347    0.731
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "TA_gs_t",
+outcome = "LE_gs_t",
+type = c("minimal"),
+effect = c("direct")
+) # { Height }
+summary(lm(data=data_cold_DBF_MF, LE_gs_t ~ TA_gs_t + Height + IGBP))
+# (Intercept)  0.03377    0.24579   0.137    0.892
+# TA_gs_t      0.01851    0.20678   0.090    0.929
+# Height      -0.33242    0.21434  -1.551    0.134
+# IGBPMF      -0.08595    0.40151  -0.214    0.832
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "Height",
+outcome = "LE_gs_t",
+type = c("minimal"),
+effect = c("direct")
+) # { TA_gs_t }      # use the last equation
+
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "Height",
+outcome = "TA_gs_t",
+type = c("minimal"),
+effect = c("direct")
+) #  {}
+summary(lm(data=data_cold_DBF_MF, TA_gs_t ~ Height + IGBP))
+# (Intercept)  0.06216    0.23740   0.262   0.7956  
+# Height       0.38475    0.19250   1.999   0.0566 .
+# IGBPMF      -0.15823    0.38705  -0.409   0.6862
+
+adjustmentSets(
+x = DAG_cold_forest,
+exposure = "TA_gs_t",
+outcome = "Lgs_t",
+type = c("minimal"),
+effect = c("direct")
+) # { Height }
+
+summary(lm(data=data_cold_DBF_MF, Lgs_t ~ TA_gs_t + Height + IGBP))
+# (Intercept) -0.06808    0.24101  -0.282    0.780
+# TA_gs_t     -0.33919    0.20276  -1.673    0.107
+# Height       0.29749    0.21017   1.416    0.170
+# IGBPMF       0.17329    0.39370   0.440    0.664
+
+#----------------------------------------------------------------------
+####I should use a different way to plot the two figures!
+ggplot(data=data_cold_DBF_MF, aes(x=LE_gs_t, y=NEE_trend, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+####use the same slope but different intercept. 
+ggplot(data=data_cold_DBF_MF, aes(x=Age, y=NEE_trend, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+
+```
+
+
+```{r cold and nonforest}
+DAG_cold_nonforest <- dagitty("dag {
+  TA_gs_t -> LE_gs_t <- P_gs_t
+  TA_gs_t -> NEE_trend
+  P_gs_t -> NEE_trend
+  LE_gs_t -> NEE_trend
+  TA_gs_t -> Lgs_t -> NEE_trend
+  Height -> NEE_trend
+  Height -> TA_gs_t
+  Height -> LE_gs_t
+  Height -> Lgs_t
+}")
+plot(graphLayout(DAG_cold_nonforest))
+
+data_cold_nonforest <- data %>% filter(category == "cold") %>%
+  filter(!IGBP %in% c("DBF", "MF", "ENF", "EBF")) %>%  # , "MF"
+  select(-c("category", "P_t", "SW_t", "LE_t", "Age")) %>% filter(!is.na(Lgs_t))
+
+data_cold_nonforest_DAG <- data_cold_nonforest %>% select(-c("IGBP"))
+
+r <- localTests(x = DAG_cold_nonforest, data=data_cold_nonforest_DAG, type='cis', abbreviate.names = F)
+plotLocalTestResults(r)
+print(subset(r, p.value < 0.05))
+
+#----------------------------------------------------------------------------------
+for (i in 1:ncol(data_cold_nonforest)) {
+  if (names(data_cold_nonforest)[i] != 'IGBP') {
+    data_cold_nonforest[, i] <- scale(data_cold_nonforest[, i])
+  }
+}
+
+adjustmentSets(
+x = DAG_cold_nonforest,
+exposure = "LE_gs_t",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+)  # { P_gs_t, TA_gs_t, Height }
+
+summary(lm(data=data_cold_nonforest, NEE_trend ~ LE_gs_t + P_gs_t + TA_gs_t + IGBP + Height))
+#             Estimate Std. Error t value Pr(>|t|)   
+# (Intercept)  2.47501    0.72289   3.424  0.00324 **
+# LE_gs_t     -0.17741    0.15674  -1.132  0.27342    (use this)
+# P_gs_t      -0.40269    0.15300  -2.632  0.01748 *  (use this)
+# TA_gs_t     -0.05144    0.14624  -0.352  0.72935   
+# IGBPGRA     -2.18182    0.74681  -2.922  0.00952 **
+# IGBPOSH     -3.11545    0.91604  -3.401  0.00340 **
+# IGBPWET     -2.79188    0.75769  -3.685  0.00184 **
+# Height      -0.56427    0.16861  -3.347  0.00382 ** 
+####these are compared to CSH. 
+
+adjustmentSets(
+x = DAG_cold_nonforest,
+exposure = "P_gs_t",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+)  # { LE_gs_t, TA_gs_t, Height }
+# use the above results
+
+adjustmentSets(
+x = DAG_cold_nonforest,
+exposure = "TA_gs_t",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+) # { Height, LE_gs_t, Lgs_t, P_gs_t }
+
+summary(lm(data=data_cold_nonforest, NEE_trend ~ Lgs_t + LE_gs_t + P_gs_t + TA_gs_t + IGBP + Height))
+# (Intercept)  2.53699    0.86269   2.941  0.00959 **
+# Lgs_t       -0.02798    0.19663  -0.142  0.88862   
+# LE_gs_t     -0.18661    0.17395  -1.073  0.29927   
+# P_gs_t      -0.39780    0.16131  -2.466  0.02534 * 
+# TA_gs_t     -0.05334    0.15123  -0.353  0.72892     (use this)
+# IGBPGRA     -2.25250    0.91574  -2.460  0.02567 * 
+# IGBPOSH     -3.17347    1.02795  -3.087  0.00707 **
+# IGBPWET     -2.85266    0.88972  -3.206  0.00551 **
+# Height      -0.55114    0.19670  -2.802  0.01279 *   (use this)
+
+adjustmentSets(
+x = DAG_cold_nonforest,
+exposure = "Height",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+) # { LE_gs_t, Lgs_t, P_gs_t, TA_gs_t }
+# use the above results 
+
+adjustmentSets(
+x = DAG_cold_nonforest,
+exposure = "Lgs_t",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+) # { Height, TA_gs_t }
+
+summary(lm(data=data_cold_nonforest, NEE_trend ~ Height + TA_gs_t + Lgs_t + IGBP))
+# (Intercept)  2.57572    0.87386   2.948  0.00861 **
+# Height      -0.46477    0.21802  -2.132  0.04706 * 
+# TA_gs_t     -0.06101    0.16778  -0.364  0.72036   
+# Lgs_t       -0.06231    0.19891  -0.313  0.75770    (use this)
+# IGBPGRA     -2.16060    0.94013  -2.298  0.03375 * 
+# IGBPOSH     -3.08734    0.99520  -3.102  0.00615 **
+# IGBPWET     -3.04773    0.90624  -3.363  0.00346 **
+#---------------------------------------------------------------------------------
+
+adjustmentSets(
+x = DAG_cold_nonforest,
+exposure = "Height",
+outcome = "TA_gs_t",
+type = c("minimal"),
+effect = c("direct")
+) # { }
+summary(lm(data=data_cold_nonforest, TA_gs_t ~ Height + IGBP))
+#             Estimate Std. Error t value Pr(>|t|)  
+# Height        0.1030     0.2538   0.406    0.689
+# IGBPGRA      -0.8817     1.1036  -0.799    0.434
+# IGBPOSH      -1.1221     1.2671  -0.886    0.386
+# IGBPWET      -1.1576     1.0975  -1.055    0.304
+
+adjustmentSets(
+x = DAG_cold_nonforest,
+exposure = "Height",
+outcome = "LE_gs_t",
+type = c("minimal"),
+effect = c("direct")
+) # { TA_gs_t }
+summary(lm(data=data_cold_nonforest, LE_gs_t ~ TA_gs_t + Height + IGBP))
+# (Intercept)   1.2758     1.0290   1.240    0.230  
+# TA_gs_t      -0.1372     0.2142  -0.640    0.530  (use this)
+# Height       -0.2116     0.2442  -0.866    0.397  (use this)
+# IGBPGRA      -1.1853     1.0740  -1.104    0.284  
+# IGBPOSH      -2.4139     1.2376  -1.951    0.066 .
+# IGBPWET      -1.1638     1.0803  -1.077    0.295  
+
+adjustmentSets(
+x = DAG_cold_nonforest,
+exposure = "TA_gs_t",
+outcome = "LE_gs_t",
+type = c("minimal"),
+effect = c("direct")
+) # { Height }
+# use the above equations. 
+
+adjustmentSets(
+x = DAG_cold_nonforest,
+exposure = "P_gs_t",
+outcome = "LE_gs_t",
+type = c("minimal"),
+effect = c("direct")
+)  # {}
+summary(lm(data=data_cold_nonforest, LE_gs_t ~ P_gs_t + IGBP))
+# (Intercept)   1.0342     1.0057   1.028    0.316
+# P_gs_t       -0.1582     0.2214  -0.714    0.483  (use this)
+# IGBPGRA      -1.1180     1.0491  -1.066    0.299
+# IGBPOSH      -1.8035     1.1690  -1.543    0.139
+# IGBPWET      -0.8421     1.0599  -0.794    0.436
+
+#-----------------------------
+
+adjustmentSets(
+x = DAG_cold_nonforest,
+exposure = "Height",
+outcome = "Lgs_t",
+type = c("minimal"),
+effect = c("direct")
+) #{ TA_gs_t }
+summary(lm(data=data_cold_nonforest, Lgs_t ~ Height + TA_gs_t + IGBP))
+#             Estimate Std. Error t value Pr(>|t|)  
+# (Intercept)  1.699241   0.929406   1.828   0.0832 .
+# Height       0.526458   0.220544   2.387   0.0275 *  (use this)
+# TA_gs_t     -0.008216   0.193500  -0.042   0.9666    (use this)
+# IGBPGRA     -2.111259   0.970097  -2.176   0.0424 *
+# IGBPOSH     -1.136374   1.117806  -1.017   0.3221  
+# IGBPWET     -1.632664   0.975782  -1.673   0.1107
+
+adjustmentSets(
+x = DAG_cold_nonforest,
+exposure = "TA_gs_t",
+outcome = "Lgs_t",
+type = c("minimal"),
+effect = c("direct")
+) # { Height }
+# use the above equation. 
+
+#----------------------------------------------------------------------
+####I should use a different way to plot the two figures!
+ggplot(data=data_cold_nonforest, aes(x=P_gs_t, y=NEE_trend)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+####use the same slope but different intercept. 
+ggplot(data=data_cold_nonforest, aes(x=Height, y=NEE_trend, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+```
+
+
+
+```{r dry climate}
+#-----construct DAG
+DAG_dry <- dagitty("dag {
+  TA_gs_t -> VPD_gs_t <- P_gs_t
+  TA_gs_t -> NEE_trend
+  P_gs_t -> NEE_trend
+  VPD_gs_t -> NEE_trend
+  TA_ngs_t -> NEE_trend
+  P_ngs_t -> NEE_trend
+  TA_ngs_t -> VPD_ngs_t <- P_ngs_t
+  VPD_ngs_t -> NEE_trend
+  Lgs_t -> NEE_trend
+  TA_gs_t -> P_gs_t
+  VPD_gs_t -> VPD_ngs_t
+  Nmean -> NEE_trend
+}")
+plot(graphLayout(DAG_dry))
+  #  Nmean -> NEE_trend         # if wet climate cannot have this. I have to remove it. 
+  # MAT -> NEE_trend
+  # MAP -> NEE_trend
+  #   Height -> NEE_trend       # cannt be added because positive correlation to TA_gs_t
+
+#----Test model-data consistency
+data_dry <- data %>% 
+  filter(category == "dry") %>% 
+  select(-c("category", "P_t", "SW_t", "LE_t", "Age")) # %>% filter(!is.na(Age) & !is.na(Lgs_t))
+
+data_dry_DAG <- data_dry %>% select(-c("IGBP"))
+
+r <- localTests(x = DAG_dry, data=data_dry_DAG, type='cis', abbreviate.names = F)
+plotLocalTestResults(r)
+print(subset(r, p.value < 0.1))
+
+#----calculate direct effect
+# scale all the variables using Z score
+for (i in 1:ncol(data_dry)) {
+  if (names(data_dry)[i] != 'IGBP') {
+    data_dry[, i] <- scale(data_dry[, i])
+  }
+}
+
+####what variables to condition on?
+adjustmentSets(
+x = DAG_dry,
+exposure = "VPD_gs_t",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+)  # { P_gs_t, P_ngs_t, TA_gs_t, TA_ngs_t, VPD_ngs_t }
+
+summary(lm(data=data_dry, NEE_trend ~ VPD_gs_t + P_gs_t + TA_gs_t + VPD_ngs_t + P_ngs_t + TA_ngs_t))
+#               Estimate Std. Error t value Pr(>|t|)   
+# (Intercept) -1.435e-17  1.211e-01   0.000  1.00000   
+# VPD_gs_t    -1.305e-01  2.693e-01  -0.485  0.63845   
+# P_gs_t      -8.324e-01  2.250e-01  -3.700  0.00411 **
+# TA_gs_t     -3.240e-01  2.600e-01  -1.246  0.24116   
+# VPD_ngs_t   -7.284e-01  1.961e-01  -3.714  0.00401 **
+# P_ngs_t      2.102e-01  1.585e-01   1.326  0.21429   
+# TA_ngs_t     4.596e-01  1.657e-01   2.775  0.01963 * 
+
+summary(aov(data=data_dry, NEE_trend ~ IGBP))
+# IGBP         7  8.547  1.2210   1.474  0.287
+# Residuals    9  7.453  0.8281
+
+
+adjustmentSets(
+x = DAG_dry,
+exposure = "Lgs_t",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+) # {}
+summary(lm(data=data_dry, NEE_trend ~ Lgs_t))
+# (Intercept) -6.992e-17  2.504e-01   0.000    1.000
+# Lgs_t        3.024e-02  2.581e-01   0.117    0.908
+
+#-------------------------------------------------------------------------------------
+
+adjustmentSets(
+x = DAG_dry,
+exposure = "TA_gs_t",
+outcome = "P_gs_t",
+type = c("minimal"),
+effect = c("direct")
+)
+summary(lm(data=data_dry, P_gs_t ~ TA_gs_t))      # 
+#             Estimate Std. Error t value Pr(>|t|)  
+# (Intercept)  7.367e-17  1.844e-01    0.00  1.00000   
+# TA_gs_t     -6.767e-01  1.901e-01   -3.56  0.00285 **
+
+#
+adjustmentSets(
+x = DAG_dry,
+exposure = "TA_gs_t",
+outcome = "VPD_gs_t",
+type = c("minimal"),
+effect = c("direct")
+) # { P_gs_t }
+summary(lm(data=data_dry, VPD_gs_t ~ TA_gs_t + P_gs_t))  
+#             Estimate Std. Error t value Pr(>|t|)    
+# (Intercept)  0.01147    0.02189   0.524 0.608475    
+# TA_gs_t      6.363e-01  2.186e-01   2.911   0.0114 *
+# P_gs_t      -2.159e-01  2.186e-01  -0.988   0.3401 
+
+#
+adjustmentSets(
+x = DAG_dry,
+exposure = "TA_ngs_t",
+outcome = "VPD_ngs_t",
+type = c("minimal"),
+effect = c("direct")
+) # {}
+summary(lm(data=data_dry, VPD_ngs_t ~ TA_ngs_t))  
+#             Estimate Std. Error t value Pr(>|t|)  
+# (Intercept) 4.206e-17  2.301e-01   0.000    1.000
+# TA_ngs_t    3.952e-01  2.372e-01   1.666    0.116
+
+adjustmentSets(
+x = DAG_dry,
+exposure = "P_ngs_t",
+outcome = "VPD_ngs_t",
+type = c("minimal"),
+effect = c("direct")
+) # {}
+summary(lm(data=data_dry, VPD_ngs_t ~ P_ngs_t))  
+#             Estimate Std. Error t value Pr(>|t|)  
+# (Intercept)  9.410e-17  2.291e-01   0.000    1.000
+# P_ngs_t     -4.043e-01  2.362e-01  -1.712    0.108
+
+adjustmentSets(
+x = DAG_dry,
+exposure = "VPD_gs_t",
+outcome = "VPD_ngs_t",
+type = c("minimal"),
+effect = c("direct")
+) # {}
+summary(lm(data=data_dry, VPD_ngs_t ~ VPD_gs_t))  
+#             Estimate Std. Error t value Pr(>|t|)  
+# (Intercept) 7.921e-17  2.099e-01   0.000   1.0000  
+# VPD_gs_t    5.459e-01  2.163e-01   2.523   0.0234 *
+
+adjustmentSets(
+x = DAG_dry,
+exposure = "Nmean",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+)
+summary(lm(data=data_dry, NEE_trend ~ Nmean))  
+# (Intercept) -9.929e-17  2.305e-01   0.000     1.00
+# Nmean        3.913e-01  2.376e-01   1.647     0.12
+
+# Precipitation in non-growing season; Air temperature in growing season. 
+# this makes lots of sense now!
+ggplot(data=data_dry, aes(x=P_gs_t, y=NEE_trend)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+ggplot(data=data_dry, aes(x=VPD_ngs_t, y=NEE_trend)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+ggplot(data=data_dry, aes(x=TA_ngs_t, y=NEE_trend)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+
+```
+
+```{r wet warm climate}
+
+DAG_wet <- dagitty("dag {
+  TA_t -> LE_t <- P_t
+  TA_t -> NEE_trend
+  P_t -> NEE_trend
+  LE_t -> NEE_trend
+  Height -> NEE_trend
+  SW_t -> LE_t
+  SW_t -> NEE_trend
+}")
+plot(graphLayout(DAG_wet))
+#   Nmean -> NEE_trend        I cannot put Nmean here, because of high correlation with the solar radiation trends. 
+#   MAP -> NEE_trend
+  # MAT -> NEE_trend
+  # MAT -> MAP
+  # MAT -> P_t
+
+data_wet <- data %>% 
+  filter(category == "wet") %>% 
+  select(-c("category", "TA_gs_t", "P_gs_t", "SW_gs_t", "LE_gs_t", 
+            "TA_ngs_t", "P_ngs_t", "LE_ngs_t", "Age")) # %>% filter(!is.na(Age) & !is.na(Lgs_t))
+
+data_wet_DAG <- data_wet %>% select(-c("IGBP"))
+
+r <- localTests(x = DAG_wet, data=data_wet_DAG, type='cis', abbreviate.names = F)
+plotLocalTestResults(r)
+print(subset(r, p.value < 0.05))
+
+summary(aov(data=data_wet, NEE_trend ~ IGBP)) # p = 0.1
+#-------------------------------------------------------------------------------------
+#----calculate direct effect
+# scale all the variables using Z score
+for (i in 1:ncol(data_wet)) {
+  if (names(data_wet)[i] != 'IGBP') {
+    data_wet[, i] <- scale(data_wet[, i])
+  }
+}
+
+adjustmentSets(
+x = DAG_wet,
+exposure = "LE_t",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+)  # { P_t, SW_t, TA_t }
+
+summary(lm(data=data_wet, NEE_trend ~ P_t + TA_t + LE_t + SW_t + IGBP))
+# Coefficients:
+#             Estimate Std. Error t value Pr(>|t|)  
+# (Intercept)   1.2646     0.9074   1.394   0.2222  
+# P_t           0.1004     0.1967   0.511   0.6314  
+# TA_t          0.1549     0.2564   0.604   0.5720  
+# LE_t         -0.6498     0.2426  -2.678   0.0439 *
+# SW_t          0.1644     0.2649   0.621   0.5619  
+# IGBPDBF      -0.4921     1.0242  -0.480   0.6512  
+# IGBPEBF      -2.3312     1.0040  -2.322   0.0679 .
+# IGBPENF      -0.7965     1.0918  -0.730   0.4984  
+# IGBPGRA      -0.9880     1.0699  -0.923   0.3982  
+# IGBPSAV      -2.3722     1.0615  -2.235   0.0757 .
+# IGBPWET      -0.8698     0.8939  -0.973   0.3753 
+
+# adjustmentSets(
+# x = DAG_wet,
+# exposure = "Nmean",
+# outcome = "NEE_trend",
+# type = c("minimal"),
+# effect = c("direct")
+# )  # {}
+# 
+# summary(lm(data=data_wet, NEE_trend ~ Nmean ))
+# #             Estimate Std. Error t value Pr(>|t|)
+# # (Intercept)  -0.1707     0.1556  -1.097    0.291
+# # Nmean         0.0117     0.0127   0.922    0.372
+
+adjustmentSets(
+x = DAG_wet,
+exposure = "Height",
+outcome = "NEE_trend",
+type = c("minimal"),
+effect = c("direct")
+)  # {}
+
+summary(lm(data=data_wet, NEE_trend ~ Height))
+#               Estimate Std. Error t value Pr(>|t|)  
+# (Intercept) -2.318e-17  2.551e-01   0.000    1.000
+# Height      -1.668e-01  2.635e-01  -0.633    0.537
+
+adjustmentSets(
+x = DAG_wet,
+exposure = "P_t",
+outcome = "LE_t",
+type = c("minimal"),
+effect = c("direct")
+)  # {}
+
+summary(lm(data=data_wet, LE_t ~ P_t))
+#               Estimate Std. Error t value Pr(>|t|)  
+# (Intercept) -4.163e-17  2.574e-01   0.000    1.000
+# P_t         -1.024e-01  2.659e-01  -0.385    0.706
+
+adjustmentSets(
+x = DAG_wet,
+exposure = "SW_t",
+outcome = "LE_t",
+type = c("minimal"),
+effect = c("direct")
+)  # {}
+
+summary(lm(data=data_wet, LE_t ~ SW_t))
+#             Estimate Std. Error t value Pr(>|t|)   
+# (Intercept) -1.162e-17  2.200e-01   0.000   1.0000  
+# SW_t        -5.263e-01  2.273e-01  -2.316   0.0362 *
+
+adjustmentSets(
+x = DAG_wet,
+exposure = "TA_t",
+outcome = "LE_t",
+type = c("minimal"),
+effect = c("direct")
+)  # {}
+
+summary(lm(data=data_wet, LE_t ~ TA_t))# here MAT is included.  
+#             Estimate Std. Error t value Pr(>|t|)
+# (Intercept) -3.869e-17  2.585e-01   0.000    1.000
+# TA_t        -4.247e-02  2.670e-01  -0.159    0.876
+
+ggplot(data=data_wet, aes(x=LE_t, y=NEE_trend)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+ggplot(data=data_wet, aes(x=SW_t, y=NEE_trend)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+
+```
+
+```{r NEE trends vary with climate and vegetation classes}
+summary(aov(data=data, NEE_trend ~ IGBP + category))
+
+summary(lm(data=data, NEE_trend ~ IGBP + category))
+
+data_cold <- data %>% filter(category=='cold')
+summary(aov(data = data_cold, NEE_trend ~ IGBP))
+summary(lm(data = data_cold, NEE_trend ~ IGBP))
+
+ggplot(data=data_cold, aes(y=NEE_trend, x=IGBP)) + 
+  geom_boxplot()
+
+ggplot(data=data, aes(y=NEE_trend, x=category)) + 
+  geom_boxplot()
+
+
+ggplot(data=data, aes(x=MAP, y=NEE_trend)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+
+```
+
+
+
+

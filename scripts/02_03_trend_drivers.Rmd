@@ -25,6 +25,83 @@ shelf(tidyverse, ggpubr, MuMIn, car, fBasics, olsrr, lme4, Hmisc, corrplot)
 ```
 
 
+```{r get nitrogen deposition}
+# data is from 
+# Zhu (2025): Changing patterns of global nitrogen deposition driven by socio-economic development
+Nfiles <- list.files('data/Global_N_deposition_grid_dataset_2008_2020', pattern='^mean_totN_', full.names = T)
+
+TNdep2008_2020 <- terra::rast(Nfiles)
+
+# transform to WGS 84 (longitude, latitude)
+data_ll <- terra::project(TNdep2008_2020, "EPSG:4326")
+
+# get total N values from these rasters at our study sites
+sites_long <- read.csv('data/long_term_ec_sites.csv')
+
+xy <- data.frame(x=sites_long$Long, y=sites_long$Lat)
+TNvalues <- terra::extract(data_ll, xy)
+
+# deal with missing data
+for (i in which(is.na(TNvalues$mean_totN_2008_hm))) {
+  xy[i,] <- xy[i,] - 0.1482702
+  TNvalues[i,2:ncol(TNvalues)] <- terra::extract(data_ll, xy[i,])[2:ncol(TNvalues)]
+}
+
+TNvalues$Nmean <- rowMeans(TNvalues)
+TNvalues$Ntrend_lm <- 0
+TNvalues$Np <- 0
+
+for (i in 1:nrow(TNvalues)) {
+  data <- data.frame(x=2008:2020, y=as.numeric(TNvalues[i,2:14]))
+  TNvalues[i, 16:17] <- summary(lm(data=data, scale(y) ~ scale(x, scale=FALSE)))$coefficients[2, c(1,4)]
+}
+
+TNvalues$site_ID <- sites_long$site_ID
+
+```
+
+
+```{r get forest ages}
+
+forestAge <- read.csv('data/forest_ages.csv')
+
+tmp <- separate(forestAge, Years, into = c("start_year", "end_year"), sep = "-")
+
+# process data in the first 126 row first.
+# these 126 data is from the paper: Quantifying the effect of forest age in annual net forest carbon balance
+tmp$end_year[is.na(tmp$end_year[1:126])] <- tmp$start_year[is.na(tmp$end_year[1:126])]
+
+forestAge$inyear[1:126] <- floor((as.numeric(tmp$end_year[1:126]) + as.numeric(tmp$start_year[1:126])) / 2)
+
+forestAge$Age_standard <- forestAge$Age - forestAge$inyear         # age compare to 0000 year
+
+```
+
+```{r get canopy height}
+# plant height information
+canopyHeightLang <- read.csv('data/CanopyHeight_Lang.csv')
+canopyHeightChu <- read.csv('data/AMF-HEIGHTC-BADM_AND_PI_chu.csv')
+#
+sub_time_series <- read.csv('data/sub_time_series.csv')
+#
+canopyHeight <- sub_time_series[, c("site_ID", "year_start", "year_end")]
+canopyHeight$year_mean <- (canopyHeight$year_start + canopyHeight$year_end) / 2
+canopyHeightChu <- canopyHeightChu[canopyHeightChu$SITE_ID %in% unique(canopyHeight$site_ID), ]
+#
+canopyHeightChu <- left_join(canopyHeightChu, canopyHeight[,c("site_ID", "year_mean")], by=c("SITE_ID"="site_ID"))
+canopyHeightChu <- canopyHeightChu %>% mutate(year_dif=abs(YEAR-year_mean)) %>% group_by(SITE_ID, year_mean) %>% summarise(Height=HEIGHTC[which.min(year_dif)])
+#
+canopyHeight <- canopyHeight %>% left_join(canopyHeightChu, by=c("site_ID"="SITE_ID", "year_mean"))
+# canopy height of CL-SDF is ~25m
+canopyHeight$Height[canopyHeight$site_ID=="CL-SDF"] <- 25.0	
+#
+canopyHeight <- canopyHeight %>% left_join(canopyHeightLang[, c("site_ID", "canopyH_Lang")], by="site_ID")
+
+canopyHeight$Height[is.na(canopyHeight$Height)] <- canopyHeight$canopyH_Lang[is.na(canopyHeight$Height)]
+
+```
+
+
 ```{r doy of southern hemisphere}
 # this function calculates day of year for the southern hemisphere using July 1st as doy = 1
 southern_hemisphere_doy <- function(dates) {
@@ -80,7 +157,25 @@ OutlierYearsLE <- function(years, values) {
 ```
 
 
+```{r a function to merge ERA and FLUX DATA}
+# merge ERA and FLUX data
+merge_ERA_FLUX <- function(years2update, col_year, col_flux, col_era) {
+  df <- data.frame(year=col_year, flux=col_flux, era=col_era)
+  id2update <- df$year %in% years2update
+  #
+  df.sub <- df[!id2update, ]
+  mod <- lm(data=df.sub, flux ~ era)
+  #
+  df$flux[id2update] <- predict(mod, newdata=df[id2update, ])
+  return(df$flux)
+}
+
+```
+
+
 ```{r trend of environmental conditions}
+#### attention: run the three chunks/function above this chunk first ####
+
 # read sub time series
 sub_time_series <- read.csv('data/sub_time_series.csv')
 #
@@ -90,14 +185,11 @@ sites_long <- read.csv('data/long_term_ec_sites.csv')
 #
 rm_years   <- read.csv('data/years_to_remove.csv')
 #
-# plant height information
-canopyHeight <- read.csv('data/CanopyHeight_Lang.csv')
-#
 # add data source to sub_time_series
 if (!"source" %in% colnames(sub_time_series)) {
   sub_time_series <- merge(sub_time_series, sites_long[, c('site_ID', "source", "Lat")], by="site_ID")
 }
-#
+
 # mutate many columns to sub_time_series
 sub_time_series <- sub_time_series %>% mutate(TA_t=NA, TA_p=NA, TA_gs_t=NA, TA_gs_p=NA, TA_ngs_t=NA, TA_ngs_p=NA,
                    P_t=NA, P_p=NA, P_gs_t=NA, P_gs_p=NA, P_ngs_t=NA, P_ngs_p=NA,
@@ -105,7 +197,7 @@ sub_time_series <- sub_time_series %>% mutate(TA_t=NA, TA_p=NA, TA_gs_t=NA, TA_g
                    SW_t=NA, SW_p=NA, SW_gs_t=NA, SW_gs_p=NA, SW_ngs_t=NA, SW_ngs_p=NA,
                    LE_t=NA, LE_p=NA, LE_gs_t=NA, LE_gs_p=NA, LE_ngs_t=NA, LE_ngs_p=NA,
                    CO2_t=NA, CO2_p=NA, Lgs_t=NA, Lgs_p=NA, Lgs_piece_t=NA, Lgs_piece_p=NA,
-                   MAT=NA, MAP=NA, Height=NA, Age=NA)
+                   MAT=NA, MAP=NA, Height=NA)
 #
 # get the average start and end growing season for each site
 grow_season_site <- data_grow_season %>%
@@ -130,9 +222,6 @@ TA_site_years_removed <- 0
 options(na.action = na.omit)
 
 ## calculate trends of environmental drivers
-# some sites have bad CO2 data
-# iSites <- c(1, 5, 25, 29, 32, 38, 39, 47, 48, 71, 76, 83)
-# for (i in iSites) {
 for (i in 1:nrow(sub_time_series)) {
   print(i)
   site_ID <- sub_time_series$site_ID[i]
@@ -194,28 +283,22 @@ for (i in 1:nrow(sub_time_series)) {
     if (!"TA_ERA" %in% names(a_DD)) {
         a_DD$TA_F_MDS[a_DD$year %in% outlier_years_TA] <- NA
         a_DD$VPD_F_MDS[a_DD$year %in% outlier_years_TA] <- NA
-        a_DD$SW_IN_F_MDS[a_DD$year %in% outlier_years_TA] <- NA
         a_YY$TA_F_MDS[a_YY$TIMESTAMP %in% outlier_years_TA] <- NA
         a_YY$VPD_F_MDS[a_YY$TIMESTAMP %in% outlier_years_TA] <- NA
-        a_YY$SW_IN_F_MDS[a_YY$TIMESTAMP %in% outlier_years_TA] <- NA
         print('no_ERA5')
     } else {
       if (length(outlier_years_TA) <= 2) {
-        # replace with ERA5 data
-        a_DD$TA_F_MDS[a_DD$year %in% outlier_years_TA] <- a_DD$TA_ERA[a_DD$year %in% outlier_years_TA]
-        a_DD$VPD_F_MDS[a_DD$year %in% outlier_years_TA] <- a_DD$VPD_ERA[a_DD$year %in% outlier_years_TA]
-        a_DD$SW_IN_F_MDS[a_DD$year %in% outlier_years_TA] <- a_DD$SW_IN_F_MDS[a_DD$year %in% outlier_years_TA]
-        a_YY$TA_F_MDS[a_YY$TIMESTAMP %in% outlier_years_TA] <- a_YY$TA_ERA[a_YY$TIMESTAMP %in% outlier_years_TA]
-        a_YY$VPD_F_MDS[a_YY$TIMESTAMP %in% outlier_years_TA] <- a_YY$VPD_ERA[a_YY$TIMESTAMP %in% outlier_years_TA]
-        a_YY$SW_IN_F_MDS[a_YY$TIMESTAMP %in% outlier_years_TA] <- a_YY$SW_IN_F_MDS[a_YY$TIMESTAMP %in% outlier_years_TA]
+        # replace with ERA5 data after doing linear regression
+        a_DD$TA_F_MDS <- merge_ERA_FLUX(outlier_years_TA, a_DD$year, a_DD$TA_F_MDS, a_DD$TA_ERA)
+        a_DD$VPD_F_MDS <- merge_ERA_FLUX(outlier_years_TA, a_DD$year, a_DD$VPD_F_MDS, a_DD$VPD_ERA)
+        a_YY$TA_F_MDS <- merge_ERA_FLUX(outlier_years_TA, a_YY$TIMESTAMP, a_YY$TA_F_MDS, a_YY$TA_ERA)
+        a_YY$VPD_F_MDS <- merge_ERA_FLUX(outlier_years_TA, a_YY$TIMESTAMP, a_YY$VPD_F_MDS, a_YY$VPD_ERA)
       } else if (length(outlier_years_TA) > 2) {
         # directly use ERA5 data
         a_DD$TA_F_MDS <- a_DD$TA_ERA
         a_DD$VPD_F_MDS <- a_DD$VPD_ERA
-        a_DD$SW_IN_F_MDS <- a_DD$SW_IN_ERA
         a_YY$TA_F_MDS <- a_YY$TA_ERA
         a_YY$VPD_F_MDS <- a_YY$VPD_ERA
-        a_YY$SW_IN_F_MDS <- a_YY$SW_IN_ERA
       }
     }    
   }
@@ -281,36 +364,36 @@ for (i in 1:nrow(sub_time_series)) {
   }
   #
   # Calculate trends
-  sub_time_series[i,12:13] <- summary(lm(data=a_YY, scale(TA_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
-  sub_time_series[i,14:15] <- summary(lm(data=a_YY_gw, scale(TA_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
-  sub_time_series[i,16:17] <- summary(lm(data=a_YY_ngw, scale(TA_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i, c("TA_t", "TA_p")] <- summary(lm(data=a_YY, scale(TA_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i, c("TA_gs_t", "TA_gs_p")] <- summary(lm(data=a_YY_gw, scale(TA_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i, c("TA_ngs_t", "TA_ngs_p")] <- summary(lm(data=a_YY_ngw, scale(TA_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
   #
-  sub_time_series[i,18:19] <- summary(lm(data=a_YY, scale(P_ERA) ~ year_center))$coefficients[2, c(1,4)]
-  sub_time_series[i,20:21] <- summary(lm(data=a_YY_gw, scale(P_ERA) ~ year_center))$coefficients[2, c(1,4)]
-  sub_time_series[i,22:23] <- summary(lm(data=a_YY_ngw, scale(P_ERA) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i, c("P_t", "P_p")] <- summary(lm(data=a_YY, scale(P_ERA) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i, c("P_gs_t", "P_gs_p")] <- summary(lm(data=a_YY_gw, scale(P_ERA) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i, c("P_ngs_t", "P_ngs_p")] <- summary(lm(data=a_YY_ngw, scale(P_ERA) ~ year_center))$coefficients[2, c(1,4)]
   #
-  sub_time_series[i,24:25] <- summary(lm(data=a_YY, scale(VPD_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
-  sub_time_series[i,26:27] <- summary(lm(data=a_YY_gw, scale(VPD_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
-  sub_time_series[i,28:29] <- summary(lm(data=a_YY_ngw, scale(VPD_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i, c("VPD_t", "VPD_p")] <- summary(lm(data=a_YY, scale(VPD_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i, c("VPD_gs_t", "VPD_gs_p")] <- summary(lm(data=a_YY_gw, scale(VPD_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i, c("VPD_ngs_t", "VPD_ngs_p")] <- summary(lm(data=a_YY_ngw, scale(VPD_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
   #
-  sub_time_series[i,30:31] <- summary(lm(data=a_YY, scale(SW_IN_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
-  sub_time_series[i,32:33] <- summary(lm(data=a_YY_gw, scale(SW_IN_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
-  sub_time_series[i,34:35] <- summary(lm(data=a_YY_ngw, scale(SW_IN_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i, c("SW_t", "SW_p")] <- summary(lm(data=a_YY, scale(SW_IN_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i, c("SW_gs_t", "SW_gs_p")] <- summary(lm(data=a_YY_gw, scale(SW_IN_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i, c("SW_ngs_t", "SW_ngs_p")] <- summary(lm(data=a_YY_ngw, scale(SW_IN_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
   #
-  sub_time_series[i,36:37] <- summary(lm(data=a_YY, scale(LE_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
-  sub_time_series[i,38:39] <- summary(lm(data=a_YY_gw, scale(LE_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
-  sub_time_series[i,40:41] <- summary(lm(data=a_YY_ngw, scale(LE_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i, c("LE_t", "LE_p")] <- summary(lm(data=a_YY, scale(LE_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i, c("LE_gs_t", "LE_gs_p")] <- summary(lm(data=a_YY_gw, scale(LE_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i, c("LE_ngs_t", "LE_ngs_p")] <- summary(lm(data=a_YY_ngw, scale(LE_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
   #
   ## we do not differentiate CO2, Lgs for growing and non-growing seasons
-  sub_time_series[i,42:43] <- summary(lm(data=a_YY, scale(CO2_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  sub_time_series[i, c("CO2_t", "CO2_p")] <- summary(lm(data=a_YY, scale(CO2_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
   if (site_ID %in% c('BR-Sa1', 'US-Esm', "US-Elm", 'US-LL1', 'US-LL2', 'US-LL3', 'US-SP3', 'GF-Guy')) {
-    sub_time_series[i,44:45] <- 0
-    sub_time_series[i,46:47] <- 0
+    sub_time_series[i, c("Lgs_t", "Lgs_p")] <- 0
+    sub_time_series[i, c("Lgs_piece_t", "Lgs_piece_p")] <- 0
   } else {
     subdata_grow_season <- data_grow_season[data_grow_season$site_ID==site_ID, ] %>% filter(year >= sub_time_series$year_start[i] & year <= sub_time_series$year_end[i])
     if (nrow(subdata_grow_season) >= 5) {
-      sub_time_series[i,44:45] <- summary(lm(data=subdata_grow_season, scale(length_gs) ~ scale(year, scale=FALSE)))$coefficients[2, c(1,4)]
-      sub_time_series[i,46:47] <- summary(lm(data=subdata_grow_season, scale(length_gs_piece) ~ scale(year, scale=FALSE)))$coefficients[2, c(1,4)]
+      sub_time_series[i, c("Lgs_t", "Lgs_p")] <- summary(lm(data=subdata_grow_season, scale(length_gs) ~ scale(year, scale=FALSE)))$coefficients[2, c(1,4)]
+      sub_time_series[i, c("Lgs_piece_t", "Lgs_piece_p")] <- summary(lm(data=subdata_grow_season, scale(length_gs_piece) ~ scale(year, scale=FALSE)))$coefficients[2, c(1,4)]
     }
     
     # ###########################start plot figures for data quality check##################
@@ -319,16 +402,32 @@ for (i in 1:nrow(sub_time_series)) {
     # ###########################end plot figures for data quality check####################
     
   }
-  # Baseline conditions: MAT, MAP; use our values if we have >10 year data
+  # Baseline conditions: MAT, MAP; use our TNvalues if we have >10 year data
   if (is.na(sites_long$MAT[sites_long$site_ID==site_ID])) {
-    sub_time_series[i,48] <- mean(a_YY$TA_F_MDS, na.rm=T)
-    sub_time_series[i,49] <- mean(a_YY$P_ERA, na.rm=T)    
+    sub_time_series[i, "MAT"] <- mean(a_YY$TA_F_MDS, na.rm=T)
+    sub_time_series[i, "MAP"] <- mean(a_YY$P_ERA, na.rm=T)    
   } else {
-    sub_time_series[i,48] <- sites_long$MAT[sites_long$site_ID==site_ID]
-    sub_time_series[i,49] <- sites_long$MAP[sites_long$site_ID==site_ID]
+    sub_time_series[i, "MAT"] <- sites_long$MAT[sites_long$site_ID==site_ID]
+    sub_time_series[i, "MAP"] <- sites_long$MAP[sites_long$site_ID==site_ID]
   }
   # plant height
-  sub_time_series[i,50] <- canopyHeight$canopyH_Lang[canopyHeight$site_ID==site_ID]
+  sub_time_series[i, "Height"] <- canopyHeight$Height[canopyHeight$site_ID==site_ID & abs(canopyHeight$year_start-sub_time_series$year_start[i]) < 0.1]
+}
+#
+# add forest age
+if (!"Age" %in% colnames(sub_time_series)) {
+  sub_time_series <- left_join(sub_time_series, forestAge[, c('Site', "Age_standard")], by=c("site_ID"="Site"))
+  sub_time_series$Age <- sub_time_series$Age_standard + (sub_time_series$year_start + sub_time_series$year_end) / 2.0
+  sub_time_series$Age_standard <- NULL
+}
+#
+# add TN deposition data
+if (!"Nmean" %in% colnames(sub_time_series)) {
+  sub_time_series <- left_join(sub_time_series, TNvalues[, c('site_ID', "Nmean", "Ntrend_lm", "Np")], by="site_ID")
+}
+
+if (!"IGBP" %in% colnames(sub_time_series)) {
+  sub_time_series <- merge(sub_time_series, sites_long[, c('site_ID', "IGBP")], by="site_ID")
 }
 #
 print(paste0('total number of site years with TA outliers is removed: ', TA_site_years_removed))
@@ -336,21 +435,27 @@ print(paste0('total number of site years with TA outliers is removed: ', TA_site
 # remove poor-quality CO2 data
 sub_time_series$CO2_t[sub_time_series$CO2_t < 0.05] <- NA
 
+write.csv(sub_time_series, "data/sub_time_series_potential_drivers.csv", row.names = F)
+
 ```
 
 
 ```{r drivers of trend in cold climate, echo=TRUE, fig.height=8, fig.width=8}
 #
-data <- sub_time_series %>% left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>% 
-  filter(category=='cold') %>% mutate(Latabs = abs(Lat)) %>%
+data_cold <- sub_time_series %>% left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>% 
+  filter(category=='cold') 
+
+data <- data_cold %>% mutate(Latabs = abs(Lat)) %>%
         dplyr::select(c("NEEtrend_lm", "GPPtrend_lm", "ERtrend_lm", 
                             "TA_t", "P_t", "VPD_t", "SW_t", "LE_t", 
                             "TA_gs_t", "P_gs_t", "VPD_gs_t", "SW_gs_t", "LE_gs_t", 
                             "TA_ngs_t", "P_ngs_t", "VPD_ngs_t", "SW_ngs_t", "LE_ngs_t", 
-                            "Lgs_t", "Lgs_piece_t", "MAT", "MAP", "Height", "Latabs"))
+                            "Lgs_t", "Lgs_piece_t", "MAT", "MAP", "Height", "IGBP", "Nmean", "Ntrend_lm"))
 # "CO2_t", 
+data_use <- subset(data, select=-c(IGBP))
+data_use <- na.omit(data_use)
 
-rcorr_results <- rcorr(as.matrix(data))
+rcorr_results <- rcorr(as.matrix(data_use))
 cor_matrix <- rcorr_results$r
 p_matrix <- rcorr_results$P
 
@@ -361,8 +466,6 @@ print(cor_matrix)
 print(p_matrix)
 
 #
-data_use <- na.omit(data)
-#
 M=cor(data_use)
 testRes = cor.mtest(data_use, conf.level = 0.95)
 #
@@ -370,11 +473,11 @@ plot <- corrplot(M, p.mat = testRes$p, method = 'circle', insig='blank',
          diag = FALSE)
 plot
 
-# NEE trends in wet climate are very easy to predict: precipitation, VPD, solar radiation, TA, short radiations.
 # What's wrong with the cold climate data? P and SW during the non-growing season matter?
 options(na.action = na.fail)
 #
-data_use <- subset(data_use, select=-c(GPPtrend_lm, ERtrend_lm))
+data_use <- subset(data, select=-c(GPPtrend_lm, ERtrend_lm))
+data_use <- na.omit(data_use)
 #
 model <- lm(NEEtrend_lm ~ ., data = data_use)
 summary(model)
@@ -393,22 +496,254 @@ sexpr <- expression(!( (Lgs_t && Lgs_piece_t) ||
 system.time(dd <- dredge(model, subset = sexpr, rank = "AICc"))    # , cluster = cl
 dd
 
-#
-model_best <- lm(NEEtrend_lm ~ P_ngs_t + SW_ngs_t + VPD_ngs_t, data = data_use)
+model_best <- lm(NEEtrend_lm ~ P_ngs_t + SW_ngs_t + VPD_ngs_t + IGBP, data = data_use)
 summary(model_best)
 # this is the worse model
 
+# Differentiate by vegetation types; None of them significant
+data_use %>% # filter(IGBP=='OSH') %>%
+  ggplot(aes(x=Lgs_t, y=NEEtrend_lm)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+  
+
 ```
+
+```{r the influence of forest age}
+# Get all the forest sites with forest age, see if age matters. 
+data <- sub_time_series %>% left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>%  filter(IGBP %in% c('ENF', 'DBF', 'MF', 'EBF')) %>%
+mutate(Latabs = abs(Lat)) %>%
+        dplyr::select(c("NEEtrend_lm", "GPPtrend_lm", "ERtrend_lm", "category", "NEE", "GPP", "ER", 
+                        "Lgs_t", "Lgs_piece_t", "MAT", "MAP", "Height", "Latabs", "IGBP", "Nmean", "Ntrend_lm", "Age"))
+
+
+# Get all the forest sites with forest age in cold climate, see if age matters. 
+data %>% filter(IGBP %in% c('ENF', 'DBF', 'MF', 'EBF')) %>%      # c('ENF', 'DBF', 'MF', 'EBF')
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Age, y=NEEtrend_lm, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+data %>% filter(IGBP %in% c('DBF', "MF")) %>%      # c('ENF', 'DBF', 'MF', 'EBF')
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Age, y=NEEtrend_lm, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+data %>% filter(IGBP %in% c('ENF', "EBF")) %>%      # c('ENF', 'DBF', 'MF', 'EBF')
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Age, y=NEEtrend_lm, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+
+data %>% filter(IGBP %in% c('ENF', 'DBF', 'MF', 'EBF')) %>%      # c('ENF', 'DBF', 'MF', 'EBF')
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Age, y=NEE, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+#
+data %>% filter(IGBP %in% c('ENF', 'DBF', 'MF')) %>%      # c('ENF', 'DBF', 'MF', 'EBF')
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Age, y=GPP, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+#
+data %>% filter(IGBP %in% c('ENF', 'MF')) %>%      # c('ENF', 'DBF', 'MF', 'EBF')
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Age, y=ER, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+#
+data %>% filter(IGBP %in% c('EBF')) %>%      # c('ENF', 'DBF', 'MF', 'EBF')
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Age, y=ER, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+
+data %>% filter(IGBP %in% c('EBF')) %>%      # c('ENF', 'DBF', 'MF', 'EBF')
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Age, y=GPP, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+
+# Mixed forests: Age has the opposite effects on NEE trends in mixed forests and DBF than Evergreen needle-leaf and Evergreen broaf forests. 
+# Could this be that trees in evergreen forests live longer than trees in other forests?
+# Important references: a 500-year evergreen conifer forests remain carbon sinks, but can switch between carbon sources and sinks. 
+# reference: Wharton et al., 2012; Old-growth CO2 flux measurements reveal high sensitivity to climate anomalies. 
+# I got forest age data from this paper Besnard et al., 2018: quntifying the effect of forest age in annual net forest carbon balance. 
+
+
+# I really need mean NEE values. 
+# for non-EBF ('MF', 'ENF', 'DBF'), GPP and ER of old-forest reduce with age. 
+
+
+# for EBF, GPP and ER of old-forest increase with age. 
+
+
+```
+
+
+```{r the impact of canopy heights}
+data <- sub_time_series %>% left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>% 
+mutate(Latabs = abs(Lat)) %>% filter(IGBP %in% c('ENF', 'DBF', 'MF', 'EBF')) %>% filter(!category %in% c('dry')) %>%
+        dplyr::select(c("NEEtrend_lm", "GPPtrend_lm", "ERtrend_lm", "category", "NEE", "GPP", "ER", 
+                        "Lgs_t", "Lgs_piece_t", "MAT", "MAP", "Height", "Latabs", "IGBP", "Nmean", "Ntrend_lm", "Age", "site_ID"))
+
+
+# Get all the forest sites with forest age in cold climate, see if age matters. 
+data %>% filter(IGBP %in% c('ENF', 'DBF', 'MF', 'EBF')) %>%      # c('ENF', 'DBF', 'MF', 'EBF')
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Height, y=NEEtrend_lm, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+#-----------------------DBF---------------------
+# GPP, ER, and NEE is not sensitive to canopy height, but NEE trend is sensitive; higher canopy, more positive NEE trend.  
+data %>% filter(IGBP %in% c('DBF')) %>%      
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Height, y=NEEtrend_lm, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+data %>% filter(IGBP %in% c('DBF')) %>%      
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Height, y=NEE, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+data %>% filter(IGBP %in% c('DBF')) %>%      
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Height, y=GPP, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+data %>% filter(IGBP %in% c('DBF')) %>%      
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Height, y=ER, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+#-----------------------ENF---------------------
+# GPP, ER, NEE and NEE trend are all sensitive to canopy height; higher canopy, more negative NEE trend.  
+
+data %>% filter(IGBP %in% c('ENF')) %>%      
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Height, y=NEEtrend_lm, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+data %>% filter(IGBP %in% c('ENF')) %>%      
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Height, y=NEE, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+data %>% filter(IGBP %in% c('ENF')) %>%      
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Height, y=GPP, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+data %>% filter(IGBP %in% c('ENF')) %>%      
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Height, y=ER, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+#-----------------------MF---------------------not enough data
+data %>% filter(IGBP %in% c('MF')) %>%      
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Height, y=NEEtrend_lm, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+data %>% filter(IGBP %in% c('MF')) %>%      
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Height, y=NEE, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+data %>% filter(IGBP %in% c('MF')) %>%      
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Height, y=GPP, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+data %>% filter(IGBP %in% c('MF')) %>%      
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Height, y=ER, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+#-----------------------EBF---------------------not enough data
+data %>% filter(IGBP %in% c('EBF')) %>%      
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Height, y=NEEtrend_lm, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+data %>% filter(IGBP %in% c('EBF')) %>%      
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Height, y=NEE, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+data %>% filter(IGBP %in% c('EBF')) %>%      
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Height, y=GPP, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+data %>% filter(IGBP %in% c('EBF')) %>%      
+  # filter(category=='cold') %>% 
+  ggplot(aes(x=Height, y=ER, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+```
+
 
 ```{r trend driver for dry climate }
 # identify trend drivers for dry climate
-data <- sub_time_series %>% left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>% 
-  filter(category=='dry') %>% mutate(Latabs = abs(Lat)) %>%
-        dplyr::select(c("NEEtrend_lm", "GPPtrend_lm", "ERtrend_lm", 
-                            "TA_t", "P_t", "VPD_t", "SW_t", "LE_t", 
+data_dry <- sub_time_series %>% left_join(sites_long[, c("site_ID", "category", "IGBP")], by="site_ID") %>% filter(category=='dry')
+
+data <- data_dry %>% mutate(Latabs = abs(Lat)) %>%
+        dplyr::select(c("NEEtrend_lm", "GPPtrend_lm", "ERtrend_lm",
                             "TA_gs_t", "P_gs_t", "VPD_gs_t", "SW_gs_t", "LE_gs_t", 
                             "TA_ngs_t", "P_ngs_t", "VPD_ngs_t", "SW_ngs_t", "LE_ngs_t", 
-                            "Lgs_t", "Lgs_piece_t", "MAT", "MAP", "Height", "Latabs"))
+                            "Lgs_t", "Height"))  # , "Nmean" "Lgs_piece_t", "Height", "Nmean"
 
 rcorr_results <- rcorr(as.matrix(data))
 cor_matrix <- rcorr_results$r
@@ -432,8 +767,8 @@ plot
 #
 options(na.action = na.fail)
 #
-# TA variables, MAT, MAP, Height are NOT important, can only have 18 variables in. 
-data_use <- subset(data_use, select=-c(GPPtrend_lm, ERtrend_lm, Latabs, TA_t, TA_gs_t, TA_ngs_t))
+# TA variables, MAT, MAP, Height are NOT important, can only have 18 variables in. TA_t, TA_gs_t, TA_ngs_t, 
+data_use <- subset(data_use, select=-c(GPPtrend_lm, ERtrend_lm))
 #
 model <- lm(NEEtrend_lm ~ ., data = data_use)
 summary(model)
@@ -442,32 +777,44 @@ vif_values <- vif(model)
 vif_values
  
 # adding coexistence rules
-sexpr <- expression(!(   (Lgs_t && Lgs_piece_t) || 
-#                         (TA_t && TA_ngs_t) || (TA_t && TA_gs_t) ||
-                         (P_t && P_ngs_t) || (P_t && P_gs_t) ||
-                         (VPD_t && VPD_ngs_t) || (VPD_t && VPD_gs_t) ||
-                         (SW_t && SW_ngs_t) || (SW_t && SW_gs_t) ||
-                         (LE_t && LE_ngs_t) || (LE_t && LE_gs_t) ))
-#                         (TA_t && VPD_t) || (TA_gs_t && VPD_gs_t) ||  (TA_ngs_t && VPD_ngs_t)
+sexpr <- expression(!(   (Lgs_t && Lgs_piece_t) 
+                         # (TA_gs_t && VPD_gs_t) ||  (TA_ngs_t && VPD_ngs_t) ||
+                         # (TA_t && TA_ngs_t) || (TA_t && TA_gs_t) ||
+                         # (P_t && P_ngs_t) || (P_t && P_gs_t) ||
+                         # (VPD_t && VPD_ngs_t) || (VPD_t && VPD_gs_t) ||
+                         # (SW_t && SW_ngs_t) || (SW_t && SW_gs_t)
+))
+#                         (TA_t && VPD_t) || 
 # these pairs cannot coexist 
-system.time(dd <- dredge(model, subset = sexpr, rank = "AICc"))    # , cluster = cl
+system.time(dd <- dredge(model, rank = "AICc"))    # , cluster = cl, , subset = sexpr
 dd
 
-#
-model_best <- lm(NEEtrend_lm ~ LE_ngs_t + P_gs_t + P_ngs_t + SW_ngs_t + VPD_t, data = data_use)
+# P_gs_t and VPD_ngs_t; these two are positive. Grassland is more positive. 
+model_best <- lm(NEEtrend_lm ~ P_gs_t + VPD_ngs_t + IGBP.x + Height, data = data_dry)
 summary(model_best)
+
+# here VPD trend in growing season is similar to VPD in non-growing season, so this is overall trend; warming-induced VPD increase may enhance CO2 uptake if there is water during growing season.
+data_dry %>% 
+  ggplot(aes(x=VPD_ngs_t, y=NEEtrend_lm)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green') 
+
+# one LE outliers should be examined!
+# this is such a good relationship between VPD_ngs_t and NEE trend. 
+
+# Nmean and Ntrend_lm are not important for NEE trends in dry climates. 
+
 
 ```
 
 ```{r trend driver for wet climate }
 # identify trend drivers for dry climate
-data <- sub_time_series %>% left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>% 
-  filter(category=='wet') %>% mutate(Latabs = abs(Lat)) %>%
+data_wet <- sub_time_series %>% left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>% filter(category=='wet') 
+data <- data_wet %>% mutate(Latabs = abs(Lat)) %>%
         dplyr::select(c("NEEtrend_lm", "GPPtrend_lm", "ERtrend_lm", 
-                            "TA_t", "P_t", "VPD_t", "SW_t", "LE_t", 
-                            "TA_gs_t", "P_gs_t", "VPD_gs_t", "SW_gs_t", "LE_gs_t", 
-                            "TA_ngs_t", "P_ngs_t", "VPD_ngs_t", "SW_ngs_t", "LE_ngs_t", 
-                            "Lgs_t", "Lgs_piece_t", "MAT", "MAP", "Height"))  # , "Latabs" because not enough meaning.
+                            "TA_t", "P_t", "VPD_t", "SW_t", 'LE_t',
+                            "Height", "Nmean"))  # , "Latabs" because not enough meaning. "Nmean"
 
 rcorr_results <- rcorr(as.matrix(data))
 cor_matrix <- rcorr_results$r
@@ -489,9 +836,28 @@ plot <- corrplot(M, p.mat = testRes$p, method = 'circle', insig='blank',
          diag = FALSE)
 plot
 #
+# the impact of Nitrogen deposition on NEE trend
+# such a big impact of Nitrogen deposition on NEE trend in wet climate. I cannot believe this. 
+#-----------------------------------IMPORTANT-----------------------------------
+plot(data_use$NEEtrend_lm, data_use$Nmean)
+data_use %>% # filter(Nmean < 30) %>% 
+  ggplot(aes(x=Nmean, y=NEEtrend_lm)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+#-----------------------------------IMPORTANT-----------------------------------
+
+# Nitrogen deposition trend is not that important. likely because the trend data is not very reliable. 
+data_use %>% 
+  ggplot(aes(x=Nmean, y=NEEtrend_lm)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green')
+
+
 options(na.action = na.fail)
 #
-# TA variables, MAT, MAP, Height are NOT important, can only have 18 variables in. 
+# do not differentiate between growing and non-growing season
 data_use <- subset(data_use, select=-c(GPPtrend_lm, ERtrend_lm))
 #
 model <- lm(NEEtrend_lm ~ ., data = data_use)
@@ -506,41 +872,185 @@ sexpr <- expression(!(   (Lgs_t && Lgs_piece_t) ||
                          (P_t && P_ngs_t) || (P_t && P_gs_t) ||
                          (VPD_t && VPD_ngs_t) || (VPD_t && VPD_gs_t) ||
                          (SW_t && SW_ngs_t) || (SW_t && SW_gs_t) ||
-                         (LE_t && LE_ngs_t) || (LE_t && LE_gs_t) ))
+                         (LE_t && LE_ngs_t) || (LE_t && LE_gs_t) ||
+                         (Nmean && Ntrend_lm)  ))
 # these pairs cannot coexist 
 
-# this will take ~5min
-system.time(dd <- dredge(model, subset = sexpr, rank = "AICc"))    # , cluster = cl
+system.time(dd <- dredge(model, rank = "AICc"))    # subset = sexpr, cluster = cl
 dd
-
-
-model_best <- lm(NEEtrend_lm ~ LE_gs_t + P_gs_t + MAP, data = data_use)
+#
+model_best <- lm(NEEtrend_lm ~ LE_t + IGBP, data = data_wet)
 summary(model_best)
-
-```
-
-
-
-
-
-
-```{r also use linear mixed model }
-###with varying slopes and intercepts for each site
-###
-
-
-
-
-
+# Evergreen forests and Savahna have more negative values NEE trends. 
 
 ```
 
 
 ```{r how about differentiate vegetation types}
+data_ENF_cold <- sub_time_series %>% left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>% 
+  filter(IGBP %in% c('ENF', "EBF") & category %in% c("cold")) 
 
+data <- data_ENF_cold %>% 
+        dplyr::select(c("NEEtrend_lm", "GPPtrend_lm", "ERtrend_lm", 
+                            "TA_gs_t", "P_gs_t", "VPD_gs_t", "SW_gs_t", "LE_gs_t", 
+                            "TA_ngs_t", "P_ngs_t", "VPD_ngs_t", "SW_ngs_t", "LE_ngs_t", 
+                            "Lgs_t", "MAT", "MAP", "Height", "Nmean", "Age"))
 
+rcorr_results <- rcorr(as.matrix(data))
+cor_matrix <- rcorr_results$r
+p_matrix <- rcorr_results$P
 
+# Print correlation matrix
+print(cor_matrix)
+
+# Print p-value matrix
+print(p_matrix)
+
+data_use <- na.omit(data)
+#
+M=cor(data_use)
+testRes = cor.mtest(data_use, conf.level = 0.95)
+#
+plot <- corrplot(M, p.mat = testRes$p, method = 'circle', insig='blank',
+         diag = FALSE)
+plot
+
+options(na.action = na.fail)
+#
+# do not differentiate between growing and non-growing season
+data_use <- subset(data_use, select=-c(GPPtrend_lm, ERtrend_lm))
+#
+model <- lm(NEEtrend_lm ~ ., data = data_use)
+summary(model)
+#
+vif_values <- vif(model)
+vif_values
+
+system.time(dd <- dredge(model, rank = "AICc"))    # subset = sexpr, cluster = cl
+dd
+
+model_best <- lm(NEEtrend_lm ~ Age + MAT + P_gs_t + SW_gs_t + P_ngs_t + VPD_ngs_t, data = data_use)
+summary(model_best)
+
+data_use %>% 
+  ggplot(aes(x=Age, y=NEEtrend_lm)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green') 
 
 
 ```
+
+```{r how about differentiate vegetation types}
+data_DBF_cold <- sub_time_series %>% left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>% 
+  filter(IGBP %in% c('MF', "DBF") ) %>% filter(category %in% c("cold"))
+data <- data_DBF_cold %>%
+        dplyr::select(c("NEEtrend_lm", "GPPtrend_lm", "ERtrend_lm", 
+                            "TA_gs_t", "P_gs_t", "VPD_gs_t", "SW_gs_t", 
+                            "TA_ngs_t", "P_ngs_t", "VPD_ngs_t", "SW_ngs_t", 
+                            "Lgs_t", "MAT", "MAP", "Height", "Nmean", "Age"))
+
+rcorr_results <- rcorr(as.matrix(data))
+cor_matrix <- rcorr_results$r
+p_matrix <- rcorr_results$P
+
+# Print correlation matrix
+print(cor_matrix)
+
+# Print p-value matrix
+print(p_matrix)
+
+data_use <- na.omit(data)
+#
+M=cor(data_use)
+testRes = cor.mtest(data_use, conf.level = 0.95)
+#
+plot <- corrplot(M, p.mat = testRes$p, method = 'circle', insig='blank',
+         diag = FALSE)
+plot
+
+options(na.action = na.fail)
+#
+# do not differentiate between growing and non-growing season
+data_use <- subset(data_use, select=-c(GPPtrend_lm, ERtrend_lm))
+#
+model <- lm(NEEtrend_lm ~ ., data = data_use)
+summary(model)
+#
+vif_values <- vif(model)
+vif_values
+
+system.time(dd <- dredge(model, rank = "AICc"))    # subset = sexpr, cluster = cl
+dd
+
+model_best <- lm(NEEtrend_lm ~ Age + P_ngs_t + VPD_ngs_t + VPD_gs_t, data = data_use)
+summary(model_best)
+
+data_DBF_cold %>% 
+  ggplot(aes(x=Age, y=NEEtrend_lm)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green') 
+
+```
+
+```{r how about differentiate vegetation types}
+data_cold_nonforest <- sub_time_series %>% left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>% 
+  filter(!IGBP %in% c('MF', "DBF", "EBF", "ENF") ) %>% filter(category %in% c("cold")) 
+data <- data_cold_nonforest %>%
+        dplyr::select(c("NEEtrend_lm", "GPPtrend_lm", "ERtrend_lm", 
+                            "TA_gs_t", "P_gs_t", "VPD_gs_t", "SW_gs_t", 
+                            "TA_ngs_t", "P_ngs_t", "VPD_ngs_t", "SW_ngs_t", 
+                            "Lgs_t", "MAT", "MAP", "Nmean"))
+
+rcorr_results <- rcorr(as.matrix(data))
+cor_matrix <- rcorr_results$r
+p_matrix <- rcorr_results$P
+
+# Print correlation matrix
+print(cor_matrix)
+
+# Print p-value matrix
+print(p_matrix)
+
+data_use <- na.omit(data)
+#
+M=cor(data_use)
+testRes = cor.mtest(data_use, conf.level = 0.95)
+#
+plot <- corrplot(M, p.mat = testRes$p, method = 'circle', insig='blank',
+         diag = FALSE)
+plot
+
+options(na.action = na.fail)
+#
+# do not differentiate between growing and non-growing season
+data_use <- subset(data_use, select=-c(GPPtrend_lm, ERtrend_lm))
+#
+model <- lm(NEEtrend_lm ~ ., data = data_use)
+summary(model)
+#
+vif_values <- vif(model)
+vif_values
+
+system.time(dd <- dredge(model, rank = "AICc"))    # subset = sexpr, cluster = cl
+dd
+
+model_best <- lm(NEEtrend_lm ~ MAP + Nmean , data = data_cold_nonforest)
+summary(model_best)
+
+data %>% 
+  ggplot(aes(x=Nmean, y=NEEtrend_lm)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green') 
+
+data %>% 
+  ggplot(aes(x=MAP, y=NEEtrend_lm)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='green') 
+
+```
+
 

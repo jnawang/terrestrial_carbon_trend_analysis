@@ -450,8 +450,8 @@ sites_long <- sites_long %>%
                             Climate.class %in% c("Cfa") ~ "wet",
                             Climate.class %in% c("Cfb") ~ "cold"         # those sites has winters and in high latitudes
                             ))
-# CL-SDF should be in wet climate, because it is tropical forests.         
-sites_long$category[sites_long$site_ID=='CL-SDF'] <- "wet"
+# # CL-SDF should be in wet climate, because it is tropical forests.         
+# sites_long$category[sites_long$site_ID=='CL-SDF'] <- "wet"
 #
 # sites_long <- sites_long %>% mutate(category=case_when(Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "ET", "Dwc")  ~ 'cold',
 #                              !Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "ET", "Dwc") & AI < 0.4 ~ 'dry',
@@ -467,6 +467,3 @@ sites_long$category[sites_long$site_ID=='CL-SDF'] <- "wet"
 write.csv(sites_long, file = 'data/long_term_ec_sites.csv', row.names = F)
 
 ```
-
-
-
