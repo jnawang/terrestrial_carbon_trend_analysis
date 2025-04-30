@@ -16,7 +16,7 @@ rm(list=ls())
 dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 #
 library(librarian)
-shelf(tidyverse, ncdf4, lubridate)
+shelf(tidyverse, ncdf4, lubridate, ecmwfr, terra, lutz)
 ```
 
 
@@ -54,12 +54,12 @@ utc_offset(40, -100)
 
 ```
 
-```{r read era5 data, convert it to csv files}
+```{r read era5 precipitation data, convert it to csv files}
 #### read nc files
 ## read each file, get long, lat, var, and years
 nc_files <- list.files(file.path(dir_rawdata, 'ERA5_Tair_Prec'), pattern='.nc$')
 ##
-sites_Ameri <- read.csv('../data/AmeriFlux-site-search-results-202501071742.csv')
+sites_Ameri <- read.csv('data/AmeriFlux-site-search-results-202501071742.csv')
 sites_Ameri <- sites_Ameri[, c("Site.ID", "Longitude..degrees.", "Latitude..degrees.")]
 names(sites_Ameri) <- c("site_ID", "Long", "Lat")
 ##
@@ -144,6 +144,258 @@ for (site in sites_BASE) {
   # save to csv files: site_ID, var, year_start, year_end
   write.csv(df_output, file=file.path(dir_rawdata, 'ERA5_Tair_Prec', paste0(site, "_", df_sub$Var[1], "_", year_start, "_", year_end, ".csv")), row.names = F)
 }
+
+```
+
+
+```{r convert ERA solar radiaiton data to csv files}
+nc_files <- list.files(file.path(dir_rawdata, 'ERA5_SW'), pattern='.nc$')
+##
+sites_Ameri <- read.csv('data/AmeriFlux-site-search-results-202501071742.csv')
+sites_Ameri <- sites_Ameri[, c("Site.ID", "Longitude..degrees.", "Latitude..degrees.")]
+names(sites_Ameri) <- c("site_ID", "Long", "Lat")
+##
+df <- data.frame(Long=double(), Lat=double(), Var=character(), site_ID=character(), file_ID=integer())
+##
+for (i in 1:length(nc_files)) {
+#  i = 35
+  nc_file <- nc_open(file.path(dir_rawdata, 'ERA5_SW', nc_files[i]))
+  df[i,3] <- names(nc_file$var)[3]
+  df$Long[i] <- ncvar_get(nc_file, "longitude")
+  df$Lat[i]  <- ncvar_get(nc_file, "latitude")
+  df$file_ID[i] <- i
+  # 
+  id <- sites_Ameri$site_ID[abs(df$Long[i] - sites_Ameri$Long) < 0.02 & abs(df$Lat[i] - sites_Ameri$Lat) < 0.02]
+  if (length(id) == 1) {
+    df$site_ID[i] <- id
+    print(paste0('find ', id[1]))
+  } else if (length(id) > 1 & id[1]=="US-LL2") {
+    df$site_ID[i] <- id[1]
+    print(id)    
+  } else if (length(id) > 1 & id[1]=="CL-SDF") {
+    df$site_ID[i] <- id[2]
+    print(id)    
+  } else {
+    print(paste0("no matching Ameriflux sites found for the long and lat: ", df$Long[i], '-', df$Lat[i]))
+  }
+  #
+}
+#######
+# check what data are missed for each site. 
+df <- df %>% na.omit %>% arrange(site_ID)
+sites_BASE <- unique(df$site_ID)
+#
+for (site in sites_BASE) {
+  df_prec <- data.frame()
+  df_sub <- subset(df, site_ID == site)
+  hour_offset <- utc_offset(df_sub$Lat[1], df_sub$Long[1])
+  #
+  for (i in 1:nrow(df_sub)) {
+    nc_file <- nc_open(file.path(dir_rawdata, 'ERA5_SW', nc_files[df_sub$file_ID[i]]))
+    time <- ncvar_get(nc_file, "valid_time")
+    ssrd <- ncvar_get(nc_file, "ssrd")  # ssrd unit: J/m2; I need to divide this by 3600 seconds. 
+    #
+    # convert to UTC time
+    time_origin <- ncatt_get(nc_file, "valid_time", "units")$value
+    #
+    time_converted <- as.POSIXct(time, origin = gsub("seconds since ", "", time_origin), tz = "UTC")
+    #
+    # convert to local time
+    df_prec <- rbind(df_prec, data.frame(time=time_converted+hour_offset*3600, ssrd=ssrd/3600))
+    #
+  }
+  print(paste0("Check duplicates for ", site, ": ", sum(duplicated(df_prec$time))))
+  df_prec <- df_prec %>% arrange(time)
+  #
+  # start from the first time of a year and the end time of a year
+  df_prec_annual <- df_prec %>% mutate(year=year(time)) %>% group_by(year) %>% summarise(n=n()) %>% filter(n>100)
+  year_start <- df_prec_annual$year[1]
+  year_end   <- df_prec_annual$year[nrow(df_prec_annual)]
+  #
+  # print out site_ID, start_year, end_year
+  print(paste(site, year_start, year_end, setdiff(year_start:year_end, unique(df_prec_annual$year)), sep="-"))
+  #
+  df_prec <- df_prec %>% filter(between(year(time), year_start, year_end))
+  # 
+  # convert this to sub-hourly data
+  df_output <- data.frame(time=seq(df_prec$time[1], df_prec$time[nrow(df_prec)] + 30*60, by = "30 min"))
+  # 
+  # divided by 2?
+  df_output$SW_ERA <- approx(df_prec$time, df_prec$ssrd, df_output$time, method = "linear", rule=2)$y
+  #
+  # years I need to add missing data: check the first year
+  time_start <- make_datetime(year = year_start, month = 1, day = 1, hour = 0, min = 0, sec = 0)
+  if (df_prec$time[1] > time_start) {
+    # use values of the second day
+    n_missed <- as.numeric(difftime(df_output$time[1], time_start, units = "secs")) / (30*60)
+    df_missed <- data.frame(time=seq(time_start, df_output$time[1] - 30*60, by = "30 min"), 
+                            SW_ERA=df_output$SW_ERA[(1+48) : (n_missed+48)])
+    df_output <- rbind(df_missed, df_output)
+  }
+  #
+  # years I need to add missing data: check the last year
+  end_time <- make_datetime(year = year_end, month = 12, day = 31, hour = 23, min = 30, sec = 0)
+  if (df_output$time[nrow(df_output)] < end_time) {
+    # use values of the last day
+    n_missed <- as.numeric(difftime(end_time, df_output$time[nrow(df_output)], units = "secs")) / (30*60)
+
+    df_missed <- data.frame(time=seq(df_output$time[nrow(df_output)] + 30*60, end_time, by = "30 min"), 
+                            SW_ERA=df_output$SW_ERA[(nrow(df_output)+1-48) : (nrow(df_output)+n_missed-48)])
+    df_output <- rbind(df_output, df_missed)
+  }
+  # convert date time to numbers
+  df_output$time <- format(df_output$time, "%Y%m%d%H%M")
+  
+  # save to csv files: site_ID, var, year_start, year_end
+  write.csv(df_output, file=file.path(dir_rawdata, 'ERA5_SW', paste0(site, "_", df_sub$Var[1], "_", year_start, "_", year_end, ".csv")), row.names = F)
+}
+
+```
+
+
+```{r download Tair and solar radiation data from ERA5}
+
+# prepare for site meta-data
+sites_long <- read.csv('data/long_term_ec_sites.csv')
+sites <- read.csv('data/AmeriFlux-site-search-results-202501071742.csv')
+
+sites_long_Ameri_base <- sites_long %>% filter(source == "AmeriFlux_BASE") %>% left_join(sites[, c("Site.ID", "AmeriFlux.BASE.Data.Start", "AmeriFlux.BASE.Data.End")], by=c("site_ID"="Site.ID"))
+
+# variables <- c('ssrd', 't2m')
+# variables <- "2m_temperature, surface_solar_radiation_downwards"
+variables <- "surface_solar_radiation_downwards"
+df.sitemetadata <- data.frame(
+    site_codes = sites_long_Ameri_base$site_ID,
+    lat = sites_long_Ameri_base$Lat,
+    lon = sites_long_Ameri_base$Long,
+    startdate = as.Date(ISOdate(sites_long_Ameri_base$AmeriFlux.BASE.Data.Start, 1, 1)),
+    enddate = as.Date(ISOdate(sites_long_Ameri_base$AmeriFlux.BASE.Data.End, 12, 31)),
+    variables = variables,
+    stringsAsFactors = FALSE
+  )
+
+# df.sitemetadata <- do.call(rbind, lapply(variables, function(var) {
+#   data.frame(
+#     site_codes = sites_long_Ameri_base$site_ID,
+#     lat = sites_long_Ameri_base$Lat,
+#     lon = sites_long_Ameri_base$Long,
+#     startdate = as.Date(ISOdate(sites_long_Ameri_base$AmeriFlux.BASE.Data.Start, 1, 1)),
+#     enddate = as.Date(ISOdate(sites_long_Ameri_base$AmeriFlux.BASE.Data.End, 12, 31)), 
+#     variables = var,
+#     stringsAsFactors = FALSE
+#   )
+# }))
+
+######### working code for ERA5 API download
+for(i in 1:nrow(df.sitemetadata)){
+  df.sitemetadata$UTC_offset[i] <- utc_offset(as.numeric(df.sitemetadata$lat[i]), as.numeric(df.sitemetadata$lon[i]))
+}
+
+####### start of API code
+##### THIS IS DAVID'S KEY, PLEASE CHANGE!
+# wf_set_key("8938d21f-2336-42c4-8fe5-5783996193b0")
+
+##### Junna's key
+wf_set_key('47eed9ac-8876-4a98-93b1-d0a00c32e849')
+
+### start of site-by-site loop
+### i is site
+for(i in 1:nrow(df.sitemetadata)){
+  
+  ## building area parameter from metadata lat and lon values
+  #area = c(55, -130, 25, -70)
+  area = c(round(as.numeric(df.sitemetadata$lat[i]), digits = 2),
+           round(as.numeric(df.sitemetadata$lon[i]), digits = 2)-.01,
+           round(as.numeric(df.sitemetadata$lat[i]), digits = 2)-.01,
+           round(as.numeric(df.sitemetadata$lon[i]), digits = 2))
+  
+  start_day = df.sitemetadata$startdate[i] - 1
+  end_day = df.sitemetadata$enddate[i] + 1
+
+  loop_date = as.Date(paste(year(start_day),month(start_day),"01",sep = ""),"%Y%m%d")
+  
+  while ( loop_date < end_day  ) {
+    #print(loop_date)
+    
+    date = paste(
+      year(loop_date),
+      "-",
+      month(loop_date),
+      "-",
+      day(loop_date),
+      "/",
+      year(loop_date%m+% months(1)-1),
+      "-",
+      month(loop_date%m+% months(1)-1),
+      "-",
+      day(loop_date%m+% months(1)-1),
+      sep = "")
+    
+    ##building final file name
+    #target = "era5-demo.nc"
+    target = paste(
+      "ERA5-",
+      df.sitemetadata$site_codes[i],
+      '-',
+      year(loop_date),
+      '-',
+      month(loop_date),
+      ".nc",
+      sep = ""
+    )
+    
+    #### build request file for ERA API
+    request <- list(
+      dataset_short_name = "reanalysis-era5-land",
+      product_type = "reanalysis",
+      variable = unlist(strsplit(df.sitemetadata$variables[i], split = ", ")),
+      date = date,
+      time = c("00:00", "01:00", "02:00",
+               "03:00", "04:00", "05:00",
+               "06:00", "07:00", "08:00",
+               "09:00", "10:00", "11:00",
+               "12:00", "13:00", "14:00",
+               "15:00", "16:00", "17:00",
+               "18:00", "19:00", "20:00",
+               "21:00", "22:00", "23:00"),
+      data_format = "netcdf",
+      download_format = "unarchived",
+      area = area,
+      target = target
+    )
+    
+    ### third loop that re-tries API request if it fails
+    while(!file.exists(paste("/Volumes/Malonelab/Research/ERA5_FLUX/data_ERA5_JW/", target, sep = ""))){
+      try(
+        file <- wf_request(
+          request  = request,  # the request
+          transfer = TRUE,     # download the file
+          time_out = 36000,
+          ##code for windows users
+          # path     = "z:/Research/ERA5_FLUX/data_ERA5"       # store data in ERA5 folder on server directory
+          ##code for mac users
+          path     = "/Volumes/Malonelab/Research/ERA5_FLUX/data_ERA5_JW"       # store data in ERA5 folder on server directory
+        ), silent=TRUE)
+      
+    } ###end of API loop
+    
+    loop_date = loop_date %m+% months(1)
+    
+  } ### end of month-by-month
+  
+} ### end of site-by-site loop
+
+```
+
+
+```{r convert ERA5 nc to csv}
+cat(paste0('"', 2016:2017, '"', collapse = ", "))
+
+coor <- round(c(31.6637, -110.1777), 2)
+
+paste(as.character(round(c(coor[1] + 0.006, coor[2]-0.006, coor[1] - 0.006, coor[2]+0.006), 2)), collapse = ", ")
+
+
 
 ```
 

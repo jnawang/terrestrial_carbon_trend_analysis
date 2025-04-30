@@ -259,7 +259,7 @@ for (i in 1:nrow(sites_long)) {
   #
   #### the eighth rule: monthly average NEE should be similar to average seasonal patterns ####
   #### only applies sites with seasonal pattern, not in tropical and subtropical
-  if (!site_ID %in% c("BR-Sa1", "US-LL3", "US-LL1", "US-LL2", "GF-Guy")) {
+  if (!site_ID %in% c("BR-Sa1", "US-LL3", "US-LL1", "US-LL2", "GF-Guy", "CL-SDF")) {
     monthly_NEE_var <- monthly_NEE_day %>% group_by(YEAR) %>% summarise(cor=cor(NEE, monthly_NEE_day_pattern$Q2)) 
     Q1 <- as.numeric(quantile(monthly_NEE_var$cor, 0.25, na.rm=T))
     Q3 <- as.numeric(quantile(monthly_NEE_var$cor, 0.75, na.rm=T))
@@ -308,11 +308,7 @@ write.csv(rm_years, file = 'data/years_to_remove.csv', row.names = F)
 
 
 ```{r calculate ET and PET}
-# cold sites: "ET", "Dwc", "Dfa", "Dfb", "Dfc", "Dfd"
-# dry sites: "Bsh", "Bsk", "BWh", "Cwa", "Csa"
-# wet sites: "Am", other "Cs"
-####
-# I should use hourly pattern, or daily data to calculate PET
+# it takes about 1 hour.
 ####
 #
 # the threshold of P/ETP: > 0.65 wet regions, 0.5-0.65 mediate regions, and < 0.5 dry regions.
@@ -440,7 +436,9 @@ write.csv(water_flux, 'data/water_flux_AI.csv', row.names = F)
 #
 water_flux <- read.csv('data/water_flux_AI.csv')
 #
-sites_long <- sites_long %>% left_join(water_flux, by='site_ID')
+if (!"AI" %in% names(sites_long)) {
+  sites_long <- sites_long %>% left_join(water_flux, by='site_ID')
+}
 #
 sites_long <- sites_long %>% 
   mutate(category=case_when(Climate.class %in% c("Csa", "Csb", "Bsh", "Bsk", "BWh") & AI < 0.5 ~ 'dry',
@@ -450,8 +448,6 @@ sites_long <- sites_long %>%
                             Climate.class %in% c("Cfa") ~ "wet",
                             Climate.class %in% c("Cfb") ~ "cold"         # those sites has winters and in high latitudes
                             ))
-# # CL-SDF should be in wet climate, because it is tropical forests.         
-# sites_long$category[sites_long$site_ID=='CL-SDF'] <- "wet"
 #
 # sites_long <- sites_long %>% mutate(category=case_when(Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "ET", "Dwc")  ~ 'cold',
 #                              !Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "ET", "Dwc") & AI < 0.4 ~ 'dry',
@@ -461,9 +457,12 @@ sites_long <- sites_long %>%
 # sites_long$category[is.na(sites_long$category) & sites_long$Climate.class %in% c('Cfa', 'Cfb')] <- 'wet'
 # sites_long$category[is.na(sites_long$category) & sites_long$Climate.class %in% c('Csa')] <- 'dry'
 #
-# we have 13 dry sites. 
-# we have 17 wet sites.
-# we have 73 cold sites. 
+sum(sites_long$category=='dry')
+# we have 13 dry sites.
+sum(sites_long$category=='wet')
+# we have 16 wet sites.
+sum(sites_long$category=='cold')
+# we have 74 cold sites. 
 write.csv(sites_long, file = 'data/long_term_ec_sites.csv', row.names = F)
 
 ```

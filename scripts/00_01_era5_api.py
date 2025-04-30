@@ -11,8 +11,9 @@ import os
 
 # Set the API credentials as environment variables
 os.environ['CDSAPI_URL'] = 'https://cds.climate.copernicus.eu/api'
-os.environ['CDSAPI_KEY'] = '47eed9ac-8876-4a98-93b1-d0a00c32e849' # get that key from your CDS account; Junna's account
-# os.environ['CDSAPI_KEY'] = '8938d21f-2336-42c4-8fe5-5783996193b0'   # this is David's account
+os.environ['CDSAPI_KEY'] = '47eed9ac-8876-4a98-93b1-d0a00c32e849'  # get that key from your CDS account; Junna's account
+# os.environ['CDSAPI_KEY'] = '8938d21f-2336-42c4-8fe5-5783996193b0'  # this is David's account
+# os.environ['CDSAPI_KEY'] = '0a2b0eec-ed62-4a42-8fb8-83ca726ef382'    # this is Ammara's account
 
 # download_dir = "/Users/jw2946/Downloads/"  # Change this to your desired directory
 
@@ -29,10 +30,10 @@ dataset = "reanalysis-era5-single-levels"
 request = {
     "product_type": ["reanalysis"],
     "variable": [
-        "Total precipitation"
+        "surface_solar_radiation_downwards"
     ],
     "year": [
-        "2002", "2003", "2004", "2005", "2006", "2007", "2008", "2009", "2010", "2011"
+        "2016", "2017"
     ],
     "month": [
         "01", "02", "03",
@@ -65,7 +66,7 @@ request = {
     ],
     "data_format": "netcdf",
     "download_format": "unarchived",
-    "area": [-2.85, -54.96, -2.86, -54.95]
+    "area": [31.67, -110.19, 31.65, -110.17]
 }
 
 client = cdsapi.Client()

@@ -118,6 +118,111 @@ for (i in 1:nrow(sites_selected_BASE)) {
 ```
 
 
+```{r a function to merge ERA5 and FLUX}
+
+blend_ERA5_FLUX <- function(merged_data, varname_FLUX, varname_ERA5, blending_rule) {
+  for (i in seq_along(varname_FLUX)) {
+    flux_var <- varname_FLUX[i]
+    era5_var <- varname_ERA5[i]
+    rule <- blending_rule[i]  # Extract corresponding rule for the variable
+    
+    message("Processing: ", flux_var, " using rule: ", rule)
+    
+    # Initialize the new "_f" column with the original flux_var values
+    merged_data[[paste0(flux_var, "_f")]] <- merged_data[[flux_var]]
+    
+    if (rule == "replace") {
+      # Replace the whole flux variable with ERA5 (copy ERA5 values to new column)
+      merged_data[[paste0(flux_var, "_f")]] <- merged_data[[era5_var]]
+    }
+    
+    if (rule == "lm") {
+      # Remove rows with NA in either varname_FLUX or varname_ERA5
+      complete_cases <- merged_data[!is.na(merged_data[[flux_var]]) & !is.na(merged_data[[era5_var]]), ]
+      
+      if (nrow(complete_cases) > 1) {  
+        formula_str <- paste(flux_var, "~", era5_var)
+        message("Fitting linear model with formula: ", formula_str)
+        
+        lm_model <- lm(as.formula(formula_str), data = complete_cases)
+        
+        # Only use model predictions to fill missing values in flux_var
+        missing_flux_idx <- which(is.na(merged_data[[flux_var]]))  # Identify all missing flux_var entries
+        
+        if (length(missing_flux_idx) > 0) {
+          # Predict missing flux values based on ERA5 data and fill them
+          predictions <- predict(lm_model, 
+                                 newdata = setNames(data.frame(merged_data[[era5_var]][missing_flux_idx]), era5_var))
+          
+          # Ensure the predictions fill only the missing values in the new "_f" column
+          merged_data[[paste0(flux_var, "_f")]][missing_flux_idx] <- predictions
+        }
+      }
+    }
+    
+    if (rule == "lm_no_intercept") {
+      complete_cases <- merged_data[!is.na(merged_data[[flux_var]]) & !is.na(merged_data[[era5_var]]), ]
+      
+      if (nrow(complete_cases) > 1) {  
+        formula_str <- paste(flux_var, "~", era5_var, "+ 0")  # Linear model without intercept
+        message("Fitting linear model without intercept with formula: ", formula_str)
+        
+        lm_model_no_intercept <- lm(as.formula(formula_str), data = complete_cases)
+        
+        # Only use model predictions to fill missing values in flux_var
+        missing_flux_idx <- which(is.na(merged_data[[flux_var]]))  # Identify all missing flux_var entries
+        
+        if (length(missing_flux_idx) > 0) {
+          # Predict missing flux values based on ERA5 data and fill them
+          predictions <- predict(lm_model_no_intercept, 
+                                 newdata = setNames(data.frame(merged_data[[era5_var]][missing_flux_idx]), era5_var))
+          
+          # Ensure the predictions fill only the missing values in the new "_f" column
+          merged_data[[paste0(flux_var, "_f")]][missing_flux_idx] <- predictions
+        }
+      }
+    }
+    
+    if (rule == "automatic") {
+      total_count <- nrow(merged_data)
+      non_na_count <- sum(!is.na(merged_data[[flux_var]]))
+      
+      if ((non_na_count / total_count) >= 0.5) {
+        # Remove rows with NA in either varname_FLUX or varname_ERA5
+        complete_cases <- merged_data[!is.na(merged_data[[flux_var]]) & !is.na(merged_data[[era5_var]]), ]
+        
+        if (nrow(complete_cases) > 1) {  
+          formula_str <- paste(flux_var, "~", era5_var)
+          message("Fitting linear model with formula: ", formula_str)
+          
+          lm_model <- lm(as.formula(formula_str), data = complete_cases)
+          
+          # Only use model predictions to fill missing values in flux_var
+          missing_flux_idx <- which(is.na(merged_data[[flux_var]]))  # Identify all missing flux_var entries
+          
+          if (length(missing_flux_idx) > 0) {
+            # Predict missing flux values based on ERA5 data and fill them
+            predictions <- predict(lm_model, 
+                                   newdata = setNames(data.frame(merged_data[[era5_var]][missing_flux_idx]), era5_var))
+            
+            # Ensure the predictions fill only the missing values in the new "_f" column
+            merged_data[[paste0(flux_var, "_f")]][missing_flux_idx] <- predictions
+          }
+        }
+      } else {
+        message("More than 50% missing in ", flux_var, ", replacing with ", era5_var)
+        # If more than 50% of FLUX data is missing, replace the entire FLUX variable with ERA5
+        merged_data[[paste0(flux_var, "_f")]] <- merged_data[[era5_var]]
+      }
+    }
+  }
+  
+  return(merged_data)
+}
+
+```
+
+
 ```{r map each variable and their priority}
 library(librarian)
 shelf(amerifluxr)
@@ -270,9 +375,10 @@ SC_names_sort <- c("SC", "SC_1_1_1", "SC_1_1_2")
 NEE_names_sort <- c("NEE", NEE_names_sort)         # add NEE because I will make a new NEE column.
 ##
 ```
-## Make a notation here: download_ERA function from the ErikKusch/KrigR package may be useful. 
+
 
 ```{r Ustar-filter, gap-fill, and partition}
+## it will take ~ 8 hours to finish running this chunk. 
 ## A part of the code of this section is from Ammara Talib, 1/9/2025
 ## use Ustar threshold for each year to be consistent with FLUXNET protocols
 library(librarian)
@@ -284,6 +390,7 @@ shelf(Rcpp, REddyProc, amerifluxr, tidyverse, lutz)
 # location to save Ameriflux Base data
 files     <- list.files(file.path(dir_rawdata, 'Ameriflux_BASE'), pattern="zip", full.names = T)
 files_ERA <- list.files(file.path(dir_rawdata, 'ERA5_Tair_Prec'), pattern=".csv$", full.names = T)
+files_ERA_SW <- list.files(file.path(dir_rawdata, 'ERA5_SW'), pattern=".csv$", full.names = T)
 for (i in 1:nrow(sites_selected_BASE1)) {
 #  i = 12  # 12-13: US-Elm, US-Esm 1:nrow(sites_selected_BASE1)
   ####Step 0: Prepare for requested variables for each site: DateTime, NEE, Rg (shortwave radiation), Tair, Ustar, rH (relative humidity), and VPD
@@ -378,7 +485,7 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   }
   names(data_EddyProc) <- c("DateTime", col_names[col_names_used])
   if (!PPFD_IN_used) {
-    data_EddyProc$Rg <- data_EddyProc$Rg * 2.3             # convert SW_IN to be equivalent to PPFD_IN. 
+    data_EddyProc$Rg <- data_EddyProc$Rg * 2.3      # use the PPFD_IN unit. 
   }
   #
   # check if VPD exists or if it is complete; if not, recalculate it using RH
@@ -395,10 +502,20 @@ for (i in 1:nrow(sites_selected_BASE1)) {
     data_EddyProc$NEE[abs(data_EddyProc$NEE) > 1 & data_EddyProc$Tair < -5] <- NA
   }
   #
-  #  cut off the first few years without NEE/Ustar data; required, otherwise it does not gap fill.  
+  # cut off the first few years without NEE/Ustar data; required, otherwise it does not gap fill.  
   year_first_NEE <- year(data_EddyProc$DateTime[which(!is.na(data_EddyProc$Ustar))[1]])
   data_EddyProc <- data_EddyProc %>% filter(year(DateTime) >= year_first_NEE)
-  #
+  
+  # using ERA5 data to gap-fill Rg through linear regression without intercept
+  if (any(grepl(paste0(name_site, '_ssrd_'), files_ERA_SW))) {
+    df_sw <- read.csv(files_ERA_SW[grepl(paste0(name_site, '_ssrd_'), files_ERA_SW)])
+    df_sw$time <- ymd_hm(df_sw$time)
+    df_sw <- data_EddyProc %>% select('DateTime', 'Rg') %>% left_join(df_sw, by=c("DateTime" = "time"))
+    df_sw <- blend_ERA5_FLUX(merged_data=df_sw, varname_FLUX='Rg', varname_ERA5='SW_ERA', blending_rule="lm_no_intercept")
+    data_EddyProc$Rg <- df_sw$Rg_f    
+  }
+  
+  # initiate an EddyProc object
   EProc    <- sEddyProc$new(name_site, data_EddyProc, col_names[col_names_used], DTS=1/dt)
   ##################################################
   # Partitioning
@@ -411,12 +528,24 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   # USTAR filtering
   # set up seasons for some sites with fewer nighttime points
   if (name_site %in% c("CL-SDP", "US-Snd", "US-SP3")) {
-    uStarTh <- EProc$sEstUstarThold(seasonFactor = usCreateSeasonFactorMonth(data_EddyProc$DateTime, month = month(data_EddyProc$DateTime), 
-                                                                             year = year(data_EddyProc$DateTime), startMonth = c(1)), 
-                                    ctrlUstarSub =usControlUstarSubsetting(taClasses = 7, UstarClasses = 20,
-                                                                           swThr = 10, minRecordsWithinTemp = 10, 
-                                                                           minRecordsWithinSeason = 100, minRecordsWithinYear = 3000, 
-                                                                           isUsingOneBigSeasonOnFewRecords = TRUE)) 
+    uStarTh <-
+      EProc$sEstUstarThold(
+        seasonFactor = usCreateSeasonFactorMonth(
+          data_EddyProc$DateTime,
+          month = month(data_EddyProc$DateTime),
+          year = year(data_EddyProc$DateTime),
+          startMonth = c(1)
+        ),
+        ctrlUstarSub = usControlUstarSubsetting(
+          taClasses = 7,
+          UstarClasses = 20,
+          swThr = 10,
+          minRecordsWithinTemp = 10,
+          minRecordsWithinSeason = 100,
+          minRecordsWithinYear = 3000,
+          isUsingOneBigSeasonOnFewRecords = TRUE
+        )
+      )
   } else {
     uStarTh <- EProc$sEstUstarThold()
   }
@@ -481,6 +610,12 @@ for (i in 1:nrow(sites_selected_BASE1)) {
     output$GPP_uStar_f[id_abnormal] <- 0.0
     output$Reco_uStar[id_abnormal] <- output$NEE_uStar_f[id_abnormal]
   }
+  # deal with infinite respiration
+  if (any(is.infinite(output$Reco_DT_uStar))) {
+    id_abnormal <- which(is.infinite(output$Reco_DT_uStar))
+    output$Reco_DT_uStar[id_abnormal] <- 0.0
+    output$GPP_DT_uStar[id_abnormal] <- - output$NEE_uStar_f[id_abnormal]
+  }
   #
   # check gap-filled data quality by looking at fingerprint of each time series.
   EProc$sPlotFingerprint("NEE_uStar_f", Format = 'pdf', Dir='plots')
@@ -516,7 +651,7 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   # the units for hourly NEE: umolCO2 m-2 s-1
   a_HH <- a_HH %>% mutate(TA_F_MDS=output$Tair_f, TA_F_MDS_QC=output$Tair_fqc, 
                           VPD_F_MDS=output$VPD_f, VPD_F_MDS_QC=output$VPD_fqc, 
-                          SW_IN_F_MDS=output$Rg_f, SW_IN_F_MDS_QC=output$Rg_fqc, 
+                          SW_IN_F_MDS=output$Rg_f/2.3, SW_IN_F_MDS_QC=output$Rg_fqc, # use SW_IN when putting a_HH
                           LE_F_MDS=output$LE_uStar_f, LE_F_MDS_QC=output$LE_uStar_fqc, NIGHT=output$Rg_f < 10, 
                           NEE_VUT_REF=output$NEE_uStar_f, NEE_VUT_REF_QC=output$Ustar_uStar_fqc)
   # if CO2 is in the dataset
@@ -660,9 +795,16 @@ dt <- as.numeric(difftime(data_BASE$TIMESTAMP[2], data_BASE$TIMESTAMP[1], units=
 # need to gap-fill VPD, LE, PPFD, and CO2
 data_EddyProc <- data.frame(DateTime = ymd_hm(data_BASE$TIMESTAMP_END))
 data_EddyProc <- data_EddyProc %>% mutate(NEE = data_BASE$NEE_PI_F, Tair=data_BASE$TA_PI_F_1_3_1, Ustar=data_BASE$USTAR_PI_F_1_3_1, 
-                                          VPD = data_BASE$VPD_PI_F_1_3_1, LE = data_BASE$LE, Rg = data_BASE$PPFD_IN_1_1_1/2.3, 
+                                          VPD = data_BASE$VPD_PI_F_1_3_1, LE = data_BASE$LE, Rg = data_BASE$PPFD_IN_1_1_1, 
                                           CO2 = coalesce(data_BASE$CO2_1_3_1, data_BASE$CO2_1_2_1, data_BASE$CO2_1_1_1),
                                           GPP = data_BASE$GPP_PI_F, RECO = data_BASE$RECO_PI_F)
+# gap-fill solar radiation with ERA5 data
+df_sw <- read.csv(files_ERA_SW[grepl(paste0(name_site, '_ssrd_'), files_ERA_SW)])
+df_sw$time <- ymd_hm(df_sw$time)
+df_sw <- data_EddyProc %>% select('DateTime', 'Rg') %>% left_join(df_sw, by=c("DateTime" = "time"))
+df_sw <- blend_ERA5_FLUX(merged_data=df_sw, varname_FLUX='Rg', varname_ERA5='SW_ERA', blending_rule="lm_no_intercept")
+data_EddyProc$Rg <- df_sw$Rg_f
+#
 EProc <- sEddyProc$new(name_site, data_EddyProc, c("NEE", "LE", "Rg", "Tair", "VPD", "Ustar", "CO2", "GPP", "RECO"), DTS=1/dt)
 #
 EProc$sMDSGapFill('VPD', FillAll=FALSE)
@@ -675,7 +817,7 @@ output <- EProc$sExportResults()
 a_HH <- data_BASE %>% select(c(TIMESTAMP_START, TIMESTAMP_END)) %>% 
   mutate(TA_F_MDS=data_BASE$TA_PI_F_1_3_1, TA_F_MDS_QC=ifelse(is.na(data_BASE$TA_1_3_1), 1, 0), 
          VPD_F_MDS=output$VPD_f, VPD_F_MDS_QC=output$VPD_fqc, 
-         SW_IN_F_MDS=output$Rg_f, SW_IN_F_MDS_QC=output$Rg_fqc, 
+         SW_IN_F_MDS=output$Rg_f/2.3, SW_IN_F_MDS_QC=output$Rg_fqc, 
          LE_F_MDS=output$LE_f, LE_F_MDS_QC=output$LE_fqc, NIGHT=output$Rg_f < 10, 
          NEE_VUT_REF=data_BASE$NEE_PI_F, NEE_VUT_REF_QC=ifelse(is.na(data_BASE$NEE_PI), 1, 0), 
          CO2_F_MDS=output$CO2_f, CO2_F_MDS_QC=output$CO2_fqc, 

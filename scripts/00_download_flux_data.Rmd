@@ -34,7 +34,7 @@ for (pkg in packages) {
 # sites <- amf_site_info()  # this is not complete
 #
 # this following meta file is downloaded from Ameriflux with the search criteria: FC=true, NEE=true, data length >= 5 years
-sites <- read.csv('../data/AmeriFlux-site-search-results-202501071742.csv')
+sites <- read.csv('data/AmeriFlux-site-search-results-202501071742.csv')
 #
 # remove cropland "CRO", Cropland/natural vegetation mosaics "CVM", "BSV": Barren?, water: "WAT", Urban and built-up lands:"URB", Snow and ice: "SNO"
 sites.selected <- sites %>% filter(!Vegetation.Abbreviation..IGBP. %in% c("CRO", "CVM", "BSV", "WAT", "URB", "SNO")) %>% filter(Data.Use.Policy=='CC-BY-4.0')
