@@ -1,0 +1,77 @@
+---
+title: "Shortwave radiation ~ LE relationship in wet climate"
+output: pdf_document
+date: "2025-04-14"
+author: "Junna Wang"
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+
+```{r raw data location}
+rm(list=ls())
+# change this location where the raw data will be saved accordingly
+# dir_rawdata <- '/Users/jw2946/Documents/stability_project/SiteData/'
+dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
+#
+library(librarian)
+shelf(tidyverse, ggpubr, MuMIn, car, fBasics, olsrr, lme4, Hmisc, corrplot, lme4)
+#
+```
+
+
+```{r short wave radiation and LE}
+data_trend_driver <- read.csv("data/data_trend_driver.csv")
+sites_long <- read.csv('data/long_term_ec_sites.csv')
+if (!"category" %in% data_trend_driver) {
+  data_trend_driver <- data_trend_driver %>% 
+    left_join(sites_long[, c("site_ID", "category", "IGBP", "source")], by="site_ID")
+}
+# correct the unit of AmeriFlux Base data base
+data_trend_driver$SW_IN_F_MDS[data_trend_driver$source == 'AmeriFlux_BASE'] <- data_trend_driver$SW_IN_F_MDS[data_trend_driver$source == 'AmeriFlux_BASE']
+data_trend_driver$SW_IN_F_MDS_gw[data_trend_driver$source == 'AmeriFlux_BASE'] <- data_trend_driver$SW_IN_F_MDS_gw[data_trend_driver$source == 'AmeriFlux_BASE']
+data_trend_driver$SW_IN_F_MDS_ngw[data_trend_driver$source == 'AmeriFlux_BASE'] <- data_trend_driver$SW_IN_F_MDS_ngw[data_trend_driver$source == 'AmeriFlux_BASE']
+#
+data_trend_driver %>% filter(category == 'wet') %>%
+#  filter(SW_IN_F_MDS > 300) %>%
+  ggplot(aes(x = SW_IN_F_MDS, y = LE_F_MDS, color = site_ID)) +
+  geom_point() +
+  geom_smooth(method = lm)
+  
+# LE_F_MDS; NEE_VUT_REF
+
+# general site-level SW_IN 
+data_trend_driver %>% group_by(site_ID, category, IGBP) %>%
+  summarise(SW_IN_mean = mean(SW_IN_F_MDS, na.rm=T))
+
+
+```
+
+```{r short wave radiation and NEE}
+data_trend_driver <- read.csv("data/data_trend_driver.csv")
+sites_long <- read.csv('data/long_term_ec_sites.csv')
+if (!"category" %in% data_trend_driver) {
+  data_trend_driver <- data_trend_driver %>% 
+    left_join(sites_long[, c("site_ID", "category", "IGBP", "source")], by="site_ID")
+}
+
+#
+data_wet <- data_trend_driver %>% filter(category == 'wet') 
+data_wet %>%
+  ggplot(aes(x = SW_IN_F_MDS, y = NEE_VUT_REF, color = site_ID)) +
+  geom_point() +
+  geom_smooth(method = lm)
+  
+# what if I have a linear mixed models
+data_wet_mutate <- data_wet %>% mutate(NEE_VUT_REF_scale = scale(NEE_VUT_REF), SW_IN_F_MDS_scale = scale(SW_IN_F_MDS))
+model <- lmer(data=data_wet_mutate, NEE_VUT_REF_scale ~ SW_IN_F_MDS_scale + (1 |site_ID))
+summary(model)
+
+# Yes, it has this slightly increasing relationship. 
+
+```

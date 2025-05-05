@@ -174,6 +174,7 @@ merge_ERA_FLUX <- function(years2update, col_year, col_flux, col_era) {
 
 
 ```{r trend of environmental conditions}
+# it takes 3 mins. 
 #### attention: run the three chunks/function above this chunk first ####
 
 # read sub time series
@@ -198,7 +199,9 @@ sub_time_series <- sub_time_series %>% mutate(TA_t=NA, TA_p=NA, TA_gs_t=NA, TA_g
                    LE_t=NA, LE_p=NA, LE_gs_t=NA, LE_gs_p=NA, LE_ngs_t=NA, LE_ngs_p=NA,
                    CO2_t=NA, CO2_p=NA, Lgs_t=NA, Lgs_p=NA, Lgs_piece_t=NA, Lgs_piece_p=NA,
                    MAT=NA, MAP=NA, Height=NA)
-#
+
+data_trend_driver <- data.frame()
+
 # get the average start and end growing season for each site
 grow_season_site <- data_grow_season %>%
   group_by(site_ID) %>% 
@@ -358,6 +361,11 @@ for (i in 1:nrow(sub_time_series)) {
           summarise(TA_F_MDS=mean(TA_F_MDS, na.rm=T), P_ERA=sum(P_ERA, na.rm=T), 
                     VPD_F_MDS=mean(VPD_F_MDS, na.rm=T), SW_IN_F_MDS=mean(SW_IN_F_MDS, na.rm=T), 
                     LE_F_MDS=mean(LE_F_MDS, na.rm=T))
+    
+    # deal with missed P_ERA data in some years
+    missed_PERA_years <- a_YY$TIMESTAMP[is.na(a_YY$P_ERA)]
+    a_YY_gw$P_ERA[a_YY_gw$year %in% missed_PERA_years] <- NA
+    a_YY_ngw$P_ERA[a_YY_ngw$year %in% missed_PERA_years] <- NA
     #
     a_YY_gw$year_center  <- as.numeric(scale(a_YY_gw$year, scale=FALSE))
     a_YY_ngw$year_center <- as.numeric(scale(a_YY_ngw$year, scale=FALSE))
@@ -383,6 +391,28 @@ for (i in 1:nrow(sub_time_series)) {
   sub_time_series[i, c("LE_t", "LE_p")] <- summary(lm(data=a_YY, scale(LE_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
   sub_time_series[i, c("LE_gs_t", "LE_gs_p")] <- summary(lm(data=a_YY_gw, scale(LE_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
   sub_time_series[i, c("LE_ngs_t", "LE_ngs_p")] <- summary(lm(data=a_YY_ngw, scale(LE_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
+  #
+  # left join a_YY, a_YY_gw, and a_YY_ngw and put data into a data frame
+  a_YY_gw_rename <- a_YY_gw
+  a_YY_ngw_rename <- a_YY_ngw
+  if ("year" %in% names(a_YY_gw_rename)) {
+    a_YY_gw_rename <- a_YY_gw_rename %>% rename('TIMESTAMP' = "year")
+  }
+  if ("year" %in% names(a_YY_ngw_rename)) {
+    a_YY_ngw_rename <- a_YY_ngw_rename %>% rename('TIMESTAMP' = "year")
+  }
+  #
+  varnames_select <- c("TIMESTAMP", "TA_F_MDS", "P_ERA", "VPD_F_MDS", "SW_IN_F_MDS", "LE_F_MDS")
+  a_YY_gw_rename <- a_YY_gw_rename[, varnames_select]
+  names(a_YY_gw_rename)[2:6] <- paste0(varnames_select[2:6], "_gw")
+  a_YY_ngw_rename <- a_YY_ngw_rename[, varnames_select]
+  names(a_YY_ngw_rename)[2:6] <- paste0(varnames_select[2:6], "_ngw")
+  #
+  merged_df <- merge(a_YY[, c("NEE_VUT_REF", varnames_select)], a_YY_gw_rename, by="TIMESTAMP")
+  merged_df <- merge(merged_df, a_YY_ngw_rename, by="TIMESTAMP")
+  merged_df$site_ID <- site_ID
+  merged_df$isubts <- i
+  data_trend_driver <- rbind(data_trend_driver, merged_df)
   #
   ## we do not differentiate CO2, Lgs for growing and non-growing seasons
   sub_time_series[i, c("CO2_t", "CO2_p")] <- summary(lm(data=a_YY, scale(CO2_F_MDS) ~ year_center))$coefficients[2, c(1,4)]
@@ -436,6 +466,8 @@ print(paste0('total number of site years with TA outliers is removed: ', TA_site
 sub_time_series$CO2_t[sub_time_series$CO2_t < 0.05] <- NA
 
 write.csv(sub_time_series, "data/sub_time_series_potential_drivers.csv", row.names = F)
+
+write.csv(data_trend_driver, "data/data_trend_driver.csv", row.names = F)
 
 ```
 
@@ -883,6 +915,9 @@ model_best <- lm(NEEtrend_lm ~ LE_t + IGBP, data = data_wet)
 summary(model_best)
 # Evergreen forests and Savahna have more negative values NEE trends. 
 
+model_best <- lm(NEEtrend_lm ~ LE_t + SW_t + IGBP, data = data_wet)
+summary(model_best)
+
 ```
 
 
@@ -933,7 +968,7 @@ model_best <- lm(NEEtrend_lm ~ Age + MAT + P_gs_t + SW_gs_t + P_ngs_t + VPD_ngs_
 summary(model_best)
 
 data_use %>% 
-  ggplot(aes(x=Age, y=NEEtrend_lm)) + 
+  ggplot(aes(x=P_gs_t, y=NEEtrend_lm)) + 
   geom_point() +
   geom_smooth(method = lm) +
   stat_cor(color='green') 
@@ -987,7 +1022,7 @@ model_best <- lm(NEEtrend_lm ~ Age + P_ngs_t + VPD_ngs_t + VPD_gs_t, data = data
 summary(model_best)
 
 data_DBF_cold %>% 
-  ggplot(aes(x=Age, y=NEEtrend_lm)) + 
+  ggplot(aes(x=LE_gs_t, y=NEEtrend_lm)) + 
   geom_point() +
   geom_smooth(method = lm) +
   stat_cor(color='green') 

@@ -2,6 +2,8 @@
 title: "download_Ameriflux"
 output: pdf_document
 date: "2025-01-07"
+editor_options: 
+  chunk_output_type: inline
 ---
 
 ```{r setup, include=FALSE}
@@ -132,6 +134,7 @@ for (i in 1:nrow(sites_long)) {
   # "NEE_VUT_REF": CONVERT -9999 to NA values
   #
   par(mfrow = c(2, 4))
+#  par(mar=c(3, 3, 3, 3))
   plot(a_YY$TIMESTAMP, a_YY$NEE_VUT_REF)
   #
   plot(a_YY$TIMESTAMP, a_YY$GPP_DT_VUT_REF)
