@@ -252,7 +252,7 @@ for (i in 1:nrow(sites_long)) {
   #
   # using nighttime GPP for the following sites
   # have at least 5-year data and not in the bad daytime partitioned sites and GPP should be positive
-  if (sum(!is.na(a_DD$GPP_DT_VUT_REF)) >= 5*365 & !site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae", "US-Oho", "DE-RuW")) {
+  if (sum(!is.na(a_DD$GPP_DT_VUT_REF)) >= 5*365 & !site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae", "US-Oho", "DE-RuW", "US-Uaf")) {
     a_DD$GPP <- pmax(a_DD$GPP_DT_VUT_REF, 0.0)
   } else {
     a_DD$GPP <- pmax(a_DD$GPP_NT_VUT_REF, 0.0)

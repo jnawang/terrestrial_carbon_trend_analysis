@@ -348,7 +348,7 @@ for (i in 1:nrow(sites_long)) {
         #
         # use daytime GPP and ER when it is available, otherwise use other time series
         # remove GPP and ER outliers; 
-        if (sum(!is.na(a_YY_sub$GPP_DT_VUT_REF)) >= 5 & !site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae", "US-Oho", "DE-RuW")) {
+        if (sum(!is.na(a_YY_sub$GPP_DT_VUT_REF)) >= 5 & !site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae", "US-Oho", "DE-RuW", "US-Uaf")) {
           a_YY_sub$GPP_DT_VUT_REF[a_YY_sub$GPP_DT_VUT_REF < 0] <- NA
           a_YY_sub$RECO_DT_VUT_REF[a_YY_sub$RECO_DT_VUT_REF < 0] <- NA
           sub_time_series[isub_ts, "GPP"] <- mean(a_YY_sub$GPP_DT_VUT_REF, na.rm=T)
