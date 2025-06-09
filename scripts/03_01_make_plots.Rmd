@@ -70,19 +70,30 @@ for (i in 1:nrow(sites_long)) {
   #
   a_YY_all <- rbind(a_YY_all, data.frame(site_ID=site_ID, a_YY_good[, c("TIMESTAMP", "NEE_VUT_REF")]))
 }
-#
-ggplot(data=a_YY_all, aes(x=TIMESTAMP, y=NEE_VUT_REF, color=site_ID)) +
+
+# get distribution of data-duration
+ggplot(data=sites_long, aes(x=nyear)) +
+  geom_histogram()
+
+
+# This is a supplementary figure showing the trend of long-term sites with abrupt change
+a_YY_all %>% filter(site_ID %in% unique(abrupt_change$site_ID)) %>%
+  ggplot(aes(x=TIMESTAMP, y=NEE_VUT_REF, color=site_ID)) +
   geom_point() +
   geom_line() +
-  labs(x='Year', y='Net ecosystem exchange (g C/m2/year)') + 
-  theme(legend.position = "none")
+  labs(x='Year', y=expression('Annual net ecosystem CO'[2]~' exchange (g C m'^{-2}~' year'^{-1}~')'), color='Site ID') + 
+  theme(legend.position = 'right') +
+  theme_bw() +
+  theme(panel.border = element_rect(colour = "black"))
+ggsave(file.path(dir_fig, 'FigS2_NEE_shift_long_term_sites.png'), width = 8, height = 4.2, units = "in")
+
 
 # get site_years; it will be good to see this. where are these data?
 p2 <- a_YY_all %>% group_by(TIMESTAMP) %>% summarise(nSites=n()) %>% 
   ggplot(aes(x=TIMESTAMP, y=nSites)) + 
   geom_bar(stat = "identity", fill = "steelblue", alpha=0.5) +
 #  geom_line() +
-  labs(x='Year', y='Number of study sites') +
+  labs(x='Year', y='Site-years') +
   theme_bw() +
   theme(axis.text = element_text(size = 7),   
         axis.title = element_text(size = 8)) + 
@@ -143,22 +154,20 @@ p1 +
 ggsave(file.path(dir_fig, 'Fig1_site_distribution.png'), width = 8, height = 4.2, units = "in")
 
 
-
 ```
 
 
-
-
-
-
 ```{r calculate the slope of NEE trend and GPP trend}
-sub_time_series <- read.csv("data/sub_time_series_potential_drivers.csv")
+sub_time_series <- read.csv("data/sub_time_series_potential_drivers_sen.csv")
 sites_long <- read.csv('data/long_term_ec_sites.csv')
 if (! "category" %in% names(sub_time_series)) {
   sub_time_series <- sub_time_series %>% 
     left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>%
     rename("NEE_trend"="NEEtrend_lm")
 }
+
+# sub_time_series_dry <- sub_time_series %>% filter(category=='dry')
+# sub_time_series_dry_old <- read.csv("data/sub_time_series_potential_drivers.csv") %>% filter(site_ID %in% unique(sub_time_series_dry$site_ID))
 
 df_NEE_GPP_relation <- data.frame(group = c('1. All ecosystems in dry climate', '2. All ecosystems in wet-warm climate', '3. ENF and EBF in wet-cold climate', '4. DBF and MF in wet-cold climate', '5. Non-forests in wet-cold climate'),
    intercept=0, slope=NA_real_, intercept_sd=NA_real_, slope_sd=NA_real_, pvalue=NA_real_, r=NA_real_)
@@ -175,8 +184,8 @@ for (i in 1:5) {
     data <- sub_time_series %>% filter(category=='cold' & !IGBP %in% c('DBF', 'MF', 'ENF', 'EBF'))
   }
   # use Huber weights robust linear regression
-#  rlmod <- rlm(data=data, NEE_trend ~ GPPtrend_lm + 0, psi = psi.bisquare)    # 
-  rlmod <- rlm(data=data, NEE_trend ~ GPPtrend_lm, psi = psi.bisquare)
+  rlmod <- rlm(data=data, NEE_trend ~ GPPtrend_lm + 0) 
+#  rlmod <- rlm(data=data, NEE_trend ~ GPPtrend_lm, psi = psi.bisquare)
   summary(rlmod)
   #
   y_hat <- fitted(rlmod)
@@ -184,28 +193,29 @@ for (i in 1:5) {
   coefs <- summary(rlmod)$coefficients
   tvals <- coefs[, "Value"] / coefs[, "Std. Error"]
   df_resid <- nobs(rlmod) - length(coef(rlmod))
-  pvals <- 2 * pt(-abs(tvals), df = df_resid)  
-  # df_NEE_GPP_relation[i, 3] <- coefs[1,1]
-  # df_NEE_GPP_relation[i, 4] <- coefs[1,2]
-  # df_NEE_GPP_relation[i, 5] <- pvals[1]
-  df_NEE_GPP_relation[i, 2:3] <- coefs[1:2,1]
-  df_NEE_GPP_relation[i, 4:5] <- coefs[1:2,2]
-  df_NEE_GPP_relation[i, 6] <- pvals[2]
+  pvals <- 2 * pt(-abs(tvals), df = df_resid)
+  df_NEE_GPP_relation[i, 3] <- coefs[1,1]
+  df_NEE_GPP_relation[i, 5] <- coefs[1,2]
+  df_NEE_GPP_relation[i, 6] <- pvals[1]
+  # df_NEE_GPP_relation[i, 2:3] <- coefs[1:2,1]
+  # df_NEE_GPP_relation[i, 4:5] <- coefs[1:2,2]
+  # df_NEE_GPP_relation[i, 6] <- pvals[2]
   df_NEE_GPP_relation[i, 7] <- cor(y_hat, data$NEE_trend)
   
-  print(t.test(data$NEE_trend, mu = 0))
-  print(t.test(data$GPPtrend_lm, mu = 0))
-  print(t.test(data$ERtrend_lm, mu = 0))
-  print(t.test(data$GPPtrend_lm, data$ERtrend_lm))
+  # print(t.test(data$NEE_trend, mu = 0))
+  # print(t.test(data$GPPtrend_lm, mu = 0))
+  # print(t.test(data$ERtrend_lm, mu = 0))
+  # print(t.test(data$GPPtrend_lm, data$ERtrend_lm))
+  print(cor.test(data$NEE_trend, data$ERtrend_lm))
 }
 
-t.test(sub_time_series$NEE_trend, mu=0)    # t = 0.029238, df = 123, p-value = 0.9767;   mean of x 0.0003806223
-sd(sub_time_series$NEE_trend)              # sd 0.15
-range(sub_time_series$NEE_trend)           # -0.2859061  0.3658240
+t.test(sub_time_series$NEE_trend, mu=0)    # t = -0.17154, df = 123, p-value = 0.8641;   mean of x -0.002512989
+sd(sub_time_series$NEE_trend)              # sd 0.1631272
+range(sub_time_series$NEE_trend)           # -0.4223797  0.4272634
 
-t.test(sub_time_series$GPPtrend_lm, mu=0)  # t = 2.8126, df = 123, p-value = 0.005722; mean of x 0.03489742
+t.test(sub_time_series$GPPtrend_lm, mu=0)  # t = 3.0115, df = 123, p-value = 0.003156; mean of x 0.04174131
 
-t.test(sub_time_series$ERtrend_lm, mu=0)   # t = 1.5873, df = 123, p-value = 0.115; mean = 0.01960323
+t.test(sub_time_series$ERtrend_lm, mu=0)   # t = 1.4789, df = 123, p-value = 0.1417; mean = 0.01933053
 
 group_feature <- sub_time_series %>% mutate(group = case_when(category=='wet' ~ "All ecosystems in wet-warm climate",
                                              category=='dry' ~ "All ecosystems in dry climate",
@@ -213,7 +223,6 @@ group_feature <- sub_time_series %>% mutate(group = case_when(category=='wet' ~ 
                  IGBP %in% c("DBF", "MF") & category=='cold' ~ "DBF and MF in wet-cold climate",
    !IGBP %in% c("ENF", "EBF","DBF", "MF") & category=='cold' ~ "Non-forests in wet-cold climate")) %>%
   group_by(group) %>% summarise(NEE=median(NEE), GPP=median(GPP), ER=median(ER), NEEtrend=median(NEE_trend), GPPtrend=median(GPPtrend_lm), ERtrend=median(ERtrend_lm))
-
 
 ```
 
@@ -284,17 +293,18 @@ p1
 
 # relationships between NEE trends and GPP trends
 annotations <- df_NEE_GPP_relation %>%
-#  mutate(label = paste0("y = <b>", round(slope, 2), "</b> * x + ", round(intercept, 2)))
-  mutate(label = paste0("<i> r </i> = ", round(r, 2), ", <i> p </i> = ", round(pvalue, 3), "<br>", "<i> y </i> = <b>", round(slope, 2), "</b><i>x</i> + ", round(intercept, 3))) 
+ mutate(label = paste0("<i> r </i> = ", round(r, 2), ", <i> p </i> = ", round(pvalue, 3), "<br>", "<i> slope </i> = <b>", round(slope, 2), "</b> ± ", round(slope_sd, 2)))
+#  mutate(label = paste0("<i> r </i> = ", round(r, 2), ", <i> p </i> = ", round(pvalue, 3), "<br>", "<i> y </i> = <b>", round(slope, 2), "</b><i>x</i> + ", round(intercept, 3))) 
   # %>% mutate(group = factor(group, levels=c("All ecosystems in dry climate", "All ecosystems in wet-warm climate",
   #                                       "ENF and EBF in wet-cold climate", "DBF and MF in wet-cold climate",
   #                                       "Non-forests in wet-cold climate")))
 
 # Define x range for segments
-x_range <- c(-0.28, 0.32)  # Adjust these values according to your needs
+x_range <- c(-0.32, 0.32)  # Adjust these values according to your needs
 
 # Create a dataframe for geom_segment
 segments_df <- df_NEE_GPP_relation %>%
+  mutate(significance = c('yes', 'yes', 'yes', 'no', 'yes')) %>%
   rowwise() %>%
   mutate(
     x_start = x_range[1],
@@ -306,7 +316,8 @@ segments_df <- df_NEE_GPP_relation %>%
   #                                       "ENF and EBF in wet-cold climate", "DBF and MF in wet-cold climate",
   #                                       "Non-forests in wet-cold climate")))
 
-p2 <- data_plot %>% ggplot(aes(x=GPPtrend_lm, y=NEE_trend)) +
+p2 <- data_plot %>%
+  ggplot(aes(x=GPPtrend_lm, y=NEE_trend)) +
   geom_point(aes(col=group, shape=Vegetation)) +
 #  geom_smooth(method = lm, se = FALSE, aes(col=group)) +
 #  stat_cor(p.accuracy = 0.01, r.accuracy = 0.01, size=3) +
@@ -330,10 +341,10 @@ p2 <- data_plot %>% ggplot(aes(x=GPPtrend_lm, y=NEE_trend)) +
   #             size=1,
   #             show.legend = FALSE) +
   geom_segment(data = segments_df, 
-               aes(x = x_start, xend = x_end, y = y_start, yend = y_end, col = group),
-               linetype = "solid",
+               aes(x = x_start, xend = x_end, y = y_start, yend = y_end, col = group, linetype = significance),
                size = 1,
                show.legend = FALSE) +  
+  scale_linetype_manual(values = c("dashed", "solid")) +
   geom_richtext(data = annotations, 
                 aes(x = -0.4, y = 0.4, label = label),
                 fill = NA, label.color = NA, # Remove background and outline
@@ -342,9 +353,65 @@ p2 <- data_plot %>% ggplot(aes(x=GPPtrend_lm, y=NEE_trend)) +
 p2
 
 plot_grid(p1, p2, nrow=2, ncol=1, align='v', rel_heights = c(0.4, 0.6), axis = 'tblr')
-ggsave(file.path(dir_fig, 'flux_trend.png'), width = 8, height = 6, units = "in")
+ggsave(file.path(dir_fig, 'Fig3_flux_trend.png'), width = 8, height = 6, units = "in")
+
+#----------------------------------------------------------
+# A SI figure showing uncoupling between GPP trend and ER trend for different vegetation classes. 
+ps1 <- data_plot %>% mutate(significance = case_when(group %in% c("2. All ecosystems in wet-warm climate") ~ "yes", 
+                                                     group %in% c("1. All ecosystems in dry climate", "3. ENF and EBF in wet-cold climate", "4. DBF and MF in wet-cold climate", "5. Non-forests in wet-cold climate") ~ "no")) %>%
+  ggplot(aes(x=ERtrend_lm, y=NEE_trend)) +
+  geom_point(aes(col=group, shape=Vegetation)) +
+  geom_smooth(method = lm, se = FALSE, aes(col=group, linetype=significance)) + 
+  stat_cor(p.accuracy = 0.01, r.accuracy = 0.01, size=3) +
+  labs(x=expression('ER trend (year'^{-1}~')'), y=expression('NEE trend (year'^{-1}~')'), tag='a') + 
+  scale_x_continuous(limits = c(-0.4, 0.5), breaks = seq(-0.3, 0.3, 0.3)) +
+  scale_y_continuous(limits = c(-0.3, 0.45), breaks = seq(-0.4, 0.4, 0.2)) +
+  scale_shape_manual(values = 1:8) +
+  scale_linetype_manual(values = c("dashed", "solid")) +
+  theme_bw() +
+  guides(color = 'none', linetype = 'none') + 
+  theme(legend.position = 'bottom',
+        legend.background = element_rect(fill = alpha('white', 0.6)), 
+        legend.text = element_text(size = 7.5),   # Change legend labels
+        legend.title = element_text(size = 10),  # Change legend title
+        panel.grid.major = element_blank(), # Remove major grid lines
+        panel.grid.minor = element_blank()) +
+  facet_grid(.~ group, labeller = label_wrap_gen(width = 20), drop = FALSE)
+
+# What if I separate DBF and MF?
+ps2 <- data_plot %>% filter(group == '4. DBF and MF in wet-cold climate') %>%
+  ggplot(aes(x=GPPtrend_lm, y=NEE_trend, col=IGBP, shape=IGBP)) +
+  geom_point() +
+  geom_smooth(method = lm, se = FALSE, linetype="dashed") +
+  stat_cor(p.accuracy = 0.01, r.accuracy = 0.01, size=3) +
+  scale_shape_manual(values = c(1, 5)) +
+  guides(shape = "none") +
+  labs(x=expression('GPP trend (year'^{-1}~')'), y=expression('NEE trend (year'^{-1}~')'), tag='b') +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), # Remove major grid lines
+        panel.grid.minor = element_blank())
+
+
+ps3 <- data_plot %>% filter(group == '4. DBF and MF in wet-cold climate') %>%
+  ggplot(aes(x=ERtrend_lm, y=NEE_trend, col=IGBP, shape=IGBP)) +
+  geom_point() +
+  geom_smooth(method = lm, se = FALSE, linetype="dashed") +
+  stat_cor(p.accuracy = 0.01, r.accuracy = 0.01, size=3) +
+  scale_shape_manual(values = c(1, 5)) +
+  guides(shape = "none") +
+  labs(x=expression('ER trend (year'^{-1}~')'), y=expression('NEE trend (year'^{-1}~')'), tag='c') +
+  theme_bw() + 
+  
+  theme(panel.grid.major = element_blank(), # Remove major grid lines
+        panel.grid.minor = element_blank())
+
+ps2_3 <- plot_grid(ps2, ps3, nrow=1, ncol=2, align='h', rel_widths = c(0.5, 0.5), axis = 'tblr')
+plot_grid(ps1, ps2_3, nrow=2, ncol=1, align='v', rel_heights = c(0.55, 0.45), axis = 'tblr')
+ggsave(file.path(dir_fig, 'FigS_NEE_ER_trend_correlation.png'), width = 10, height = 7, units = "in")
+
 
 ```
+
 
 ```{r change in NEE trend over time}
 abrupt_change <- read.csv('data/abrupt_change_years.csv')
@@ -363,16 +430,14 @@ sub_time_series_2period_paired_pivot <- sub_time_series_2period_paired %>%
 # NEE_trend, GPPtrend_lm, ERtrend_lm
 
 t.test(sub_time_series_2period_paired_pivot$Before, sub_time_series_2period_paired_pivot$After, paired=T)
-# NEE_trend: t = -0.69308, df = 21, p-value = 0.4959; mean difference: -0.02897602;
-# GPP_trend: t = 1.7289, df = 21, p-value = 0.0985; mean difference: 0.08818296;
-# ER_trend: t = 0.26294, df = 21, p-value = 0.7952; mean difference: 0.01177787; 
+# NEE_trend: t = -1.1696, df = 21, p-value = 0.2553; mean difference: -0.05104752 ;
 
 ### focusing on cold climate, NEE trend increased a lot (carbon sequestration reduced). 
 sub_time_series_2period_paired_pivot_climate <- sub_time_series_2period_paired_pivot %>% filter(category == 'cold')
 t.test(sub_time_series_2period_paired_pivot_climate$Before, sub_time_series_2period_paired_pivot_climate$After, paired=T)
-# NEE_trend: t = -2.359, df = 17, p-value = 0.03055; -0.08680022;
-# GPP_trend: t = 2.4506, df = 17, p-value = 0.02538; mean difference: 0.1316831
-# ER_trend: t = 0.7689, df = 17, p-value = 0.4525; mean difference: 0.03630142
+# NEE_trend: t = -2.355, df = 17, p-value = 0.0308; -0.09824146;
+# GPPtrend_lm: t = 2.6661, df = 17, p-value = 0.01629; 0.1569089;
+# ERtrend_lm: t = 1.2657, df = 17, p-value = 0.2227; 0.06600205; 
 
 p1 <- sub_time_series_2period_paired %>% mutate(period = factor(period, levels=c('Before', 'After'))) %>%
   ggplot(aes(x=period, y=NEE_trend, fill=period)) +
@@ -427,7 +492,7 @@ p2 <- sub_time_series_2period_paired %>% mutate(period = factor(period, levels=c
   geom_boxplot(outlier.shape = NA, width = 0.6, alpha=0.5) +
   geom_dotplot(binaxis = "y", stackdir = "center", alpha = 0.2) +
   geom_hline(yintercept=0, linetype = "dotted", colour = "grey") +
-  labs(x='Before and after trend shift year', y=expression('Trend (year'^{-1}~')'), tag ='b', title='Long-term sites in wet-warm climate') +
+  labs(x='Before and after trend shift year', y=expression('Trend (year'^{-1}~')'), tag ='b', title='Long-term sites in wet-cold climate') +
   scale_y_continuous(limits = c(-0.4, 0.43), breaks = seq(-0.4, 0.4, 0.2)) +
   geom_signif(
     comparisons = list(c("Before", "After")),
@@ -482,12 +547,41 @@ ggsave(file.path(dir_fig, 'trend_shift_long-term_sites.png'), width = 10, height
 #         panel.grid.minor = element_blank())
 # p5
 
+# I want to have an average value of NEE, GPP, and ER for this figure
+sub_time_series_2period_paired %>% mutate(period = factor(period, levels=c('Before', 'After'))) %>%
+  filter(category == 'cold') %>% dplyr::select(c(period, NEE, GPP, ER)) %>%
+  pivot_longer(cols =c('NEE', 'GPP', 'ER'), names_to = "carbon_flux", values_to = "trend") %>%
+  mutate(carbon_flux = factor(carbon_flux, levels=c('NEE', 'GPP', 'ER'))) %>%
+  ggplot(aes(x = period, y = trend, fill = period)) +
+  geom_boxplot(outlier.shape = NA, width = 0.6, alpha=0.5) +
+  geom_dotplot(binaxis = "y", stackdir = "center", alpha = 0.2) +
+  geom_hline(yintercept=0, linetype = "dotted", colour = "grey") +
+  labs(x='Before and after trend shift year', y=expression('Carbon fluxes (g C m'^{-2}~' year'^{-1}~')'), tag ='b', title='Long-term sites in wet-cold climate') +
+  scale_y_continuous(limits = c(-1000, 2200), breaks = seq(-1000, 2000, 1000)) +
+  geom_signif(
+    comparisons = list(c("Before", "After")),
+    test = "t.test",
+    test.args = list(paired = TRUE),
+    map_signif_level = TRUE,
+    y_position = 2000, 
+    color = "black") +
+    scale_fill_manual(values = c('#83c5be', '#ffddd2')) +
+  theme_bw() +
+  theme(legend.position = 'none',
+        legend.background = element_rect(fill = alpha('white', 0.6)), 
+        panel.grid.major = element_blank(), # Remove major grid lines
+        panel.grid.minor = element_blank()) +
+  facet_wrap(~carbon_flux) +
+  theme(strip.text = element_text(size = 12, face = "bold"))
+
+# ER is not as sensitive as GPP in this figure. 
+
 ```
 
 
 ```{r plot effect size of drivers of NEE trend}
 # we only need statistically significant variables. 
-total_es <- read.csv('data/total_effect_NEE_trend_driver.csv')
+total_es <- read.csv('data/total_effect_NEE_trend_driver_sen.csv')
 total_es <- total_es %>% mutate(sig = !between(rep(0.0, nrow(total_es)), total_es$es_min, total_es$es_max)) %>% 
   filter(sig)
 
@@ -508,9 +602,9 @@ total_es %>%
                                climate_veg=="wet_cold_DBF_MF" ~ "4. DBF and MF in wet-cold climate", 
                                climate_veg=="wet_cold_nonforest" ~ "5. Non-forests in wet-cold climate")) %>%
   # mutate(climate_veg=factor(climate_veg, levels=c("All ecosystems in dry climate", "All ecosystems in wet-warm climate", "ENF and EBF in wet-cold climate", "DBF and MF in wet-cold climate", "Non-forests in wet-cold climate"))) %>% 
-  mutate(var_name=factor(var_name, levels = c("Canopy height", "VPD_ngs_t", "TA_gs_t", "Lgs_t", "SW_gs_t", "ET_gs_t", "P_gs_t"))) %>%
+  mutate(var_name=factor(var_name, levels = c("Canopy height", "P_ngs_t", "TA_gs_t", "Lgs_t", "SW_gs_t", "ET_gs_t", "P_gs_t"))) %>%
   mutate(driver_type = case_when(var_name %in% c("P_gs_t", "ET_gs_t", "SW_gs_t", "TA_gs_t", "Lgs_t") ~ "grow-season", 
-                                 var_name %in% c("VPD_ngs_t") ~ "non-grow-season",
+                                 var_name %in% c("P_ngs_t") ~ "non-grow-season",
                                  var_name %in% c("Canopy height") ~ "vegetation")) %>%
   ggplot(aes(x = var_name, y = es_mean, col=driver_type)) +
   geom_point(size=3) +
@@ -543,13 +637,13 @@ if (! "category" %in% names(sub_time_series)) {
 }
 
 p1 <- sub_time_series %>% filter(category=='dry') %>% 
-  pivot_longer(cols =c('P_gs_t', 'VPD_ngs_t', 'TA_gs_t'), names_to = "driver", values_to = "driver_trend") %>% 
-  mutate(driver = factor(driver, levels=c('VPD_ngs_t', 'P_gs_t', 'TA_gs_t'))) %>%
+  pivot_longer(cols =c('P_gs_t', 'P_ngs_t'), names_to = "driver", values_to = "driver_trend") %>% 
+  mutate(driver = factor(driver, levels=c('P_ngs_t', 'P_gs_t'))) %>%
   ggplot(aes(y=driver, x=driver_trend, fill=driver)) +
   geom_density_ridges(scale=0.8, alpha=0.5) +
 #  geom_jitter() +
   geom_vline(xintercept=0, linetype = "dotted", colour = "grey") +
-  scale_fill_manual(values=c('#E8C999', 'blue', 'red')) +
+  scale_fill_manual(values=c('blue', 'blue')) +
   scale_x_continuous(limits = c(-0.5, 0.5), breaks=seq(-0.4, 0.4, 0.2)) +
   labs(y='Climatic drivers of NEE trends', x='Trends of climatic drivers') +
   coord_flip() +
@@ -605,13 +699,13 @@ p4 <- sub_time_series %>% filter(category=='cold' & IGBP %in% c("DBF", "MF")) %>
 
 p5 <- sub_time_series %>% filter(category=='cold' & !IGBP %in% c("DBF", "MF", 'ENF', 'EBF')) %>% 
   rename('ET_gs_t' = 'LE_gs_t') %>%
-  pivot_longer(cols =c('P_gs_t', 'ET_gs_t'), names_to = "driver", values_to = "driver_trend") %>% 
-  mutate(driver = factor(driver, levels=c('P_gs_t', 'ET_gs_t'))) %>%
+  pivot_longer(cols =c('P_gs_t', 'SW_gs_t'), names_to = "driver", values_to = "driver_trend") %>% 
+  mutate(driver = factor(driver, levels=c('P_gs_t', 'SW_gs_t'))) %>%
   ggplot(aes(y=driver, x=driver_trend, fill=driver)) +
   geom_density_ridges(scale=0.8, alpha=0.5) +
 #  geom_boxplot(outlier.shape = NA, alpha=0.1, width=0.2) +
   geom_vline(xintercept=0, linetype = "dotted", colour = "grey") +
-  scale_fill_manual(values=c('blue', 'royalblue')) +
+  scale_fill_manual(values=c('blue', 'yellow')) +
   scale_x_continuous(limits = c(-0.5, 0.5), breaks=seq(-0.4, 0.4, 0.2)) +
   labs(y='Climatic drivers of NEE trends', x='Trends of climatic drivers') +
   coord_flip() +
@@ -754,6 +848,198 @@ ggsave(file.path(dir_fig, 'NEE_trends_and_major_drivers.png'), width = 10, heigh
 ```
 
 
+```{r different types of NEE drivers}
+sub_time_series <- read.csv("data/sub_time_series_potential_drivers_sen.csv")
+sites_long <- read.csv('data/long_term_ec_sites.csv')
+
+if (! "category" %in% names(sub_time_series)) {
+  sub_time_series <- sub_time_series %>% 
+    left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>%
+    rename("NEE_trend"="NEEtrend_lm")
+}
+
+#---------------------Precipitation's effects
+p1_p_gs_dry <- sub_time_series %>% filter(category=='dry') %>% 
+  ggplot(aes(x=P_gs_t, y=NEE_trend)) +
+  geom_point() +
+  stat_cor() + 
+  geom_smooth(method='lm') + 
+  geom_hline(yintercept=0, linetype = "dotted", colour = "grey") +
+  geom_vline(xintercept=0, linetype = "dotted", colour = "grey") +
+#  scale_x_continuous(limits = c(-0.5, 0.5), breaks=seq(-0.4, 0.4, 0.2)) +
+  labs(x= expression('Growing-season precipitation trend (year'^{-1}~')'), y = expression('NEE trend (year'^{-1}~')'), tag='a', title='Ecosystems in dry climate') +
+  theme_classic() +
+  theme(legend.position = 'none')
+
+p1_p_gs_ENF <- sub_time_series %>% filter(category=='cold' & IGBP %in% c("ENF", "EBF")) %>% 
+  ggplot(aes(x=P_gs_t, y=NEE_trend)) +
+  geom_point() +
+  stat_cor() + 
+  geom_smooth(method='lm') + 
+  geom_hline(yintercept=0, linetype = "dotted", colour = "grey") +
+  geom_vline(xintercept=0, linetype = "dotted", colour = "grey") +
+#  scale_x_continuous(limits = c(-0.5, 0.5), breaks=seq(-0.4, 0.4, 0.2)) +
+  labs(x= expression('Growing-season precipitation trend (year'^{-1}~')'), y = expression('NEE trend (year'^{-1}~')'), tag='b', title='Evergreen forests in wet-cold climate') +
+  theme_classic() +
+  theme(legend.position = 'none')
+
+p1_p_gs_NF <- sub_time_series %>% filter(category=='cold' & !IGBP %in% c("ENF", "EBF", "DBF", "MF")) %>% 
+  ggplot(aes(x=P_gs_t, y=NEE_trend)) +
+  geom_point() +
+  stat_cor() + 
+  geom_smooth(method='lm') + 
+  geom_hline(yintercept=0, linetype = "dotted", colour = "grey") +
+  geom_vline(xintercept=0, linetype = "dotted", colour = "grey") +
+#  scale_x_continuous(limits = c(-0.5, 0.5), breaks=seq(-0.4, 0.4, 0.2)) +
+  labs(x= expression('Growing-season precipitation trend (year'^{-1}~')'), y = expression('NEE trend (year'^{-1}~')'), tag='c', title='Non-forests in wet-cold climate') +
+  theme_classic() +
+  theme(legend.position = 'none')
+
+p1_LE_gs_DBF <- sub_time_series %>% filter(category=='cold' & IGBP %in% c("DBF", "MF")) %>% 
+  ggplot(aes(x=LE_gs_t, y=NEE_trend)) +
+  geom_point() +
+  stat_cor() + 
+  geom_smooth(method='lm') + 
+  geom_hline(yintercept=0, linetype = "dotted", colour = "grey") +
+  geom_vline(xintercept=0, linetype = "dotted", colour = "grey") +
+#  scale_x_continuous(limits = c(-0.5, 0.5), breaks=seq(-0.4, 0.4, 0.2)) +
+  labs(x= expression('Growing-season evapotranspiration trend (year'^{-1}~')'), y = expression('NEE trend (year'^{-1}~')'), tag='d', title='DBF and MF in wet-cold climate') +
+  theme_classic() +
+  theme(legend.position = 'none')
+
+plot_grid(p1_p_gs_dry, p1_p_gs_ENF, p1_p_gs_NF, p1_LE_gs_DBF, ncol=2, nrow=2)
+ggsave(file.path(dir_fig, 'FigS_NEE_water_variables.png'), width = 8, height = 7, units = "in")
+
+#--------------------solar radiation's effects
+p2_SW_gs_wet <- sub_time_series %>% filter(category=='wet') %>% 
+  ggplot(aes(x=SW_gs_t, y=NEE_trend)) +
+  geom_point() +
+  stat_cor() + 
+  geom_smooth(method='lm') + 
+  geom_hline(yintercept=0, linetype = "dotted", colour = "grey") +
+  geom_vline(xintercept=0, linetype = "dotted", colour = "grey") +
+#  scale_x_continuous(limits = c(-0.5, 0.5), breaks=seq(-0.4, 0.4, 0.2)) +
+  labs(x= expression('Growing-season solar radiation trend (year'^{-1}~')'), y = expression('NEE trend (year'^{-1}~')'), tag='a', title='Ecosystems in wet-warm climate') +
+  theme_classic() +
+  theme(legend.position = 'none')
+
+p2_SW_gs_NF <- sub_time_series %>% filter(category=='cold' & !IGBP %in% c("ENF", "EBF", "DBF", "MF")) %>% 
+  ggplot(aes(x=SW_gs_t, y=NEE_trend)) +
+  geom_point() +
+  stat_cor() + 
+  geom_smooth(method='lm') + 
+  geom_hline(yintercept=0, linetype = "dotted", colour = "grey") +
+  geom_vline(xintercept=0, linetype = "dotted", colour = "grey") +
+#  scale_x_continuous(limits = c(-0.5, 0.5), breaks=seq(-0.4, 0.4, 0.2)) +
+  labs(x= expression('Growing-season solar radiation trend (year'^{-1}~')'), y = expression('NEE trend (year'^{-1}~')'), tag='b', title='Non-forests in wet-cold climate') +
+  theme_classic() +
+  theme(legend.position = 'none')
+
+plot_grid(p2_SW_gs_wet, p2_SW_gs_NF, ncol=2, nrow=1)
+ggsave(file.path(dir_fig, 'FigS_NEE_solar_radiation.png'), width = 8, height = 4, units = "in")
+
+
+#--------------------growing season length's effects
+p3_Lgs_ENF <- sub_time_series %>% filter(category=='cold' & IGBP %in% c("ENF", "EBF")) %>% 
+  ggplot(aes(x=Lgs_t, y=NEE_trend)) +
+  geom_point() +
+  stat_cor() + 
+  geom_smooth(method='lm', col='#537D5D') + 
+  geom_hline(yintercept=0, linetype = "dotted", colour = "grey") +
+  geom_vline(xintercept=0, linetype = "dotted", colour = "grey") +
+#  scale_x_continuous(limits = c(-0.5, 0.5), breaks=seq(-0.4, 0.4, 0.2)) +
+  labs(x= expression('Growing-season length trend (year'^{-1}~')'), y = expression('NEE trend (year'^{-1}~')'), tag='a', title='Evergreen forests in wet-cold climate') +
+  theme_classic() +
+  theme(legend.position = 'none')
+
+
+p3_Lgs_DBF <- sub_time_series %>% filter(category=='cold' & IGBP %in% c("DBF", "MF")) %>% 
+  ggplot(aes(x=Lgs_t, y=NEE_trend)) +
+  geom_point() +
+  stat_cor() + 
+  geom_smooth(method='lm', linetype='dashed', col='#537D5D') + 
+  geom_hline(yintercept=0, linetype = "dotted", colour = "grey") +
+  geom_vline(xintercept=0, linetype = "dotted", colour = "grey") +
+#  scale_x_continuous(limits = c(-0.5, 0.5), breaks=seq(-0.4, 0.4, 0.2)) +
+  labs(x= expression('Growing-season length trend (year'^{-1}~')'), y = expression('NEE trend (year'^{-1}~')'), tag='b', title='DBF and MF in wet-cold climate') +
+  theme_classic() +
+  theme(legend.position = 'none')
+
+p3_Lgs_NF <- sub_time_series %>% filter(category=='cold' & !IGBP %in% c("ENF", "EBF", "DBF", "MF")) %>% 
+  ggplot(aes(x=Lgs_t, y=NEE_trend)) +
+  geom_point() +
+  stat_cor() + 
+  geom_smooth(method='lm', linetype='dashed', col='#537D5D') + 
+  geom_hline(yintercept=0, linetype = "dotted", colour = "grey") +
+  geom_vline(xintercept=0, linetype = "dotted", colour = "grey") +
+#  scale_x_continuous(limits = c(-0.5, 0.5), breaks=seq(-0.4, 0.4, 0.2)) +
+  labs(x= expression('Growing-season length trend (year'^{-1}~')'), y = expression('NEE trend (year'^{-1}~')'), tag='c', title='Non-forests in wet-cold climate') +
+  theme_classic() +
+  theme(legend.position = 'none')
+
+
+# Distribution of growing-season length trends
+p3_Lgs_density_ENF <- sub_time_series %>% filter(category=='cold' & IGBP %in% c("ENF", "EBF")) %>% 
+  ggplot(aes(x=Lgs_t)) +
+  geom_histogram(aes(y = ..density..), binwidth = 0.05, fill = "#537D5D", color = "black", alpha = 0.4) +
+  geom_density(color = "#537D5D", size = 1.2) +
+  geom_vline(xintercept=0, linetype = "dotted", colour = "grey") +
+  labs(x = expression('Growing-season length trend (year'^{-1}~')'), y = 'Number of study sites', tag='c', title='Evergreen forests in wet-cold climate') +
+  theme_classic()
+p3_Lgs_density_ENF
+
+
+# Distribution of growing-season air temperature
+p3_TA_density_ENF <- sub_time_series %>% filter(category=='cold' & IGBP %in% c("ENF", "EBF")) %>% 
+  ggplot(aes(x=TA_gs_t)) +
+  geom_histogram(aes(y = ..density..), binwidth = 0.05, fill = "#ff8b94", color = "black", alpha = 0.6) +
+  geom_density(color = "red", size = 1.2) +
+  geom_vline(xintercept=0, linetype = "dotted", colour = "grey") +
+  labs(x = expression('Growing-season air temperature trend (year'^{-1}~')'), y = 'Number of study sites', tag='d', title='Evergreen forests in wet-cold climate') +
+  theme_classic()
+p3_TA_density
+
+# upper_layer <- plot_grid(p3_Lgs_ENF, p3_Lgs_DBF, ncol=2, nrow=1)
+# lower_layer <- plot_grid(p3_Lgs_density_ENF, p3_TA_density_ENF, ncol=2, nrow=1)
+# plot_grid(upper_layer, lower_layer, ncol=1, nrow=2)
+plot_grid(p3_Lgs_ENF, p3_Lgs_DBF, p3_Lgs_density_ENF, p3_TA_density_ENF, ncol=2, nrow=2)
+ggsave(file.path(dir_fig, 'FigS_NEE_growing_season_length.png'), width = 8, height = 8, units = "in")
+
+
+#--------------------effects of age and canopy height
+p4_age_ENF <- sub_time_series %>% filter(category=='cold' & IGBP %in% c("ENF", "EBF")) %>% 
+  ggplot(aes(x=Age, y=NEE_trend)) +
+  geom_point() +
+  stat_cor() + 
+  geom_smooth(method='lm', linetype='dashed') + 
+  geom_hline(yintercept=0, linetype = "dotted", colour = "grey") +
+  geom_vline(xintercept=0, linetype = "dotted", colour = "grey") +
+#  scale_x_continuous(limits = c(-0.5, 0.5), breaks=seq(-0.4, 0.4, 0.2)) +
+  labs(x= 'Forest age (year)', y = expression('NEE trend (year'^{-1}~')'), tag='a', title='Evergreen forests in wet-cold climate') +
+  theme_classic() +
+  theme(legend.position = 'none')
+
+p4_age_DBF <- sub_time_series %>% filter(category=='cold' & IGBP %in% c("DBF", "MF")) %>% 
+  ggplot(aes(x=Age, y=NEE_trend)) +
+  geom_point() +
+  stat_cor() + 
+  geom_smooth(method='lm', linetype='dashed') + 
+  geom_hline(yintercept=0, linetype = "dotted", colour = "grey") +
+  geom_vline(xintercept=0, linetype = "dotted", colour = "grey") +
+#  scale_x_continuous(limits = c(-0.5, 0.5), breaks=seq(-0.4, 0.4, 0.2)) +
+  labs(x= 'Forest age (year)', y = expression('NEE trend (year'^{-1}~')'), tag='b', title='DBF and MF in wet-cold climate') +
+  theme_classic() 
+
+plot_grid(p4_age_ENF, p4_age_DBF, ncol=2, nrow=1)
+ggsave(file.path(dir_fig, 'FigS_NEE_age.png'), width = 8, height = 4, units = "in")
+
+
+```
+
+
+
+
+
 
 
 ```{r driver and NEE trend relationship for long-term sites}
@@ -800,7 +1086,6 @@ p3_P
 ```
 
 
-
 ```{r robust lm}
 cdata <- read.dta("https://stats.idre.ucla.edu/stat/data/crime.dta")
 summary(cdata)
@@ -838,6 +1123,70 @@ biweights2[1:15, ]
 
 ```
 
+```{r check some trends}
+sub_time_series <- read.csv("data/sub_time_series_potential_drivers_sen.csv")
+sites_long <- read.csv('data/long_term_ec_sites.csv')
 
+if (! "category" %in% names(sub_time_series)) {
+  sub_time_series <- sub_time_series %>% 
+    left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>%
+    rename("NEE_trend"="NEEtrend_lm")
+}
+
+ggplot(sub_time_series, aes(x=category, y=TA_gs_t)) +
+  geom_boxplot()
+
+ggplot(sub_time_series, aes(x=category, y=SW_gs_t)) +
+  geom_boxplot()
+
+
+sub_time_series %>% filter(category=='cold' & IGBP %in% c("DBF", "MF")) %>%
+  ggplot(aes(x=ERtrend_lm, y=NEE_trend, col=IGBP)) +
+  geom_point() +
+  stat_cor() +
+  geom_smooth(method='lm')
+
+
+```
+
+```{r generate a table for SI}
+# This table should include, site_id, climate, IGBP, climate-vegetation group, partition method, data duration, trend shift years, trend;
+abrupt_change   <- read.csv('data/abrupt_change_years.csv')
+sub_time_series <- read.csv("data/sub_time_series_potential_drivers.csv")
+sites_long      <- read.csv('data/long_term_ec_sites.csv')
+
+if (! "category" %in% names(sub_time_series)) {
+  sub_time_series <- sub_time_series %>% 
+    left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>%
+    rename("NEE_trend"="NEEtrend_lm")
+}
+
+table <- sites_long %>% dplyr::select('site_ID', 'source', 'Climate.class', 'IGBP', 'category') 
+table <- table %>% mutate(group = case_when(category=='wet' ~ "Wet-warm climate",
+                                            category=='dry' ~ "Dry climate",
+                IGBP %in% c("ENF", "EBF") & category=='cold' ~ "ENF & EBF in wet-cold climate", 
+                 IGBP %in% c("DBF", "MF") & category=='cold' ~ "DBF & MF in wet-cold climate",
+   !IGBP %in% c("ENF", "EBF","DBF", "MF") & category=='cold' ~ "Non-forests in wet-cold climate"))
+table$source[table$source == 'EuropFlux_FLUXNET2020'] <- 'FLUXNET and ICOS'
+table$source[table$source == 'EuropFlux_FLUXNET2023'] <- 'FLUXNET and ICOS'
+# add partition method 
+table$partition <- ifelse(table$site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae", "US-Oho", "DE-RuW"), "nighttime", "daytime")
+
+# get some columns in sub time series
+repeated_id <- which(duplicated(sub_time_series$site_ID))
+#
+time_series <- sub_time_series[, c("site_ID", "year_start", "year_end", "NEE_trend")]
+time_series$NEE_trend <- round(time_series$NEE_trend, 3)
+time_series$shift_year <- '-'
+time_series$shift_year[repeated_id-1] <- time_series$year_end[repeated_id-1] + 1
+time_series$year_end[repeated_id-1] <- time_series$year_end[repeated_id]
+time_series$years <- paste0(time_series$year_start, '-', time_series$year_end)
+time_series$NEE_trend[repeated_id-1] <- paste0(time_series$NEE_trend[repeated_id-1], "/", time_series$NEE_trend[repeated_id])
+time_series <- time_series[!duplicated(sub_time_series$site_ID), ]
+#
+table <- merge(table, time_series[, c('site_ID', 'years', 'shift_year', 'NEE_trend')], by='site_ID')
+write.csv(table, file.path(dir_fig, 'tableS1.csv'))
+# 
+```
 
 

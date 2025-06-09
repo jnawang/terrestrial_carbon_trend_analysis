@@ -27,7 +27,7 @@ shelf(tidyverse, ggpubr, lme4, dagitty, lmerTest, brms)
 
 ```{r read data}
 #-------------------------------------------------------------------------------
-sub_time_series <- read.csv("data/sub_time_series_potential_drivers.csv")
+sub_time_series <- read.csv("data/sub_time_series_potential_drivers_sen.csv")
 sites_long <- read.csv('data/long_term_ec_sites.csv')
 if (! "category" %in% names(sub_time_series)) {
   sub_time_series <- sub_time_series %>% 
@@ -39,12 +39,99 @@ data <- sub_time_series %>%
   dplyr::select(c("NEE_trend", "TA_t", "TA_gs_t", "TA_ngs_t", "P_t", "P_gs_t", "P_ngs_t", 
            "VPD_gs_t", "VPD_ngs_t", 
            "SW_t", "SW_gs_t", "SW_ngs_t", "LE_t", "LE_gs_t", "LE_ngs_t", "Lgs_t", 
-           "MAT", "MAP", "Height", "Age", "Nmean", "IGBP", "category", "site_ID"))
+           "MAT", "MAP", "Height", "Age", "Nmean", "CO2_t", "IGBP", "category", "site_ID"))
 
 
-df_total_effect <- data.frame(climate_veg = character(), var_name = character(), es_mean = double(), es_min = double(), es_max = double())
+df_total_effect <- data.frame(climate_veg = character(), exposure = character(), outcome = character(), effect_type = character(), 
+                              estimate = double(), ci_lower_2.5 = double(), ci_lower_5 = double(), ci_upper_95 = double(), ci_upper_97.5 = double(), 
+                              formula = character())
 
-df_direct_effect <- data.frame(climate_veg = character(), link_name = character(), es_mean = double(), es_min = double(), es_max = double(), formula = character())
+df_direct_effect <- df_total_effect
+
+```
+
+
+```{r a function to calculate direct and total effects based on DAG}
+options(mc.cores = parallel::detectCores())
+#
+run_adjusted_model <- function(
+  dag,
+  exposure,
+  outcome,
+  data,
+  group_vars = NULL,
+  priors = NULL,
+  backend = "cmdstanr",
+  iter = 4000,
+  adapt_delta = 0.99,
+  max_treedepth = 10, 
+  effect_type = c("direct", "total")
+) {
+  effect_type <- match.arg(effect_type)
+
+  # Determine adjustment set
+  if (effect_type == "direct") {
+    adjustment_set <- adjustmentSets(dag, exposure = exposure, outcome = outcome, type = c("minimal"), effect = c("direct"))
+  } else if (effect_type == "total") {
+    adjustment_set <- adjustmentSets(dag, exposure = exposure, outcome = outcome, type = c("minimal"), effect = "total")
+  }
+
+  if (length(adjustment_set) == 0) {
+    message(paste("No adjustment set found for ", effect_type, " effect:", exposure, "→", outcome))
+    adjust_vars <- character(0)
+  } else {
+    adjust_vars <- unlist(adjustment_set[[1]])
+    message(paste("Adjustment set found for ", effect_type, " effect:", exposure, "→", outcome, "  ", adjustment_set[[1]]))
+  }
+  
+  rhs_terms <- paste(c(exposure, adjust_vars), collapse = " + ")
+  formula_str <- paste(outcome, "~", rhs_terms)
+
+  # Add random effects if specified
+  if (!is.null(group_vars)) {
+    group_terms <- paste0("(1|", group_vars, ")", collapse = " + ")
+    formula_str <- paste(formula_str, "+", group_terms)
+  }
+  message(formula_str)
+  
+  # Fit the model
+  fit <- brm(
+    formula = as.formula(formula_str),
+    data = data,
+    prior = priors,
+    backend = backend,
+    iter = iter,
+    control = list(adapt_delta = adapt_delta, max_treedepth = max_treedepth),
+    silent = TRUE
+  )
+
+  print(summary(fit))
+  # Extract coefficient summary with additional quantiles
+  summary_fit <- posterior_summary(fit, probs = c(0.025, 0.05, 0.95, 0.975))
+  coef_name <- paste0("b_", exposure)
+#  browser()
+  
+  if (!(coef_name %in% rownames(summary_fit))) {
+    stop(paste("Coefficient", coef_name, "not found in model summary"))
+  }
+
+  coef_row <- summary_fit[coef_name, ]
+
+  result <- data.frame(
+    exposure = exposure,
+    outcome = outcome,
+    effect_type = effect_type,
+    estimate = coef_row["Estimate"],
+    ci_lower_2.5 = coef_row["Q2.5"],
+    ci_lower_5 = coef_row["Q5"],
+    ci_upper_95 = coef_row["Q95"],
+    ci_upper_97.5 = coef_row["Q97.5"],
+    formula = formula_str
+  )
+
+  rownames(result) <- NULL
+  return(result)
+}
 
 ```
 
@@ -67,9 +154,9 @@ DAG_cold_forest <- dagitty("dag {
   SW_gs_t -> TA_gs_t
   SW_gs_t -> LE_gs_t
   SW_gs_t -> Lgs_t
+  Age -> SW_gs_t
 }")
 
-# Height -> TA_gs_t
 
 plot(graphLayout(DAG_cold_forest))
 #----------------------------------------------
@@ -88,403 +175,107 @@ plotLocalTestResults(r)
 print(subset(r, p.value < 0.05))
 
 #-------------------------------------------------------------------------------
-
 for (i in 1:ncol(data_cold_ENF)) {
   if (!names(data_cold_ENF)[i] %in% c('IGBP', "site_ID")) {
     data_cold_ENF[, i] <- scale(data_cold_ENF[, i])
   }
 }
 
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "LE_gs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("direct")
-)  # { P_gs_t, SW_gs_t, TA_gs_t, Height }
-
+#-------------------------------------------------------------------------------
+# set priors
 priors <- c(
-  prior(normal(0.5, 0.5), class = "sd", lb = 0),  # Stronger prior for group-level SDs
+  prior(normal(0.5, 0.5), class = "sd", lb = 0),    # Stronger prior for group-level SDs
   prior(normal(0.5, 0.1), class = "sigma", lb = 0)  # For residual error, this prior is confident
 )
-r1 <- summary(brm(data=data_cold_ENF, NEE_trend ~ LE_gs_t + P_gs_t + SW_gs_t + TA_gs_t + Height + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99)))
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "P_gs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("direct")
-)  # { Height, LE_gs_t, Lgs_t, SW_gs_t, TA_gs_t }
-r1 <- summary(brm(data=data_cold_ENF, NEE_trend ~ P_gs_t + LE_gs_t + TA_gs_t + Lgs_t + Height + SW_gs_t + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99)))
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "TA_gs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("direct")
-)  # { Height, LE_gs_t, Lgs_t, P_gs_t, SW_gs_t }  (use the above)
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[4], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[4,1], es_min = r1$fixed[4,3], es_max = r1$fixed[4,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "SW_gs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("direct")
-) # { Height, LE_gs_t, Lgs_t, P_gs_t, TA_gs_t } (use the above)
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[7], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[7,1], es_min = r1$fixed[7,3], es_max = r1$fixed[7,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "Lgs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("direct")
-) # { Height, P_gs_t, SW_gs_t, TA_gs_t }
-
-r1 <- summary(brm(data=data_cold_ENF, NEE_trend ~ Lgs_t + TA_gs_t + P_gs_t + SW_gs_t + Height + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99)))
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "Height",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("direct")
-) # { Age, LE_gs_t, Lgs_t, P_gs_t, SW_gs_t, TA_gs_t }
-
-r1 <- summary(brm(data=data_cold_ENF, NEE_trend ~ Height + Age + LE_gs_t + Lgs_t + P_gs_t + SW_gs_t + TA_gs_t +  (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99)))
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "Age",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("direct")
-) # { Height }
-
-r1 <- summary(brm(data=data_cold_ENF, NEE_trend ~ Age + Height + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99)))
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "Age",
-outcome = "Height",
-type = c("minimal"),
-effect = c("direct")
-) # {}
-
-# cannot add random effects for this one, so only use fixed effect. 
-r1 <- summary(brm(data=data_cold_ENF, Height ~ Age))
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "Height",
-outcome = "Lgs_t",
-type = c("minimal"),
-effect = c("direct")
-) # {}
-r1 <- summary(brm(data=data_cold_ENF, Lgs_t ~ Height + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99), backend = "cmdstanr"))
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "Height",
-outcome = "LE_gs_t",
-type = c("minimal"),
-effect = c("direct")
-) # {}
-r1 <- summary(brm(data=data_cold_ENF, LE_gs_t ~ Height + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99), backend = "cmdstanr"))
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "TA_gs_t",
-outcome = "LE_gs_t",
-type = c("minimal"),
-effect = c("direct")
-) # { SW_gs_t }
-r1 <- summary(brm(data=data_cold_ENF, LE_gs_t ~ TA_gs_t + SW_gs_t + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99), backend = "cmdstanr"))
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "P_gs_t",
-outcome = "LE_gs_t",
-type = c("minimal"),
-effect = c("direct")
-) # { SW_gs_t }
-priors <- c(
-  prior(normal(0.5, 0.5), class = "sd", lb = 0),  # Stronger prior for group-level SDs
-  prior(normal(0.5, 0.3), class = "sigma", lb = 0)  # For residual error, this prior is confident
-)
-r1 <- summary(brm(data=data_cold_ENF, LE_gs_t ~ P_gs_t + SW_gs_t + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99), backend = "cmdstanr"))
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "SW_gs_t",
-outcome = "LE_gs_t",
-type = c("minimal"),
-effect = c("direct")
-) # { P_gs_t, TA_gs_t }
-r1 <- summary(brm(data=data_cold_ENF, LE_gs_t ~ SW_gs_t + P_gs_t + TA_gs_t + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99), backend = "cmdstanr"))
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "P_gs_t",
-outcome = "Lgs_t",
-type = c("minimal"),
-effect = c("direct")
-) # { SW_gs_t }
-r1 <- summary(brm(data=data_cold_ENF, Lgs_t ~ P_gs_t + SW_gs_t + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99), backend = "cmdstanr"))
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "SW_gs_t",
-outcome = "Lgs_t",
-type = c("minimal"),
-effect = c("direct")
-) # { P_gs_t, TA_gs_t }
-r1 <- summary(brm(data=data_cold_ENF, Lgs_t ~ SW_gs_t + P_gs_t + TA_gs_t + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99), backend = "cmdstanr"))
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "TA_gs_t",
-outcome = "Lgs_t",
-type = c("minimal"),
-effect = c("direct")
-) # { SW_gs_t }
-r1 <- summary(brm(data=data_cold_ENF, Lgs_t ~ TA_gs_t + SW_gs_t + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99), backend = "cmdstanr"))
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-# ------------
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "P_gs_t",
-outcome = "SW_gs_t",
-type = c("minimal"),
-effect = c("direct")
-) # {}
-r1 <- summary(brm(data=data_cold_ENF, SW_gs_t ~ P_gs_t + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99), backend = "cmdstanr"))
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "SW_gs_t",
-outcome = "TA_gs_t",
-type = c("minimal"),
-effect = c("direct")
-) # {}
-r1 <- summary(brm(data=data_cold_ENF, TA_gs_t ~ SW_gs_t + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99), backend = "cmdstanr"))
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "SW_gs_t",
-outcome = "LE_gs_t",
-type = c("minimal"),
-effect = c("direct")
-) # {P_gs_t, TA_gs_t}
-r1 <- summary(brm(data=data_cold_ENF, LE_gs_t ~ SW_gs_t + P_gs_t + TA_gs_t + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99), backend = "cmdstanr"))
-df <- data.frame(climate_veg = 'wet_cold_ENF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
+# call functions
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "LE_gs_t", outcome = "NEE_trend", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "P_gs_t", outcome = "NEE_trend", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "TA_gs_t", outcome = "NEE_trend", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "SW_gs_t", outcome = "NEE_trend", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "Lgs_t", outcome = "NEE_trend", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "Height", outcome = "NEE_trend", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "Age", outcome = "NEE_trend", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+#
+# direct effects on other variables
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "Age", outcome = "Height", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "Height", outcome = "Lgs_t", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "Height", outcome = "LE_gs_t", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "TA_gs_t", outcome = "LE_gs_t", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "P_gs_t", outcome = "LE_gs_t", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "SW_gs_t", outcome = "LE_gs_t", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "P_gs_t", outcome = "Lgs_t", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "SW_gs_t", outcome = "Lgs_t", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "TA_gs_t", outcome = "Lgs_t", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "P_gs_t", outcome = "SW_gs_t", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "SW_gs_t", outcome = "TA_gs_t", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "Age", outcome = "SW_gs_t", effect_type = "direct", 
+                   data = data_cold_ENF_noAge, group_vars = "site_ID", priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
 
 #------------------------------------------------------------------------------------------------
 #--------------------calculate total effect size of each driver----------------------------------
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "P_gs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("total")
-) # {  }
-r1 <- summary(brm(data=data_cold_ENF_noAge, NEE_trend ~ P_gs_t + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99), backend = "cmdstanr"))
-df <- data.frame(climate_veg = 'wet_cold_ENF', var_name = rownames(r1$fixed)[2], 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
-df_total_effect <- rbind(df_total_effect, df)
+exposure_vars <- c("P_gs_t", "Lgs_t", "SW_gs_t", "LE_gs_t", "TA_gs_t", "Height", "Age")
+for (exposure_var in exposure_vars) {
+  r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = exposure_var, outcome = "NEE_trend", effect_type = "total", 
+                   data = data_cold_ENF_noAge, group_vars = c("site_ID"), priors = priors)
+  df_total_effect <- rbind(df_total_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+}
 
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "Lgs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("total")
-) # { Height, P_gs_t, SW_gs_t, TA_gs_t }
-r1 <- summary(brm(data=data_cold_ENF_noAge, NEE_trend ~ Lgs_t + Height + P_gs_t + SW_gs_t + TA_gs_t + (1|site_ID), prior = priors, iter= 2000, control = list(adapt_delta = 0.99), backend = "cmdstanr"))
-r1
-
-df <- data.frame(climate_veg = 'wet_cold_ENF', var_name = rownames(r1$fixed)[2], 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
-df_total_effect <- rbind(df_total_effect, df)
-#----------------------------
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "Height",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("total")
-) # { Age }
-r1 <- summary(brm(data=data_cold_ENF, NEE_trend ~ Height + Age + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99), backend = "cmdstanr"))
-r1
-
-df <- data.frame(climate_veg = 'wet_cold_ENF', var_name = rownames(r1$fixed)[2], 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
-df_total_effect <- rbind(df_total_effect, df)
-#----------------------------
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "SW_gs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("total")
-) # { P_gs_t }
-r1 <- summary(brm(data=data_cold_ENF_noAge, NEE_trend ~ SW_gs_t + P_gs_t + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99), backend = "cmdstanr"))
-r1
-
-df <- data.frame(climate_veg = 'wet_cold_ENF', var_name = rownames(r1$fixed)[2], 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
-df_total_effect <- rbind(df_total_effect, df)
-#----------------------------
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "Age",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("total")
-) # {}
-r1 <- summary(brm(data=data_cold_ENF, NEE_trend ~ Age + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99), backend = "cmdstanr"))
-r1
-
-df <- data.frame(climate_veg = 'wet_cold_ENF', var_name = rownames(r1$fixed)[2], 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
-df_total_effect <- rbind(df_total_effect, df)
-#----------------------------
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "LE_gs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("total")
-) # {Height, P_gs_t, SW_gs_t, TA_gs_t}
-summary(brm(data=data_cold_ENF_noAge, NEE_trend ~ LE_gs_t + Height + P_gs_t + SW_gs_t + TA_gs_t + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99), backend = "cmdstanr"))
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "TA_gs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("total")
-) # { SW_gs_t }
-summary(brm(data=data_cold_ENF, NEE_trend ~ TA_gs_t + SW_gs_t + (1|site_ID), prior = priors, iter= 4000, control = list(adapt_delta = 0.99), backend = "cmdstanr"))
-
-
+#------------------------------------------------------------------------------------------------
+#------------------------------------------------Making plots------------------------------------
 ggplot(data=data_cold_ENF, aes(x=P_gs_t, y=NEE_trend, col=IGBP)) + 
   geom_point() +
   geom_smooth(method = lm) +
@@ -495,7 +286,13 @@ ggplot(data=data_cold_ENF, aes(x=Lgs_t, y=NEE_trend, col=IGBP)) +
   geom_smooth(method = lm) +
   stat_cor(color='red')
 
+ggplot(data=data_cold_ENF, aes(x=Age, y=NEE_trend, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='red')
+
 ```
+
 
 ```{r cold DBF and MF}
 data_cold_DBF_MF_noAge <- data %>% 
@@ -504,7 +301,7 @@ data_cold_DBF_MF_noAge <- data %>%
 
 data_cold_DBF_MF <- data %>% 
   filter(IGBP %in% c("MF", "DBF") & category == "cold") %>%  # "DBF", "MF"
-  dplyr::select(-c("category", "P_t", "SW_t", "LE_t")) %>% filter(!is.na(Age))
+  dplyr::select(-c("category", "P_t", "SW_t", "LE_t")) %>% filter(!is.na(Age) & !is.na(Lgs_t))
 
 data_cold_DBF_MF_DAG <- data_cold_DBF_MF %>% dplyr::select(-c("IGBP", "site_ID"))
 
@@ -521,400 +318,97 @@ for (i in 1:ncol(data_cold_DBF_MF)) {
 
 ggplot(data=data_cold_DBF_MF, aes(y=NEE_trend, x=IGBP)) + 
   geom_boxplot()
+#-------------------------------------------------------------------------------
+# set priors
+priors <- c(
+  prior(normal(0.5, 0.5), class = "sd", lb = 0)    # Stronger prior for group-level SDs
+)
+# call functions
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "LE_gs_t", outcome = "NEE_trend", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "P_gs_t", outcome = "NEE_trend", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "TA_gs_t", outcome = "NEE_trend", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "SW_gs_t", outcome = "NEE_trend", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "Lgs_t", outcome = "NEE_trend", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "Height", outcome = "NEE_trend", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "Age", outcome = "NEE_trend", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
 
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "LE_gs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("direct")
-)  # { P_gs_t, SW_gs_t, TA_gs_t, Height }
-
-
-r1 <- summary(brm(data=data_cold_DBF_MF, NEE_trend ~ LE_gs_t + P_gs_t + SW_gs_t + TA_gs_t + Height + (1|site_ID), control = list(adapt_delta = 0.95)))
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "P_gs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("direct")
-)  # { Height, LE_gs_t, Lgs_t, SW_gs_t, TA_gs_t }     use result from the next equation
-r1 <- summary(brm(data=data_cold_DBF_MF, NEE_trend ~ P_gs_t + TA_gs_t + SW_gs_t + LE_gs_t + Height + Lgs_t + IGBP + (1|site_ID), control = list(adapt_delta = 0.99)))
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "TA_gs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("direct")
-)  # { Height, LE_gs_t, Lgs_t, P_gs_t, SW_gs_t }  use the above
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[3], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[3,1], es_min = r1$fixed[3,3], es_max = r1$fixed[3,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "SW_gs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("direct")
-) # { Height, LE_gs_t, Lgs_t, P_gs_t, TA_gs_t } use the above
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[4], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[4,1], es_min = r1$fixed[4,3], es_max = r1$fixed[4,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "Lgs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("direct")
-) # {Height, P_gs_t, SW_gs_t, TA_gs_t }
-
-r1 <- summary(brm(data=data_cold_DBF_MF, NEE_trend ~ Lgs_t + Height + P_gs_t + SW_gs_t + TA_gs_t + IGBP + (1|site_ID)))
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "SW_gs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("direct")
-) # { Height, LE_gs_t, Lgs_t, P_gs_t, TA_gs_t }
-r1 <- summary(brm(data=data_cold_DBF_MF, NEE_trend ~ SW_gs_t + Height + LE_gs_t + Lgs_t + P_gs_t + TA_gs_t + IGBP + (1|site_ID), control = list(adapt_delta = 0.9)))
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "Height",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("direct")
-) # { Age, LE_gs_t, Lgs_t, P_gs_t, SW_gs_t, TA_gs_t }
-
-r1 <- summary(brm(data=data_cold_DBF_MF, NEE_trend ~ Height + Age + LE_gs_t + Lgs_t + P_gs_t + SW_gs_t + TA_gs_t + IGBP + (1|site_ID), control = list(adapt_delta = 0.95)))
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "Age",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("direct")
-) # { Height}
-
-r1 <- summary(brm(data=data_cold_DBF_MF, NEE_trend ~ Age + Height + IGBP + (1|site_ID), control = list(adapt_delta = 0.95)))
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-#-------------------------------------------------------
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "Age",
-outcome = "Height",
-type = c("minimal"),
-effect = c("direct")
-) # {}
-r1 <- summary(brm(data=data_cold_DBF_MF, Height ~ Age + IGBP + (1|site_ID), iter = 4000, control = list(adapt_delta = 0.95)))
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-#-------------------------------------------------------
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "TA_gs_t",
-outcome = "LE_gs_t",
-type = c("minimal"),
-effect = c("direct")
-) # { SW_gs_t }
-r1 <- summary(brm(data=data_cold_DBF_MF, LE_gs_t ~ TA_gs_t + SW_gs_t + IGBP + (1|site_ID), control = list(adapt_delta = 0.99)))
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "P_gs_t",
-outcome = "LE_gs_t",
-type = c("minimal"),
-effect = c("direct")
-) # { SW_gs_t }
-r1 <- summary(brm(data=data_cold_DBF_MF, LE_gs_t ~ P_gs_t + SW_gs_t + IGBP + (1|site_ID), control = list(adapt_delta = 0.99)))
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "SW_gs_t",
-outcome = "LE_gs_t",
-type = c("minimal"),
-effect = c("direct")
-) # { P_gs_t, TA_gs_t }
-r1 <- summary(brm(data=data_cold_DBF_MF, LE_gs_t ~ SW_gs_t + P_gs_t + TA_gs_t + IGBP + (1|site_ID), iter=4000, control = list(adapt_delta = 0.99)))
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "Height",
-outcome = "LE_gs_t",
-type = c("minimal"),
-effect = c("direct")
-) # { }  
-r1 <- summary(brm(data=data_cold_DBF_MF, LE_gs_t ~ Height + (1|site_ID), control = list(adapt_delta = 0.95)))
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "Height",
-outcome = "Lgs_t",
-type = c("minimal"),
-effect = c("direct")
-) #  {}
-r1 <- summary(brm(data=data_cold_DBF_MF, Lgs_t ~ Height + IGBP + (1|site_ID), control = list(adapt_delta = 0.99)))
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "P_gs_t",
-outcome = "Lgs_t",
-type = c("minimal"),
-effect = c("direct")
-) # { SW_gs_t }
-
-r1 <- summary(brm(data=data_cold_DBF_MF, Lgs_t ~ P_gs_t + SW_gs_t + IGBP + (1|site_ID), control = list(adapt_delta = 0.95)))
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "SW_gs_t",
-outcome = "Lgs_t",
-type = c("minimal"),
-effect = c("direct")
-) # { P_gs_t, TA_gs_t }
-r1 <- summary(brm(data=data_cold_DBF_MF, Lgs_t ~ SW_gs_t + P_gs_t + TA_gs_t + IGBP + (1|site_ID), control = list(adapt_delta = 0.95)))
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "TA_gs_t",
-outcome = "Lgs_t",
-type = c("minimal"),
-effect = c("direct")
-) # { SW_gs_t }
-r1 <- summary(brm(data=data_cold_DBF_MF, Lgs_t ~ TA_gs_t + SW_gs_t + IGBP + (1|site_ID), control = list(adapt_delta = 0.95)))
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-#------------
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "P_gs_t",
-outcome = "SW_gs_t",
-type = c("minimal"),
-effect = c("direct")
-) # {}
-r1 <- summary(brm(data=data_cold_DBF_MF, SW_gs_t ~ P_gs_t + IGBP + (1|site_ID), control = list(adapt_delta = 0.95)))
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "SW_gs_t",
-outcome = "TA_gs_t",
-type = c("minimal"),
-effect = c("direct")
-) # {}
-r1 <- summary(brm(data=data_cold_DBF_MF, TA_gs_t ~ SW_gs_t + IGBP + (1|site_ID), control = list(adapt_delta = 0.99)))
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "SW_gs_t",
-outcome = "LE_gs_t",
-type = c("minimal"),
-effect = c("direct")
-) # {P_gs_t, TA_gs_t}
-r1 <- summary(brm(data=data_cold_DBF_MF, LE_gs_t ~ SW_gs_t + P_gs_t + TA_gs_t + IGBP + (1|site_ID), control = list(adapt_delta = 0.99)))
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
+#---------------------------------------direct effects on other variables----------------------------------
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "Age", outcome = "Height", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = prior(normal(0.5, 0.1), class = "sd", lb = 0))
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "TA_gs_t", outcome = "LE_gs_t", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "P_gs_t", outcome = "LE_gs_t", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "SW_gs_t", outcome = "LE_gs_t", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "Height", outcome = "LE_gs_t", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "Height", outcome = "Lgs_t", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "P_gs_t", outcome = "Lgs_t", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "SW_gs_t", outcome = "Lgs_t", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "TA_gs_t", outcome = "Lgs_t", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "P_gs_t", outcome = "SW_gs_t", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "SW_gs_t", outcome = "TA_gs_t", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+#
+r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = "Age", outcome = "SW_gs_t", effect_type = "direct", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+#
 #------------------------------------------------------------------------------------------------
 #--------------------calculate total effect size of each driver----------------------------------
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "LE_gs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("total")
-)  # {Height, P_gs_t, SW_gs_t, TA_gs_t}
-
-r1 <- summary(brm(data=data_cold_DBF_MF, NEE_trend ~ LE_gs_t + Height + P_gs_t + SW_gs_t + TA_gs_t + IGBP + (1|site_ID), prior = prior(normal(0.5, 0.5), class = "sigma", lb = 0), control = list(adapt_delta = 0.95)))
-r1
-
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', var_name = rownames(r1$fixed)[2], 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
-df_total_effect <- rbind(df_total_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "Age",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("total")
-)  # {}
-r1 <- summary(brm(data=data_cold_DBF_MF, NEE_trend ~ Age + IGBP + (1|site_ID)), control = list(adapt_delta = 0.99))
-r1
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', var_name = rownames(r1$fixed)[2], 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
-df_total_effect <- rbind(df_total_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "TA_gs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("total")
-) # { SW_gs_t }
-r1 <- summary(brm(data=data_cold_DBF_MF, NEE_trend ~ TA_gs_t + SW_gs_t + IGBP + (1|site_ID), control = list(adapt_delta = 0.95)))
-r1
-
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', var_name = rownames(r1$fixed)[2], 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
-df_total_effect <- rbind(df_total_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "SW_gs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("total")
-)  # {P_gs_t}
-r1 <- summary(brm(data=data_cold_DBF_MF, NEE_trend ~ SW_gs_t + P_gs_t + IGBP + (1|site_ID), control = list(adapt_delta = 0.95)))
-r1
-
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', var_name = rownames(r1$fixed)[2], 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
-df_total_effect <- rbind(df_total_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "Lgs_t",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("total")
-) # { Height, P_gs_t, SW_gs_t, TA_gs_t }
-r1 <- summary(brm(data=data_cold_DBF_MF, NEE_trend ~ Lgs_t + Height + P_gs_t + SW_gs_t + TA_gs_t + IGBP + (1|site_ID), control = list(adapt_delta = 0.99)))
-r1
-
-df <- data.frame(climate_veg = 'wet_cold_DBF_MF', var_name = rownames(r1$fixed)[2], 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
-df_total_effect <- rbind(df_total_effect, df)
-
-
-adjustmentSets(
-x = DAG_cold_forest,
-exposure = "Height",
-outcome = "NEE_trend",
-type = c("minimal"),
-effect = c("total")
-)  # { Age }
-
-summary(brm(data=data_cold_DBF_MF, NEE_trend ~ Height + Age + IGBP + (1|site_ID), control = list(adapt_delta = 0.95)))
-
+exposure_vars <- c("LE_gs_t", "Age", "TA_gs_t", "Lgs_t", "SW_gs_t", "P_gs_t", "Height")
+for (exposure_var in exposure_vars) {
+  r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = exposure_var, outcome = "NEE_trend", effect_type = "total", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+  df_total_effect <- rbind(df_total_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+}
 
 #----------------------------------------------------------------------
 ####I should use a different way to plot the two figures!
@@ -922,6 +416,12 @@ ggplot(data=data_cold_DBF_MF, aes(x=LE_gs_t, y=NEE_trend, col=IGBP)) +
   geom_point() +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
+
+ggplot(data=data_cold_DBF_MF, aes(x=P_gs_t, y=NEE_trend, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
 
 ####use the same slope but different intercept. 
 ggplot(data=data_cold_DBF_MF, aes(x=Age, y=NEE_trend, col=IGBP)) + 
@@ -954,7 +454,7 @@ plot(graphLayout(DAG_cold_nonforest))
 
 data_cold_nonforest <- data %>% filter(category == "cold") %>%
   filter(!IGBP %in% c("DBF", "MF", "ENF", "EBF")) %>%  # , "MF"
-  dplyr::select(-c("category", "P_t", "SW_t", "LE_t", "Age")) %>% filter(!is.na(Lgs_t)) 
+  dplyr::select(-c("category", "P_t", "SW_t", "LE_t", "Age")) # %>% filter(!is.na(Lgs_t)) 
 # %>% filter(site_ID !='BE-Maa')
 
 data_cold_nonforest_DAG <- data_cold_nonforest %>% dplyr::select(-c("IGBP", "site_ID"))
@@ -973,6 +473,27 @@ for (i in 1:ncol(data_cold_nonforest)) {
     data_cold_nonforest[, i] <- scale(data_cold_nonforest[, i])
   }
 }
+#--------------
+# get all the direct effects
+edges <- edges(DAG_cold_nonforest)
+direct_effects <- data.frame(from = edges$v, to = edges$w)
+
+# set priors
+priors <- c(
+  prior(normal(0.5, 0.5), class = "sd", lb = 0),  # Stronger prior for group-level SDs
+  prior(normal(0.5, 0.1), class = "sigma", lb = 0)  # For residual error, this prior is confident
+)
+
+# call functions
+for (i in 1:nrow(direct_effects)) {
+  r1 <- run_adjusted_model(dag = DAG_cold_nonforest, exposure = direct_effects$from[i], outcome = direct_effects$to[i], effect_type = "direct", 
+                           data = data_cold_nonforest, group_vars = c("IGBP", "site_ID"), priors = priors)
+  df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_nonforest', r1))
+}
+
+
+
+
 
 adjustmentSets(
 x = DAG_cold_nonforest,
@@ -982,12 +503,8 @@ type = c("minimal"),
 effect = c("direct")
 )  # { P_gs_t, TA_gs_t, Height, SW_gs_t}
 
-priors <- c(
-  prior(normal(0.5, 0.5), class = "sd", lb = 0),  # Stronger prior for group-level SDs
-  prior(normal(0.5, 0.1), class = "sigma", lb = 0)  # For residual error, this prior is confident
-)
-fit <- brm(data=data_cold_nonforest, NEE_trend ~ LE_gs_t + P_gs_t + TA_gs_t + Height + SW_gs_t + IGBP + (1|site_ID), prior=priors, iter=4000, control = list(adapt_delta = 0.99, max_treedepth = 20))
-posterior_interval(fit, prob = 0.9)["b_LE_gs_t", ]
+
+fit <- brm(data=data_cold_nonforest, NEE_trend ~ LE_gs_t + P_gs_t + TA_gs_t + Height + SW_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=4000, control = list(adapt_delta = 0.99, max_treedepth = 20))
 r1 <- summary(fit) 
 df <- data.frame(climate_veg = 'wet_cold_nonforest', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
@@ -1022,7 +539,7 @@ type = c("minimal"),
 effect = c("direct")
 ) # { Height, LE_gs_t, Lgs_t, P_gs_t, SW_gs_t }
 
-fit <- brm(data=data_cold_nonforest, NEE_trend ~ SW_gs_t + P_gs_t + TA_gs_t + Height + Lgs_t + LE_gs_t + IGBP + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr")
+fit <- brm(data=data_cold_nonforest, NEE_trend ~ SW_gs_t + P_gs_t + TA_gs_t + Height + Lgs_t + LE_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr")
 posterior_interval(fit, prob = 0.9)["b_P_gs_t", ]
 r1 <- summary(fit)
 df <- data.frame(climate_veg = 'wet_cold_nonforest', 
@@ -1064,7 +581,7 @@ type = c("minimal"),
 effect = c("direct")
 ) # { Height, P_gs_t, SW_gs_t, TA_gs_t }
 
-r1 <- summary(brm(data=data_cold_nonforest, NEE_trend ~ Lgs_t + Height + P_gs_t + SW_gs_t + TA_gs_t + IGBP + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_cold_nonforest, NEE_trend ~ Lgs_t + Height + P_gs_t + SW_gs_t + TA_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'wet_cold_nonforest', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1080,7 +597,7 @@ outcome = "LE_gs_t",
 type = c("minimal"),
 effect = c("direct")
 ) # { }
-r1 <- summary(brm(data=data_cold_nonforest, LE_gs_t ~ Height + IGBP + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_cold_nonforest, LE_gs_t ~ Height + (1|IGBP) + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'wet_cold_nonforest', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1096,7 +613,7 @@ type = c("minimal"),
 effect = c("direct")
 ) # { SW_gs_t }
 
-r1 <- summary(brm(data=data_cold_nonforest, LE_gs_t ~ TA_gs_t + SW_gs_t + IGBP + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_cold_nonforest, LE_gs_t ~ TA_gs_t + SW_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'wet_cold_nonforest', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1111,7 +628,7 @@ outcome = "LE_gs_t",
 type = c("minimal"),
 effect = c("direct")
 )  # {SW_gs_t}
-r1 <- summary(brm(data=data_cold_nonforest, LE_gs_t ~ P_gs_t + SW_gs_t + IGBP + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_cold_nonforest, LE_gs_t ~ P_gs_t + SW_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'wet_cold_nonforest', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1126,7 +643,7 @@ outcome = "LE_gs_t",
 type = c("minimal"),
 effect = c("direct")
 ) # { P_gs_t, TA_gs_t }
-r1 <- summary(brm(data=data_cold_nonforest, LE_gs_t ~ SW_gs_t + P_gs_t + TA_gs_t + IGBP + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_cold_nonforest, LE_gs_t ~ SW_gs_t + P_gs_t + TA_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'wet_cold_nonforest', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1141,7 +658,7 @@ outcome = "Lgs_t",
 type = c("minimal"),
 effect = c("direct")
 ) # { SW_gs_t }
-r1 <- summary(brm(data=data_cold_nonforest, Lgs_t ~ P_gs_t + SW_gs_t + IGBP + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_cold_nonforest, Lgs_t ~ P_gs_t + SW_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'wet_cold_nonforest', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1156,7 +673,7 @@ outcome = "Lgs_t",
 type = c("minimal"),
 effect = c("direct")
 ) # { P_gs_t, TA_gs_t }
-r1 <- summary(brm(data=data_cold_nonforest, Lgs_t ~ SW_gs_t + P_gs_t + TA_gs_t + IGBP + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_cold_nonforest, Lgs_t ~ SW_gs_t + P_gs_t + TA_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'wet_cold_nonforest', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1170,7 +687,7 @@ outcome = "Lgs_t",
 type = c("minimal"),
 effect = c("direct")
 ) # { SW_gs_t }
-r1 <- summary(brm(data=data_cold_nonforest, Lgs_t ~ TA_gs_t + SW_gs_t + IGBP + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_cold_nonforest, Lgs_t ~ TA_gs_t + SW_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'wet_cold_nonforest', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1185,7 +702,7 @@ outcome = "Lgs_t",
 type = c("minimal"),
 effect = c("direct")
 ) # { }
-r1 <- summary(brm(data=data_cold_nonforest, Lgs_t ~ Height + IGBP + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_cold_nonforest, Lgs_t ~ Height + (1|IGBP) + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'wet_cold_nonforest', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1201,7 +718,7 @@ type = c("minimal"),
 effect = c("direct")
 ) # {}
 
-r1 <- summary(brm(data=data_cold_nonforest, SW_gs_t ~ P_gs_t + IGBP + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_cold_nonforest, SW_gs_t ~ P_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'wet_cold_nonforest', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1217,12 +734,13 @@ outcome = "TA_gs_t",
 type = c("minimal"),
 effect = c("direct")
 ) # {}
-r1 <- summary(brm(data=data_cold_nonforest, TA_gs_t ~ SW_gs_t + IGBP + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_cold_nonforest, TA_gs_t ~ SW_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=4000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'wet_cold_nonforest', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
                  formula = as.character(formula(r1)[1]))
 df_direct_effect <- rbind(df_direct_effect, df)
+
 
 #------------------------------------------------------------------------------------------------
 #--------------------calculate total effect size of each driver----------------------------------
@@ -1233,7 +751,7 @@ outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("total")
 ) # {  }
-r1 <- summary(brm(data=data_cold_nonforest, NEE_trend ~ Height + IGBP + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_cold_nonforest, NEE_trend ~ Height + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 r1
 
 df <- data.frame(climate_veg = 'wet_cold_nonforest', var_name = rownames(r1$fixed)[2], 
@@ -1248,8 +766,8 @@ outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("total")
 ) # {}
-r1 <- summary(brm(data=data_cold_nonforest, NEE_trend ~ P_gs_t + IGBP + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
-
+r1 <- summary(brm(data=data_cold_nonforest, NEE_trend ~ P_gs_t + (1|IGBP) + (1|site_ID), iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))  # prior=priors, 
+r1
 df <- data.frame(climate_veg = 'wet_cold_nonforest', var_name = rownames(r1$fixed)[2], 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
 df_total_effect <- rbind(df_total_effect, df)
@@ -1262,7 +780,7 @@ outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("total")
 ) # {Height, P_gs_t, SW_gs_t, TA_gs_t}
-r1 <- summary(brm(data=data_cold_nonforest, NEE_trend ~ LE_gs_t + Height + P_gs_t + SW_gs_t + TA_gs_t + IGBP + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_cold_nonforest, NEE_trend ~ LE_gs_t + Height + P_gs_t + SW_gs_t + TA_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 r1
 
 df <- data.frame(climate_veg = 'wet_cold_nonforest', var_name = rownames(r1$fixed)[2], 
@@ -1277,7 +795,7 @@ outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("total")
 ) # { SW_gs_t }
-r1 <- summary(brm(data=data_cold_nonforest, NEE_trend ~ TA_gs_t + SW_gs_t + IGBP + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_cold_nonforest, NEE_trend ~ TA_gs_t + SW_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 r1
 
 df <- data.frame(climate_veg = 'wet_cold_nonforest', var_name = rownames(r1$fixed)[2], 
@@ -1291,7 +809,7 @@ outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("total")
 ) # { P_gs_t }
-r1 <- summary(brm(data=data_cold_nonforest, NEE_trend ~ SW_gs_t + P_gs_t + IGBP + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_cold_nonforest, NEE_trend ~ SW_gs_t + P_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 r1
 
 df <- data.frame(climate_veg = 'wet_cold_nonforest', var_name = rownames(r1$fixed)[2], 
@@ -1307,16 +825,16 @@ type = c("minimal"),
 effect = c("total")
 ) # { Height, P_gs_t, SW_gs_t, TA_gs_t }
 
-r1 <- summary(brm(data=data_cold_nonforest, NEE_trend ~ Height + P_gs_t + SW_gs_t + TA_gs_t + Lgs_t + IGBP + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_cold_nonforest, NEE_trend ~ Height + P_gs_t + SW_gs_t + TA_gs_t + Lgs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 r1
 
 
 #----------------------------------------------------------------------
 ####I should use a different way to plot the two figures!
-ggplot(data=data_cold_nonforest, aes(x=P_gs_t, y=NEE_trend)) + 
+ggplot(data=data_cold_nonforest, aes(x=P_gs_t, y=NEE_trend, col=IGBP)) + 
   geom_point() +
   geom_smooth(method = lm) +
-  stat_cor(color='purple')
+  stat_cor()
 
 ####use the same slope but different intercept. 
 ggplot(data=data_cold_nonforest, aes(x=Height, y=NEE_trend)) +   # , col=IGBP
@@ -1324,10 +842,12 @@ ggplot(data=data_cold_nonforest, aes(x=Height, y=NEE_trend)) +   # , col=IGBP
   geom_smooth(method = lm) +
   stat_cor(color='purple')
 
-ggplot(data=data_cold_nonforest, aes(x=LE_gs_t, y=NEE_trend)) +   # , col=IGBP
+ggplot(data=data_cold_nonforest, aes(x=SW_gs_t, y=NEE_trend, col=IGBP)) +   # , col=IGBP
   geom_point() +
   geom_smooth(method = lm) +
-  stat_cor(color='purple')
+  stat_cor()
+
+
 
 ```
 
@@ -1344,28 +864,28 @@ DAG_dry <- dagitty("dag {
   TA_ngs_t -> VPD_ngs_t <- P_ngs_t
   VPD_ngs_t -> NEE_trend
   Lgs_t -> NEE_trend
-  TA_gs_t -> P_gs_t
   Height -> NEE_trend
   Height -> TA_gs_t
-  VPD_gs_t -> VPD_ngs_t 
   SW_gs_t -> NEE_trend
   SW_gs_t -> VPD_gs_t
-  SW_gs_t -> VPD_ngs_t
+  SW_gs_t -> TA_gs_t
   SW_ngs_t -> NEE_trend
-  SW_ngs_t -> Lgs_t
   SW_ngs_t -> VPD_ngs_t
-  
+  SW_ngs_t -> TA_ngs_t
 }")
 plot(graphLayout(DAG_dry))
   #  
-  #  
-  # SW_gs_t -> VPD_ngs_t  ; growing season solar radiation should not have direct effect on VPD_ngs_t, so we removed this. 
-  # 
+  # SW_gs_t -> VPD_ngs_t  ; removed!! 
+  # VPD_ngs_t -> Lgs_t
+  # TA_ngs_t -> Lgs_t 
+  # SW_ngs_t -> Lgs_t
+  # VPD_gs_t -> VPD_ngs_t
+  # TA_gs_t -> P_gs_t
 
 #----Test model-data consistency
 data_dry <- data %>% 
   filter(category == "dry") %>% 
-  dplyr::select(-c("category", "P_t", "SW_t", "LE_t", "Age")) # %>% filter(!is.na(Age) & !is.na(Lgs_t))
+  dplyr::select(-c("category", "P_t", "SW_t", "LE_t", "Age"))  %>% filter(!is.na(Lgs_t))
 
 data_dry_DAG <- data_dry %>% dplyr::select(-c("IGBP", "site_ID"))
 
@@ -1388,21 +908,16 @@ exposure = "VPD_gs_t",
 outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("direct")
-)  # { P_gs_t, P_ngs_t, SW_gs_t, SW_ngs_t, TA_gs_t, TA_ngs_t, VPD_ngs_t }
+)  # { P_gs_t, SW_gs_t, TA_gs_t}
 
 priors <- c(
   prior(normal(0.5, 0.5), class = "sd", lb = 0),  # Stronger prior for group-level SDs
   prior(normal(0.5, 0.1), class = "sigma", lb = 0)  # For residual error, this prior is confident
 )
-r1 <- summary(brm(data=data_dry, NEE_trend ~ VPD_gs_t + SW_gs_t + VPD_ngs_t + P_gs_t + P_ngs_t + SW_ngs_t + TA_gs_t + TA_ngs_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_dry, NEE_trend ~ VPD_gs_t + SW_gs_t + P_gs_t + TA_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'dry', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-df <- data.frame(climate_veg = 'dry', 
-                 link_name = paste0(rownames(r1$fixed)[3], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[3,1], es_min = r1$fixed[3,3], es_max = r1$fixed[3,4],
                  formula = as.character(formula(r1)[1]))
 df_direct_effect <- rbind(df_direct_effect, df)
 
@@ -1413,7 +928,13 @@ exposure = "SW_gs_t",
 outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("direct")
-) # { P_gs_t, P_ngs_t, SW_ngs_t, TA_gs_t, TA_ngs_t, VPD_gs_t, VPD_ngs_t }  use the above
+) # { Height, P_gs_t, TA_gs_t, VPD_gs_t}
+r1 <- summary(brm(data=data_dry, NEE_trend ~ SW_gs_t + Height + P_gs_t + TA_gs_t + VPD_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+df <- data.frame(climate_veg = 'dry', 
+                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
+                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
+                 formula = as.character(formula(r1)[1]))
+df_direct_effect <- rbind(df_direct_effect, df)
 
 
 adjustmentSets(
@@ -1423,7 +944,7 @@ outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("direct")
 )  # {SW_gs_t, TA_gs_t, VPD_gs_t } 
-r1 <- summary(brm(data=data_dry, NEE_trend ~ P_gs_t + SW_gs_t + VPD_gs_t + TA_gs_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_dry, NEE_trend ~ P_gs_t + SW_gs_t + VPD_gs_t + TA_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'dry', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1438,7 +959,7 @@ outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("direct")
 )  # { Height, P_gs_t, SW_gs_t, VPD_gs_t } 
-r1 <- summary(brm(data=data_dry, NEE_trend ~ TA_gs_t + VPD_gs_t + P_gs_t + SW_gs_t + Height + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_dry, NEE_trend ~ TA_gs_t + VPD_gs_t + P_gs_t + SW_gs_t + Height + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'dry', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1456,8 +977,8 @@ exposure = "Height",
 outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("direct")
-)  # { TA_gs_t }
-r1 <- summary(brm(data=data_dry, NEE_trend ~ Height + TA_gs_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.95, max_treedepth = 20), backend = "cmdstanr"))
+)  # { SW_gs_t, TA_gs_t }
+r1 <- summary(brm(data=data_dry, NEE_trend ~ Height + SW_gs_t + TA_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'dry', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1472,7 +993,7 @@ outcome = "TA_gs_t",
 type = c("minimal"),
 effect = c("direct")
 ) # {}
-r1 <- summary(brm(data=data_dry, TA_gs_t ~ Height + (1|site_ID), iter=2000, control = list(step_size = 0.01, adapt_delta = 0.95, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_dry, TA_gs_t ~ Height + (1|IGBP) + (1|site_ID), iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'dry', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1486,8 +1007,8 @@ exposure = "Lgs_t",
 outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("direct")
-) # { SW_ngs_t }
-r1 <- summary(brm(data=data_dry, NEE_trend ~ Lgs_t + SW_ngs_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.95, max_treedepth = 20), backend = "cmdstanr"))
+) # { }
+r1 <- summary(brm(data=data_dry, NEE_trend ~ Lgs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'dry', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1500,8 +1021,8 @@ exposure = "SW_ngs_t",
 outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("direct")
-) # { Lgs_t, P_ngs_t, SW_gs_t, TA_ngs_t, VPD_gs_t, VPD_ngs_t }        
-r1 <- summary(brm(data=data_dry, NEE_trend ~ SW_ngs_t + Lgs_t + P_ngs_t + SW_gs_t + TA_ngs_t + VPD_gs_t + VPD_ngs_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.95, max_treedepth = 20), backend = "cmdstanr"))
+) # { P_ngs_t, TA_ngs_t, VPD_ngs_t }        
+r1 <- summary(brm(data=data_dry, NEE_trend ~ SW_ngs_t + P_ngs_t + TA_ngs_t + VPD_ngs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'dry', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1514,8 +1035,8 @@ exposure = "VPD_ngs_t",
 outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("direct")
-) # { P_ngs_t, SW_gs_t, SW_ngs_t, TA_ngs_t, VPD_gs_t }
-r1 <- summary(brm(data=data_dry, NEE_trend ~ VPD_ngs_t + TA_ngs_t + P_ngs_t + SW_gs_t + SW_ngs_t + VPD_gs_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+) # { P_ngs_t, SW_ngs_t, TA_ngs_t}
+r1 <- summary(brm(data=data_dry, NEE_trend ~ VPD_ngs_t + TA_ngs_t + P_ngs_t + SW_ngs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'dry', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1538,7 +1059,7 @@ exposure = "TA_ngs_t",
 outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("direct")
-)       # { P_ngs_t, SW_gs_t, SW_ngs_t, VPD_gs_t, VPD_ngs_t }  (use the last one)
+)       # { P_ngs_t, SW_ngs_t, VPD_ngs_t }  (use the last one)
 
 adjustmentSets(
 x = DAG_dry,
@@ -1546,34 +1067,18 @@ exposure = "P_ngs_t",
 outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("direct")
-)       # { SW_gs_t, SW_ngs_t, TA_ngs_t, VPD_gs_t, VPD_ngs_t }  (use the last one)
+)       # { SW_ngs_t, TA_ngs_t, VPD_ngs_t }  (use the last one)
 
 #-------------------------------------------------------------------------------------
 
 adjustmentSets(
 x = DAG_dry,
 exposure = "TA_gs_t",
-outcome = "P_gs_t",
-type = c("minimal"),
-effect = c("direct")
-) # {}
-r1 <- summary(brm(data=data_dry, P_gs_t ~ TA_gs_t + (1|site_ID), iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))      #
-df <- data.frame(climate_veg = 'dry', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-#
-adjustmentSets(
-x = DAG_dry,
-exposure = "TA_gs_t",
 outcome = "VPD_gs_t",
 type = c("minimal"),
 effect = c("direct")
-) # { P_gs_t }
-r1 <- summary(brm(data=data_dry, VPD_gs_t ~ TA_gs_t + P_gs_t + (1|site_ID), iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))  
+) # { SW_gs_t }
+r1 <- summary(brm(data=data_dry, VPD_gs_t ~ TA_gs_t + SW_gs_t + (1|IGBP) + (1|site_ID), iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))  
 df <- data.frame(climate_veg = 'dry', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1585,6 +1090,14 @@ df <- data.frame(climate_veg = 'dry',
                  formula = as.character(formula(r1)[1]))
 df_direct_effect <- rbind(df_direct_effect, df)
 
+adjustmentSets(
+x = DAG_dry,
+exposure = "SW_gs_t",
+outcome = "VPD_gs_t",
+type = c("minimal"),
+effect = c("direct")
+) # { TA_gs_t }  use the above equation
+
 #
 adjustmentSets(
 x = DAG_dry,
@@ -1592,16 +1105,8 @@ exposure = "P_gs_t",
 outcome = "VPD_gs_t",
 type = c("minimal"),
 effect = c("direct")
-) # { TA_gs_t }           use the above equation
-
-adjustmentSets(
-x = DAG_dry,
-exposure = "SW_gs_t",
-outcome = "VPD_gs_t",
-type = c("minimal"),
-effect = c("direct")
-) # {  }
-r1 <- summary(brm(data=data_dry, VPD_gs_t ~ SW_gs_t + (1|site_ID), iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))  
+) # { } 
+r1 <- summary(brm(data=data_dry, VPD_gs_t ~ P_gs_t + (1|IGBP) + (1|site_ID), iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))  
 df <- data.frame(climate_veg = 'dry', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1615,8 +1120,8 @@ exposure = "TA_ngs_t",
 outcome = "VPD_ngs_t",
 type = c("minimal"),
 effect = c("direct")
-) # {}
-r1 <- summary(brm(data=data_dry, VPD_ngs_t ~ TA_ngs_t + (1|site_ID), iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))  
+) # { SW_ngs_t }
+r1 <- summary(brm(data=data_dry, VPD_ngs_t ~ TA_ngs_t + SW_ngs_t + (1|IGBP) + (1|site_ID), iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))  
 df <- data.frame(climate_veg = 'dry', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1630,21 +1135,37 @@ outcome = "VPD_ngs_t",
 type = c("minimal"),
 effect = c("direct")
 ) # {}
-r1 <- summary(brm(data=data_dry, VPD_ngs_t ~ P_ngs_t + (1|site_ID), iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))  
+r1 <- summary(brm(data=data_dry, VPD_ngs_t ~ P_ngs_t + (1|IGBP) + (1|site_ID), iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))  
 df <- data.frame(climate_veg = 'dry', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
                  formula = as.character(formula(r1)[1]))
 df_direct_effect <- rbind(df_direct_effect, df)
 
+
 adjustmentSets(
 x = DAG_dry,
-exposure = "VPD_gs_t",
+exposure = "SW_ngs_t",
 outcome = "VPD_ngs_t",
 type = c("minimal"),
 effect = c("direct")
-) # { SW_gs_t }
-r1 <- summary(brm(data=data_dry, VPD_ngs_t ~ VPD_gs_t + SW_gs_t + (1|site_ID), iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))  
+) # { TA_ngs_t }
+r1 <- summary(brm(data=data_dry, VPD_ngs_t ~ SW_ngs_t + TA_ngs_t + (1|IGBP) + (1|site_ID), iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))  
+df <- data.frame(climate_veg = 'dry', 
+                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
+                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
+                 formula = as.character(formula(r1)[1]))
+df_direct_effect <- rbind(df_direct_effect, df)
+
+
+adjustmentSets(
+x = DAG_dry,
+exposure = "SW_ngs_t",
+outcome = "TA_ngs_t",
+type = c("minimal"),
+effect = c("direct")
+) # { }
+r1 <- summary(brm(data=data_dry, TA_ngs_t ~ SW_ngs_t + (1|IGBP) + (1|site_ID), iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))  
 df <- data.frame(climate_veg = 'dry', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1655,41 +1176,11 @@ df_direct_effect <- rbind(df_direct_effect, df)
 adjustmentSets(
 x = DAG_dry,
 exposure = "SW_gs_t",
-outcome = "VPD_ngs_t",
+outcome = "TA_gs_t",
 type = c("minimal"),
 effect = c("direct")
-) # { VPD_gs_t }
-r1 <- summary(brm(data=data_dry, VPD_ngs_t ~ SW_gs_t + VPD_gs_t + (1|site_ID), iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))  
-df <- data.frame(climate_veg = 'dry', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_dry,
-exposure = "SW_ngs_t",
-outcome = "VPD_ngs_t",
-type = c("minimal"),
-effect = c("direct")
-) # {}
-r1 <- summary(brm(data=data_dry, VPD_ngs_t ~ SW_ngs_t + (1|site_ID), iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))  
-df <- data.frame(climate_veg = 'dry', 
-                 link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
-                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
-                 formula = as.character(formula(r1)[1]))
-df_direct_effect <- rbind(df_direct_effect, df)
-
-
-adjustmentSets(
-x = DAG_dry,
-exposure = "SW_ngs_t",
-outcome = "Lgs_t",
-type = c("minimal"),
-effect = c("direct")
-) # {}
-r1 <- summary(brm(data=data_dry, Lgs_t ~ SW_ngs_t + (1|site_ID), iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))  
+) # { }
+r1 <- summary(brm(data=data_dry, TA_gs_t ~ SW_gs_t + (1|IGBP) + (1|site_ID), iter=2000, prior = priors, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))  
 df <- data.frame(climate_veg = 'dry', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1705,8 +1196,8 @@ exposure = "VPD_ngs_t",
 outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("total")
-)  # { P_ngs_t, SW_gs_t, SW_ngs_t, TA_ngs_t, VPD_gs_t }
-r1 <- summary(brm(data=data_dry, NEE_trend ~ VPD_ngs_t + P_ngs_t + SW_gs_t + SW_ngs_t + TA_ngs_t + VPD_gs_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+)  # { P_ngs_t, SW_ngs_t, TA_ngs_t }
+r1 <- summary(brm(data=data_dry, NEE_trend ~ VPD_ngs_t + P_ngs_t + SW_ngs_t + TA_ngs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 r1
 
 df <- data.frame(climate_veg = 'dry', var_name = rownames(r1$fixed)[2], 
@@ -1720,8 +1211,8 @@ exposure = "TA_gs_t",
 outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("total")
-) # { Height }
-r1 <- summary(brm(data=data_dry, NEE_trend ~ TA_gs_t + Height + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+) # { Height, SW_gs_t }
+r1 <- summary(brm(data=data_dry, NEE_trend ~ TA_gs_t + Height + SW_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 r1
 df <- data.frame(climate_veg = 'dry', var_name = rownames(r1$fixed)[2], 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
@@ -1734,8 +1225,8 @@ exposure = "P_gs_t",
 outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("total")
-)  # { TA_gs_t }
-r1 <- summary(brm(data=data_dry, NEE_trend ~ P_gs_t + TA_gs_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+)  # { }
+r1 <- summary(brm(data=data_dry, NEE_trend ~ P_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 r1
 
 df <- data.frame(climate_veg = 'dry', var_name = rownames(r1$fixed)[2], 
@@ -1750,7 +1241,7 @@ outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("total")
 )  # {  }
-r1 <- summary(brm(data=data_dry, NEE_trend ~ SW_ngs_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_dry, NEE_trend ~ SW_ngs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 r1
 
 df <- data.frame(climate_veg = 'dry', var_name = rownames(r1$fixed)[2], 
@@ -1765,7 +1256,7 @@ outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("total")
 )  # {}
-r1 <- summary(brm(data=data_dry, NEE_trend ~ Height + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_dry, NEE_trend ~ Height + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 r1
 
 df <- data.frame(climate_veg = 'dry', var_name = rownames(r1$fixed)[2], 
@@ -1779,7 +1270,12 @@ outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("total")
 ) # {  }
-summary(brm(data=data_dry, NEE_trend ~ P_ngs_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_dry, NEE_trend ~ P_ngs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1
+
+df <- data.frame(climate_veg = 'dry', var_name = rownames(r1$fixed)[2], 
+                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
+df_total_effect <- rbind(df_total_effect, df)
 
 
 adjustmentSets(
@@ -1788,8 +1284,15 @@ exposure = "TA_ngs_t",
 outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("total")
-)  # {  }
-summary(brm(data=data_dry, NEE_trend ~ TA_ngs_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+)  # { SW_ngs_t }
+r1 <- summary(brm(data=data_dry, NEE_trend ~ TA_ngs_t + SW_ngs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1
+
+df <- data.frame(climate_veg = 'dry', var_name = rownames(r1$fixed)[2], 
+                 es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
+df_total_effect <- rbind(df_total_effect, df)
+
+
 
 adjustmentSets(
 x = DAG_dry,
@@ -1798,7 +1301,7 @@ outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("total")
 )  # {  }
-summary(brm(data=data_dry, NEE_trend ~ SW_gs_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+summary(brm(data=data_dry, NEE_trend ~ SW_gs_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 
 #----------------------------------------------------------------------
 # Precipitation in non-growing season; Air temperature in growing season. 
@@ -1813,10 +1316,11 @@ ggplot(data=data_dry, aes(x=VPD_ngs_t, y=NEE_trend)) +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
 
-ggplot(data=data_dry, aes(x=SW_gs_t, y=NEE_trend)) + 
+ggplot(data=data_dry, aes(x=P_ngs_t, y=NEE_trend)) + 
   geom_point() +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
+
 
 ```
 
@@ -1839,7 +1343,7 @@ plot(graphLayout(DAG_wet))
 data_wet <- data %>% 
   filter(category == "wet") %>% 
   dplyr::select(-c("category", "TA_gs_t", "P_gs_t", "SW_gs_t", "LE_gs_t", 
-            "TA_ngs_t", "P_ngs_t", "LE_ngs_t", "Age")) # %>% filter(!is.na(Age) & !is.na(Lgs_t))
+            "TA_ngs_t", "P_ngs_t", "LE_ngs_t", "Age")) # %>% filter(!is.na(CO2_t))
 
 data_wet_DAG <- data_wet %>% dplyr::select(-c("IGBP", "site_ID"))
 
@@ -1867,9 +1371,9 @@ effect = c("direct")
 
 priors <- c(
   prior(normal(0.5, 0.5), class = "sd", lb = 0),  # Stronger prior for group-level SDs
-  prior(normal(0.5, 0.1), class = "sigma", lb = 0)  # For residual error, this prior is confident
+  prior(normal(0.5, 0.1), class = "sigma", lb = 0)  # For residual error, this prior is confident 
 )
-r1 <- summary(brm(data=data_wet, NEE_trend ~ LE_t + P_t + TA_t + SW_t + Height + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.95, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_wet, NEE_trend ~ LE_t + P_t + TA_t + SW_t + Height + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.95, max_treedepth = 20), backend = "cmdstanr"))
 for (i in 2:6) {
   df <- data.frame(climate_veg = 'wet-warm', 
                  link_name = paste0(rownames(r1$fixed)[i], '->', as.character(formula(r1)[4])), 
@@ -1920,7 +1424,7 @@ type = c("minimal"),
 effect = c("direct")
 )  # {SW_t}
 
-r1 <- summary(brm(data=data_wet, LE_t ~ P_t + SW_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_wet, LE_t ~ P_t + SW_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'wet-warm', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1934,7 +1438,7 @@ outcome = "LE_t",
 type = c("minimal"),
 effect = c("direct")
 )  # {P_t, TA_t }
-r1 <- summary(brm(data=data_wet, LE_t ~ SW_t + P_t + TA_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.95, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_wet, LE_t ~ SW_t + P_t + TA_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'wet-warm', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1949,7 +1453,7 @@ type = c("minimal"),
 effect = c("direct")
 )  # { SW_t }
 
-r1 <- summary(brm(data=data_wet, LE_t ~ TA_t + SW_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_wet, LE_t ~ TA_t + SW_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'wet-warm', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1963,7 +1467,7 @@ outcome = "SW_t",
 type = c("minimal"),
 effect = c("direct")
 ) # {}
-r1 <- summary(brm(data=data_wet, SW_t ~ P_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.95, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_wet, SW_t ~ P_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'wet-warm', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1978,7 +1482,7 @@ outcome = "TA_t",
 type = c("minimal"),
 effect = c("direct")
 ) # {}
-r1 <- summary(brm(data=data_wet, TA_t ~ SW_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.95, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_wet, TA_t ~ SW_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'wet-warm', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -1992,7 +1496,7 @@ outcome = "LE_t",
 type = c("minimal"),
 effect = c("direct")
 )
-r1 <- summary(brm(data=data_wet, LE_t ~ Height + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.95, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_wet, LE_t ~ Height + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 df <- data.frame(climate_veg = 'wet-warm', 
                  link_name = paste0(rownames(r1$fixed)[2], '->', as.character(formula(r1)[4])), 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4],
@@ -2008,7 +1512,7 @@ outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("total")
 ) # {P_t}
-r1 <- summary(brm(data=data_wet, NEE_trend ~ SW_t + P_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.95, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_wet, NEE_trend ~ SW_t + P_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 r1
 df <- data.frame(climate_veg = 'wet-warm', var_name = rownames(r1$fixed)[2], 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
@@ -2022,7 +1526,7 @@ outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("total")
 ) # {Height, P_t, SW_t, TA_t}
-r1 <- summary(brm(data=data_wet, NEE_trend ~ LE_t + Height + P_t + SW_t + TA_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.95, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_wet, NEE_trend ~ LE_t + Height + P_t + SW_t + TA_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 r1
 df <- data.frame(climate_veg = 'wet-warm', var_name = rownames(r1$fixed)[2], 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
@@ -2036,7 +1540,7 @@ outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("total")
 ) # {}
-r1 <- summary(brm(data=data_wet, NEE_trend ~ P_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.95, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_wet, NEE_trend ~ P_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 r1
 df <- data.frame(climate_veg = 'wet-warm', var_name = rownames(r1$fixed)[2], 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
@@ -2050,7 +1554,7 @@ outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("total")
 ) # { SW_t }
-r1 <- summary(brm(data=data_wet, NEE_trend ~ TA_t + SW_t + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_wet, NEE_trend ~ TA_t + SW_t + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 r1
 df <- data.frame(climate_veg = 'wet-warm', var_name = rownames(r1$fixed)[2], 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
@@ -2064,7 +1568,7 @@ outcome = "NEE_trend",
 type = c("minimal"),
 effect = c("total")
 ) # { }
-r1 <- summary(brm(data=data_wet, NEE_trend ~ Height + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.95, max_treedepth = 20), backend = "cmdstanr"))
+r1 <- summary(brm(data=data_wet, NEE_trend ~ Height + (1|IGBP) + (1|site_ID), prior=priors, iter=2000, control = list(step_size = 0.01, adapt_delta = 0.99, max_treedepth = 20), backend = "cmdstanr"))
 r1
 df <- data.frame(climate_veg = 'wet-warm', var_name = rownames(r1$fixed)[2], 
                  es_mean = r1$fixed[2,1], es_min = r1$fixed[2,3], es_max = r1$fixed[2,4])
@@ -2092,8 +1596,8 @@ ggplot(data=data_wet, aes(x=P_t, y=SW_t)) +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
 
-write.csv(row.names = F, df_total_effect, 'data/total_effect_NEE_trend_driver.csv')
-write.csv(row.names = F, df_direct_effect, 'data/direct_effect_NEE_trend_driver.csv')
+write.csv(row.names = F, df_total_effect, 'data/total_effect_NEE_trend_driver_sen.csv')
+write.csv(row.names = F, df_direct_effect, 'data/direct_effect_NEE_trend_driver_sen.csv')
 
 
 ```
@@ -2156,10 +1660,7 @@ data %>%
   ggplot(aes(y=P_t)) +
   geom_boxplot()
 
-
 ```
-
-
 
 
 
