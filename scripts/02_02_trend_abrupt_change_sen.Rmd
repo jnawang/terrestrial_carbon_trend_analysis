@@ -469,6 +469,7 @@ write.csv(sub_time_series, file = 'data/sub_time_series_sen.csv', row.names = FA
 #
 ```
 
+
 ```{r analyzing trend results, echo=TRUE}
 #
 # Do NEE and GPP have the same trends?

@@ -20,7 +20,7 @@ rm(list=ls())
 dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 #
 library(librarian)
-shelf(tidyverse, ggpubr, lme4, dagitty, lmerTest, brms)
+shelf(tidyverse, ggpubr, lme4, dagitty, lmerTest, brms, randomForest)
 #
 ```
 
@@ -178,6 +178,12 @@ print(subset(r, p.value < 0.05))
 for (i in 1:ncol(data_cold_ENF)) {
   if (!names(data_cold_ENF)[i] %in% c('IGBP', "site_ID")) {
     data_cold_ENF[, i] <- scale(data_cold_ENF[, i])
+  }
+}
+
+for (i in 1:ncol(data_cold_ENF_noAge)) {
+  if (!names(data_cold_ENF_noAge)[i] %in% c('IGBP', "site_ID")) {
+    data_cold_ENF_noAge[, i] <- scale(data_cold_ENF_noAge[, i])
   }
 }
 
@@ -479,7 +485,7 @@ for (i in 1:nrow(direct_effects)) {
 
 #------------------------------------------------------------------------------------------------
 #--------------------calculate total effect size of each driver----------------------------------
-exposure_vars <- c("VPD_ngs_t", "TA_gs_t", "P_gs_t", "SW_ngs_t", "Height", "P_ngs_t", "TA_ngs_t", "SW_gs_t")
+exposure_vars <- c("VPD_ngs_t", "TA_gs_t", "P_gs_t", "SW_ngs_t", "Height", "P_ngs_t", "TA_ngs_t", "SW_gs_t", "VPD_gs_t", "Lgs_t")
 for (exposure_var in exposure_vars) {
   r1 <- run_adjusted_model(dag = DAG_dry, exposure = exposure_var, outcome = "NEE_trend", 
                            effect_type = "total", data = data_dry, 
@@ -596,6 +602,53 @@ ggplot(data=data_wet, aes(x=P_t, y=SW_t)) +
 
 write.csv(row.names = F, df_total_effect, 'data/total_effect_NEE_trend_driver_sen.csv')
 write.csv(row.names = F, df_direct_effect, 'data/direct_effect_NEE_trend_driver_sen.csv')
+
+```
+
+
+```{r get equations to project for future NEE trends and growing season length}
+data_wet <- data %>% filter(category == "wet") 
+summary(lm(data=data_wet, NEE_trend ~ SW_t)) # R2 = 0.4737 
+#              Estimate Std. Error t value Pr(>|t|)  
+# (Intercept) -0.00942    0.02968  -0.317  0.75567   
+# SW_t         0.60216    0.15812   3.808  0.00192 **
+
+data_dry <- data %>% filter(category == "dry") 
+summary(lm(data=data_dry, NEE_trend ~ P_ngs_t + P_gs_t)) # R2 = 0.6909
+#              Estimate Std. Error t value Pr(>|t|)
+# (Intercept)  0.05882    0.02326   2.529 0.024080 *  
+# P_ngs_t      0.92125    0.20348   4.527 0.000474 ***
+# P_gs_t      -1.21953    0.26864  -4.540 0.000463 ***  
+
+data_cold_nonforest <- data %>% filter(category == "cold" & IGBP %in% c("GRA", "WET", "OSH", "CSH"))   # , "CSH"
+# merge open shrublands and close shrublands
+data_cold_nonforest$IGBP_new <- data_cold_nonforest$IGBP
+data_cold_nonforest$IGBP_new[data_cold_nonforest$IGBP %in% c('OSH', 'CSH')] <- 'SH'
+summary(lm(NEE_trend ~ Height + P_gs_t + SW_gs_t, data=data_cold_nonforest))  # R2 = 0.557 / 0.5752 # + IGBP_new
+# (Intercept)  0.141098   0.059422   2.374  0.02718 * 
+# Height      -0.011522   0.004504  -2.558  0.01832 * 
+# P_gs_t      -0.331190   0.149073  -2.222  0.03743 * 
+# SW_gs_t      0.527238   0.183009   2.881  0.00894 **
+
+
+data_cold_DBF <- data %>% filter(category == "cold" & IGBP %in% c("DBF", "MF")) 
+summary(lm(NEE_trend ~ LE_gs_t, data=data_cold_DBF))  # R2 = 0.1635 
+# (Intercept)  0.01111    0.02825   0.393   0.6976  
+# LE_gs_t     -0.36844    0.16061  -2.294   0.0305 *
+
+data_cold_ENF <- data %>% filter(category == "cold" & IGBP %in% c("ENF", "EBF")) 
+summary(lm(NEE_trend ~ P_gs_t + Lgs_t, data=data_cold_ENF))  # R2 = 0.3429 
+# (Intercept) -0.06156    0.02404  -2.560 0.014797 *  
+# P_gs_t      -0.74007    0.19920  -3.715 0.000686 ***
+# Lgs_t       -0.67349    0.18225  -3.695 0.000725 ***
+
+summary(lm(Lgs_t ~ P_gs_t + TA_gs_t, data=data_cold_ENF))  # R2 = 0.102 / 0.1493
+# R2 = 0.102
+# (Intercept) -0.03637    0.02065  -1.761   0.0867 .
+# P_gs_t      -0.30871    0.16864  -1.831   0.0755 .
+# TA_gs_t     -0.25552    0.13657  -1.871   0.0695 .
+
+# summary(lm(Lgs_t ~ P_gs_t + TA_gs_t, data=data_cold_ENF))
 
 
 ```
