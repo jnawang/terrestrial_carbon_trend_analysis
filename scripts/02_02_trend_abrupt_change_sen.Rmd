@@ -303,7 +303,7 @@ rm_years   <- read.csv('data/years_to_remove.csv')
 sub_time_series <- data.frame(site_ID=character(), year_start=integer(), year_end=integer(), 
                               NEE=double(), NEEtrend_lm=double(), NEEp=double(), 
                               GPP=double(), GPPtrend_lm=double(), GPPp=double(), 
-                              ER=double(), ERtrend_lm=double(), ERp=double())
+                              ER=double(), ERtrend_lm=double(), ERp=double(), NEEtrend_unit=double())   # NEEtrend_unit is not normalized. 
 #
 data_NEE_trend <- data.frame(NEE=double(), year=integer(), site_ID=character(), IGBP=character(), subts_ID=integer())
 #
@@ -356,6 +356,7 @@ for (i in 1:nrow(sites_long)) {
         sub_time_series[isub_ts, "NEE"] <- mean(a_YY_sub$NEE_VUT_REF, na.rm=T)
         sub_time_series[isub_ts, c("NEEtrend_lm", "NEEp")] <- cal_sens_slope(a_YY_sub$NEE_scale)
           # summary(lm(data=a_YY_sub, NEE_scale ~ year_center))$coefficients[2, c(1,4)]
+        sub_time_series[isub_ts, "NEEtrend_unit"] <- sub_time_series[isub_ts, "NEEtrend_lm"] * sd(a_YY_sub$NEE_VUT_REF, na.rm=T)
         #
         # use daytime GPP and ER when it is available, otherwise use other time series
         # remove GPP and ER outliers; 
@@ -368,6 +369,11 @@ for (i in 1:nrow(sites_long)) {
           sub_time_series[isub_ts, "ER"] <- mean(a_YY_sub$RECO_DT_VUT_REF, na.rm=T)
           sub_time_series[isub_ts, c("ERtrend_lm", "ERp")] <- cal_sens_slope(a_YY_sub$RECO_DT_VUT_REF)
             # summary(lm(data=a_YY_sub, scale(RECO_DT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
+          
+          # # Correct GPP and ER slope to use the same standarization with NEE, in order to compare with NEE slope on 7/5/2025
+          sub_time_series[isub_ts, "GPPtrend_lm"] <- sub_time_series[isub_ts, "GPPtrend_lm"] * sd(a_YY_sub$GPP_DT_VUT_REF, na.rm=T) #/ sd(a_YY_sub$NEE_VUT_REF, na.rm=T)
+          sub_time_series[isub_ts, "ERtrend_lm"] <- sub_time_series[isub_ts, "ERtrend_lm"] * sd(a_YY_sub$RECO_DT_VUT_REF, na.rm=T) #/ sd(a_YY_sub$NEE_VUT_REF, na.rm=T)
+          
           #
           # check trend outliers
           if (abs(sub_time_series[isub_ts, "GPPtrend_lm"]) > 0.25 | abs(sub_time_series[isub_ts, "ERtrend_lm"]) > 0.25) {
@@ -386,6 +392,11 @@ for (i in 1:nrow(sites_long)) {
             sub_time_series[isub_ts, "ER"] <- mean(a_YY_sub$RECO_NT_VUT_REF, na.rm=T)
             sub_time_series[isub_ts, c("ERtrend_lm", "ERp")] <- cal_sens_slope(a_YY_sub$RECO_NT_VUT_REF)
               # summary(lm(data=a_YY_sub, scale(RECO_NT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
+            
+            # Correct GPP and ER slope to use the same standarization with NEE, in order to compare with NEE slope on 7/5/2025
+            sub_time_series[isub_ts, "GPPtrend_lm"] <- sub_time_series[isub_ts, "GPPtrend_lm"] * sd(a_YY_sub$GPP_NT_VUT_REF, na.rm=T) #/ sd(a_YY_sub$NEE_VUT_REF, na.rm=T)
+            sub_time_series[isub_ts, "ERtrend_lm"] <- sub_time_series[isub_ts, "ERtrend_lm"] * sd(a_YY_sub$RECO_NT_VUT_REF, na.rm=T) #/ sd(a_YY_sub$NEE_VUT_REF, na.rm=T)
+
             #
             if (abs(sub_time_series[isub_ts, "GPPtrend_lm"]) > 0.25 | abs(sub_time_series[isub_ts, "ERtrend_lm"]) > 0.25) {
               plot(a_YY_sub$TIMESTAMP, a_YY_sub$GPP_NT_VUT_REF, main=isub_ts)
@@ -416,6 +427,7 @@ for (i in 1:nrow(sites_long)) {
     sub_time_series[isub_ts, "NEE"] <- mean(a_YY_sub$NEE_VUT_REF, na.rm=T)
     sub_time_series[isub_ts, c("NEEtrend_lm", "NEEp")] <- cal_sens_slope(a_YY_sub$NEE_scale)
       # summary(lm(data=a_YY_sub, NEE_scale ~ year_center))$coefficients[2, c(1,4)]
+    sub_time_series[isub_ts, "NEEtrend_unit"] <- sub_time_series[isub_ts, "NEEtrend_lm"] * sd(a_YY_sub$NEE_VUT_REF, na.rm=T)
     #
     # use daytime GPP and ER when it is available, otherwise use other time series
     if (sum(!is.na(a_YY_sub$GPP_DT_VUT_REF)) >= 5 & !site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-Kon", "US-MOz", "CH-Lae", "US-NC4")) {
@@ -427,6 +439,11 @@ for (i in 1:nrow(sites_long)) {
       sub_time_series[isub_ts, "ER"] <- mean(a_YY_sub$RECO_DT_VUT_REF, na.rm=T)
       sub_time_series[isub_ts, c("ERtrend_lm", "ERp")] <- cal_sens_slope(a_YY_sub$RECO_DT_VUT_REF)
         # summary(lm(data=a_YY_sub, scale(RECO_DT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
+      
+      # # Correct GPP and ER slope to use the same standarization with NEE, in order to compare with NEE slope on 7/5/2025
+      sub_time_series[isub_ts, "GPPtrend_lm"] <- sub_time_series[isub_ts, "GPPtrend_lm"] * sd(a_YY_sub$GPP_DT_VUT_REF, na.rm=T) #/ sd(a_YY_sub$NEE_VUT_REF, na.rm=T)
+      sub_time_series[isub_ts, "ERtrend_lm"] <- sub_time_series[isub_ts, "ERtrend_lm"] * sd(a_YY_sub$RECO_DT_VUT_REF, na.rm=T) #/ sd(a_YY_sub$NEE_VUT_REF, na.rm=T)
+      
       # plot sites with very large trends
       if (abs(sub_time_series[isub_ts, "GPPtrend_lm"]) > 0.25 | abs(sub_time_series[isub_ts, "ERtrend_lm"]) > 0.25) {
         plot(a_YY_sub$TIMESTAMP, a_YY_sub$GPP_DT_VUT_REF, main=isub_ts)
@@ -443,6 +460,11 @@ for (i in 1:nrow(sites_long)) {
         sub_time_series[isub_ts, "ER"] <- mean(a_YY_sub$RECO_NT_VUT_REF, na.rm=T)
         sub_time_series[isub_ts, c("ERtrend_lm", "ERp")] <- cal_sens_slope(a_YY_sub$RECO_NT_VUT_REF)
           # summary(lm(data=a_YY_sub, scale(RECO_NT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
+        
+        # # Correct GPP and ER slope to use the same standarization with NEE, in order to compare with NEE slope on 7/5/2025
+        sub_time_series[isub_ts, "GPPtrend_lm"] <- sub_time_series[isub_ts, "GPPtrend_lm"] * sd(a_YY_sub$GPP_NT_VUT_REF, na.rm=T) #/ sd(a_YY_sub$NEE_VUT_REF, na.rm=T)
+        sub_time_series[isub_ts, "ERtrend_lm"] <- sub_time_series[isub_ts, "ERtrend_lm"] * sd(a_YY_sub$RECO_NT_VUT_REF, na.rm=T) #/ sd(a_YY_sub$NEE_VUT_REF, na.rm=T)
+          
         #
         if (abs(sub_time_series[isub_ts, "GPPtrend_lm"]) > 0.25 | abs(sub_time_series[isub_ts, "ERtrend_lm"]) > 0.25) {
           plot(a_YY_sub$TIMESTAMP, a_YY_sub$GPP_NT_VUT_REF, main=isub_ts)
@@ -471,6 +493,8 @@ write.csv(sub_time_series, file = 'data/sub_time_series_sen.csv', row.names = FA
 
 
 ```{r analyzing trend results, echo=TRUE}
+
+sub_time_series <- read.csv('data/sub_time_series_sen.csv')
 #
 # Do NEE and GPP have the same trends?
 boxplot(sub_time_series$NEEtrend_lm, sub_time_series$GPPtrend_lm, sub_time_series$ERtrend_lm, xlab="NEE, GPP, ER", ylab="trends (fraction of standard deviation / year)")
@@ -498,15 +522,22 @@ plot(sub_time_series$NEEtrend_lm, sub_time_series$ERtrend_lm)
 cor.test(sub_time_series$GPPtrend_lm, sub_time_series$ERtrend_lm)
 # cor:  0.7617628; p-value < 2.2e-16
 plot(sub_time_series$GPPtrend_lm, sub_time_series$ERtrend_lm)
-summary(lm(data=sub_time_series, GPPtrend_lm ~ ERtrend_lm))  
-# this is intriguing: GPPtrend_lm = 0.025852 + 0.761793 * ERtrend_lm; Eventually ER may speed up!
+summary(lm(data=sub_time_series, ERtrend_lm ~ GPPtrend_lm + 0))  
+# this is Intriguing: GPPtrend_lm = 0.025852 + 0.70053 * ERtrend_lm;
+# Coefficients:
+#             Estimate Std. Error t value Pr(>|t|)    
+# GPPtrend_lm   0.6994     0.0616   11.35   <2e-16 ***
+
+summary(lm(data=sub_time_series, NEEtrend_unit ~ GPPtrend_lm + 0))
+#             Estimate Std. Error t value Pr(>|t|)   
+# GPPtrend_lm -0.15742    0.05802  -2.713  0.00763 **    this is overall effects. 
 
 ################################################what if I group them into different climate classes#####################
 if (!"IGBP" %in% names(sub_time_series)) {
   sub_time_series <- sub_time_series %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by="site_ID")
 }
 ####How GPP and ER vary with IGBP, climate cla
-p1 <- ggplot(sub_time_series, aes(x=IGBP, y=NEEtrend_lm)) +
+p1 <- ggplot(sub_time_series, aes(x=IGBP, y=NEEtrend_unit)) +
   geom_jitter() +
   geom_boxplot()
 p1
@@ -630,7 +661,7 @@ sub_time_series %>% filter(!Climate.class %in% c('ET', 'Dwc', 'Dfc', "Cfb")) %>%
 
 # It should be that some climate zones, GPP and ER are strongly corelated, but other climates may not. 
 
-#############################################what if I group them into different DRY, WET, COLD classes#####################
+#############################################what if I group them into different climate-vegetation classes#####################
 p7 <- ggplot(sub_time_series, aes(x=category, y=NEEtrend_lm)) +
   geom_jitter() +
   geom_boxplot()
@@ -648,28 +679,85 @@ p9 <- ggplot(sub_time_series, aes(x=category, y=ERtrend_lm)) +
   geom_boxplot()
 p9
 cowplot::plot_grid(p7, p8, p9, nrow=1, ncol=3)
-#
-sub_time_series %>% filter(abs(GPPtrend_lm) < 0.3) %>%
+
+
+#---------------Important results from here!
+sub_time_series %>% # filter(abs(GPPtrend_lm) < 0.3) %>%
 ggplot(aes(x=GPPtrend_lm, y=NEEtrend_lm, color=category)) +
   geom_point() + 
   geom_smooth(method = "lm")
 
+#---dry climate
+data <- sub_time_series %>% filter(category=='dry') # %>% filter(GPPtrend_lm > 5) 
+summary(lm(data=data, NEEtrend_unit ~ GPPtrend_lm + 0))
+# GPPtrend_lm  -0.1417     0.1608  -0.881    0.391
+plot(data$GPPtrend_lm, data$NEEtrend_unit)
 
-data <- sub_time_series %>% filter(abs(GPPtrend_lm) < 0.3) %>% filter(category=='dry')
-summary(lm(data=data, NEEtrend_lm ~ GPPtrend_lm))
-# (Intercept)  0.02691    0.03666   0.734   0.4743  
-# GPPtrend_lm -0.59339    0.22676  -2.617   0.0194 *
-  
-data <- sub_time_series %>% filter(abs(GPPtrend_lm) < 0.3) %>% filter(category=='wet')
-summary(lm(data=data, NEEtrend_lm ~ GPPtrend_lm))
+summary(lm(data=data, NEEtrend_lm ~ ERtrend_lm + 0))
+# ERtrend_lm -4.019e-05  1.399e-03  -0.029    0.977
+plot(data$ERtrend_lm, data$NEEtrend_unit)
+
+summary(lm(data=data, ERtrend_lm ~ GPPtrend_lm + 0))
+# GPPtrend_lm   0.9357     0.1575   5.941 2.07e-05 ***  # ER trend is quite similar to GPP trend.  
+plot(data$GPPtrend_lm, data$ERtrend_lm)
+
+#---wet warm climate
+data <- sub_time_series %>% filter(category=='wet')   # %>% filter(GPPtrend_lm > -20) 
+summary(lm(data=data, NEEtrend_unit ~ GPPtrend_lm + 0))
 #             Estimate Std. Error t value Pr(>|t|)   
-# (Intercept)  0.02302    0.02838   0.811  0.43091   
-# GPPtrend_lm -0.79941    0.24802  -3.223  0.00613 **
+# GPPtrend_lm  -0.3349     0.1298  -2.579   0.0209 *
+plot(data$GPPtrend_lm, data$NEEtrend_unit)
 
-data <- sub_time_series %>% filter(category=='cold') %>% filter(abs(GPPtrend_lm) < 0.3) 
-summary(lm(data=data, NEEtrend_lm ~ GPPtrend_lm))
-# (Intercept)  0.006377   0.014137   0.451  0.65309   
-# GPPtrend_lm -0.368636   0.119105  -3.095  0.00267 **
+summary(lm(data=data, NEEtrend_lm ~ ERtrend_lm + 0))
+# ERtrend_lm -0.001356   0.001288  -1.052    0.309
+plot(data$ERtrend_lm, data$NEEtrend_unit)
+
+summary(lm(data=data, ERtrend_lm ~ GPPtrend_lm + 0))
+# GPPtrend_lm   0.6742     0.1523   4.426 0.000491 ***
+plot(data$GPPtrend_lm, data$ERtrend_lm)
+
+#---wet-cold ENF
+data <- sub_time_series %>% filter(category=='cold') %>% filter(IGBP %in% c('ENF', 'EBF')) # %>% filter(GPPtrend_lm > -20) 
+summary(lm(data=data, NEEtrend_unit ~ GPPtrend_lm + 0))
+# GPPtrend_lm  -0.3058     0.1277  -2.394   0.0217 *
+plot(data$GPPtrend_lm, data$NEEtrend_unit)
+
+summary(lm(data=data, NEEtrend_unit ~ ERtrend_lm + 0))
+# ERtrend_lm -0.009692   0.150657  -0.064    0.949
+plot(data$ERtrend_lm, data$NEEtrend_unit)
+
+summary(lm(data=data, ERtrend_lm ~ GPPtrend_lm + 0))
+# GPPtrend_lm   0.4240     0.1305   3.248  0.00243 **  # this is much smaller slope
+plot(data$GPPtrend_lm, data$ERtrend_lm)
+
+#---wet-cold DBF
+data <- sub_time_series %>% filter(category=='cold') %>% filter(IGBP %in% c('MF', 'DBF')) # %>% filter(abs(GPPtrend_lm) < 0.3) 
+summary(lm(data=data, NEEtrend_unit ~ GPPtrend_lm + 0))
+# GPPtrend_lm -0.02341    0.11768  -0.199    0.844
+plot(data$GPPtrend_lm, data$NEEtrend_unit)
+
+summary(lm(data=data, NEEtrend_unit ~ ERtrend_lm + 0))
+# ERtrend_lm   0.1694     0.1017   1.666    0.108   # more correlated with ER.
+plot(data$ERtrend_lm, data$NEEtrend_unit)
+
+# for these ecosystems more GPP increase are used. 
+summary(lm(data=data, ERtrend_lm ~ GPPtrend_lm + 0))
+# GPPtrend_lm   0.8926     0.1262   7.071 1.65e-07 ***
+plot(data$GPPtrend_lm, data$ERtrend_lm)
+
+#---wet-cold non-forests
+data <- sub_time_series %>% filter(category=='cold') %>% filter(!IGBP %in% c('MF', 'DBF', 'ENF', 'EBF'))  %>% filter(GPPtrend_lm < 100) 
+summary(lm(data=data, NEEtrend_unit ~ GPPtrend_lm + 0))
+# GPPtrend_lm  -0.2706     0.1669  -1.621    0.119
+plot(data$GPPtrend_lm, data$NEEtrend_unit)
+
+summary(lm(data=data, NEEtrend_unit ~ ERtrend_lm + 0))
+# ERtrend_lm   0.3354     0.2003   1.674    0.108
+plot(data$ERtrend_lm, data$NEEtrend_unit)
+
+summary(lm(data=data, ERtrend_lm ~ GPPtrend_lm + 0))
+# GPPtrend_lm   0.3374     0.1582   2.132   0.0439 *  # this is also small. 
+plot(data$GPPtrend_lm, data$ERtrend_lm)
 
 ```
 

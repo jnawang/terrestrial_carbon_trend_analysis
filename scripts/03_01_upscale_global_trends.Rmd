@@ -59,10 +59,10 @@ sos_eos_group$eos_group[sos_eos_group$category=='wet'] <- 365
 sos_eos_group <- sos_eos_group %>% filter(!(category == 'wet' & Climate.class == "Csa"))
 
 # we add a few climate classes with which we have sites with similar climate
-sos_eos_group <- rbind(sos_eos_group, data.frame(category = c("dry", "dry", "cold", "cold", "cold", "cold"),
-                                                 Climate.class = c("BWk", "Csc", "Cfc", "Dwa", "Dwb", "Dwd"), 
-                                                 sos_group = c(90, 76, 110, 131, 131, 131), 
-                                                 eos_group = c(200, 210, 270, 254, 254, 254)))
+sos_eos_group <- rbind(sos_eos_group, data.frame(category = c("dry", "dry", "cold", "cold", "cold", "cold", "wet", "wet", "wet"),
+                                                 Climate.class = c("BWk", "Csc", "Cfc", "Dwa", "Dwb", "Dwd", 'Aw', 'Am', 'Af'), 
+                                                 sos_group = c(90, 76, 110, 131, 131, 131, 1, 1, 1), 
+                                                 eos_group = c(200, 210, 270, 254, 254, 254, 365, 365, 365)))
 sos_eos_group <- sos_eos_group %>% arrange(category, Climate.class)
 #
 sos_eos_group <- sos_eos_group %>% mutate(climate_id = case_when(
@@ -87,15 +87,18 @@ sos_eos_group <- sos_eos_group %>% mutate(climate_id = case_when(
   Climate.class == 'Cwa' ~ 11, Climate.class == 'Cwb' ~ 12, Climate.class == 'Cwc' ~ 13))
 #  mutate(zone_id = paste(group, climate_id, sep="-"))
 
-
+# the climate class we do not have data are 
+# Af (rainforest) and Aw (Savvana), all the Dw climates (Continential dry winter climate)
 ```
+
 
 ```{r get global zonation based on climate and vegetation}
 koppen_climate <- terra::rast('data/koppen_geiger_0p00833333.tif')
 land_cover <- terra::rast('data/968_Land_Cover_Class_0.25degree.nc')
 #
 # plot(koppen_climate)
-plot(land_cover[[2]])
+plot(land_cover[[2]]%in% c(4:5))
+# large croplands on earth
 # unify resolution: 0.25 degree
 koppen_climate_0.25 <- terra::resample(koppen_climate, land_cover, method="near")
 # plot(koppen_climate_0.25)
@@ -103,13 +106,14 @@ koppen_climate_0.25 <- terra::resample(koppen_climate, land_cover, method="near"
 # a data frame to store zone info
 df_zone <- data.frame(koppen_climate=as.integer(terra::values(koppen_climate_0.25)),
                       land_cover=as.integer(terra::values(land_cover[[2]])))
-df_zone <- df_zone %>% mutate(group = case_when(koppen_climate %in% c(1:3, 14, 11:13) ~ "wet",
-                                                koppen_climate %in% c(4:10) ~ "dry",
-                                                koppen_climate %in% c(15:30) & land_cover %in% c(6:9, 14, 16) ~ "cold_nonforest", 
-                                                koppen_climate %in% c(15:30) & land_cover %in% c(10) ~ "cold_nonforest", 
-                                                koppen_climate %in% c(15:30) & land_cover %in% c(11) ~ "cold_nonforest", 
-                                                koppen_climate %in% c(15:30) & land_cover %in% c(1:3) ~ "cold_ENF",
-                                                koppen_climate %in% c(15:30) & land_cover %in% c(4:5) ~ "cold_DBF"))
+df_zone <- df_zone %>% mutate(group = case_when(
+  koppen_climate %in% c(2, 14, 11:13) & !land_cover %in% c(12,13,15,16,0) ~ "wet",  
+  koppen_climate %in% c(4:10) & !land_cover %in% c(12,13,15,16,0) ~ "dry",  # remove 0water, 12cropland, 13urban, 15ice, 16barren
+  koppen_climate %in% c(15:30) & land_cover %in% c(6:9, 14) ~ "cold_nonforest", 
+  koppen_climate %in% c(15:30) & land_cover %in% c(10) ~ "cold_nonforest", 
+  koppen_climate %in% c(15:30) & land_cover %in% c(11) ~ "cold_nonforest", 
+  koppen_climate %in% c(15:30) & land_cover %in% c(1:3) ~ "cold_ENF",
+  koppen_climate %in% c(15:30) & land_cover %in% c(4:5) ~ "cold_DBF"))
 # %>% mutate(grow_season_id = ifelse(is.na(koppen_climate) | is.na(group), NA, paste(group, koppen_climate, sep='-')))
 
 zone_grow_season <- koppen_climate_0.25
@@ -142,6 +146,7 @@ zone_masks_north <- mask(zone_masks, north_hemispher, maskvalues=0)
 zone_masks_south <- mask(zone_masks, south_hemispher, maskvalues=0)
 
 ```
+
 
 ```{r a function to calculate growing season mean by zones}
 
@@ -409,17 +414,43 @@ for (group in unique_climate_veg_groups$label) {
   geom_density(fill = "skyblue", alpha = 0.5) +
   labs(title = group, x = "NEE trend", y = "Density")
   print(plot)
+  
+  # Are driver trends cancelled out at large scales?
+  print(paste0("Past mean prep trend in a group: ", group, mean(terra::values(tp_gs_slope)[cells], na.rm=T)))
+  print(paste0("Past mean ssrd trend in a group: ", group, mean(terra::values(ssrd_gs_slope)[cells], na.rm=T)))
+  print(paste0("Past mean t2m trend in a group: ", group, mean(terra::values(t2m_gs_slope)[cells], na.rm=T)))
 }
-# [1] 0.0008156818
-# [1] -0.02093994
-# [1] 0.06813562
-# [1] 0.06668045
-# [1] -0.02934342; 
+# [1] 0.0006620509
+# [1] -0.02179434
+# [1] 0.07309876
+# [1] 0.07049765
+# [1] -0.01247933
 
 plot(NEE_trend_past)
-mean(terra::values(NEE_trend_past), na.rm=T)  # 0.04137234
+mean(terra::values(NEE_trend_past), na.rm=T)  # 0.03933005
 
 writeRaster(NEE_trend_past, filename = 'data/NEE_trend_past_prediction.tif', overwrite=TRUE)
+# [1] "Past mean prep trend in a group: cold_DBF-0.0106894772280376"
+# [1] "Past mean ssrd trend in a group: cold_DBF0.0174385703532912"
+# [1] "Past mean t2m trend in a group: cold_DBF0.0372846465169043"
+# [1] -0.02179434
+# [1] "Past mean prep trend in a group: cold_ENF-0.0130431158948662"
+# [1] "Past mean ssrd trend in a group: cold_ENF0.0282002007813707"
+# [1] "Past mean t2m trend in a group: cold_ENF0.0484039722938379"
+# [1] 0.07309876
+# [1] "Past mean prep trend in a group: cold_nonforest-0.000739786467414556"
+# [1] "Past mean ssrd trend in a group: cold_nonforest0.0142696955056926"
+# [1] "Past mean t2m trend in a group: cold_nonforest0.0537303760982132"
+# [1] 0.07049765
+# [1] "Past mean prep trend in a group: dry-0.0134900779262378"
+# [1] "Past mean ssrd trend in a group: dry0.00419883350499074"
+# [1] "Past mean t2m trend in a group: dry0.0364109797163263"
+# [1] -0.01247933
+# [1] "Past mean prep trend in a group: wet-0.00376746135272869"
+# [1] "Past mean ssrd trend in a group: wet-0.00508059767128605"
+# [1] "Past mean t2m trend in a group: wet0.0707241803036828"
+# [1] 0.03933005
+
 
 ```
 
@@ -610,6 +641,7 @@ for (group in unique_climate_veg_groups$label) {
     NEE_trend_fut[cells] <- + 0.05882 + 0.92125 * tp_ngs_slope[cells] - 1.21953 * tp_gs_slope[cells]  # non-growing season precipitation
   } else if (group == 'cold_ENF') {
     NEE_trend_fut[cells] <- -0.74007 * tp_gs_slope[cells] + -0.67349 * (-0.03637 - 0.30871 * tp_gs_slope[cells] - 0.25552 * t2m_gs_slope[cells]) + -0.06156
+    # our own research
     # assuming no growing season length trend
     # NEE_trend_fut[cells] <- -0.74007 * tp_gs_slope[cells] + -0.67349 * (-0.03590 - 0.23430 * t2m_gs_slope[cells]) + -0.06156
   } else if (group == 'cold_DBF') {
@@ -625,17 +657,169 @@ for (group in unique_climate_veg_groups$label) {
   geom_density(fill = "skyblue", alpha = 0.5) +
   labs(title = group, x = "NEE trend", y = "Density")
   print(plot)
+  # Are driver trends cancelled out at large scales?
+  print(paste0("Future mean prep trend in a group: ", group, mean(terra::values(tp_gs_slope)[cells], na.rm=T)))
+  print(paste0("Future mean ssrd trend in a group: ", group, mean(terra::values(ssrd_gs_slope)[cells], na.rm=T)))
+  print(paste0("Future mean t2m trend in a group: ", group, mean(terra::values(t2m_gs_slope)[cells], na.rm=T)))
 }
 plot(NEE_trend_fut)
-mean(terra::values(NEE_trend_fut), na.rm=T)  # 0.04034053; I should use area averaged values. 
+mean(terra::values(NEE_trend_fut), na.rm=T)  # 0.03079345; I should use area averaged values. 
 
 writeRaster(NEE_trend_fut, filename = 'data/NEE_trend_future_prediction.tif', overwrite=TRUE)
 
-# 0.001524375
-# -0.04401975;    this one is very high. 
-# 0.06452368
-# 0.06045693
-# 0.006851957    # this one changed its sign. 
-# 0.03849924 mean of the globe
+# [1] 0.001524375
+# [1] -0.04325326
+# [1] 0.05841176       # this one is smaller, this is non-forests. 
+# [1] 0.06166086
+# [1] -0.0006226519     # this one changed its sign. 
+
+# [1] -0.04325326
+# [1] "Future mean prep trend in a group:cold_ENF0.0199694059078339"
+# [1] "Future mean ssrd trend in a group:cold_ENF-0.0166143229967202"
+# [1] "Future mean t2m trend in a group:cold_ENF0.0257932349937162"
+# [1] 0.05867833
+# [1] "Future mean prep trend in a group:cold_nonforest0.0151858063888047"
+# [1] "Future mean ssrd trend in a group:cold_nonforest-0.00282362432768481"
+# [1] "Future mean t2m trend in a group:cold_nonforest0.0496374942133618"
+# [1] 0.06166086
+# [1] "Future mean prep trend in a group:dry-0.00801849479131112"
+# [1] "Future mean ssrd trend in a group:dry0.00467357055481933"
+# [1] "Future mean t2m trend in a group:dry0.0504363448075233"
+# [1] -0.0006226519
+# [1] "Future mean prep trend in a group:wet0.00656352315517214"
+# [1] "Future mean ssrd trend in a group:wet0.0146096521058984"
+# [1] "Future mean t2m trend in a group:wet0.0616470550838771"
+
+
 
 ```
+
+
+```{r standard deviation of NEE}
+#
+years <- 2005:2021
+folder1 <- 'nee_fluxcom_2005_2021'
+folder2 <- paste0('FLUXCOM-X-BASE net ecosystem exchange for ', years)
+folder3 <- paste0('NEE_', years, '_025_daily.nc')
+#
+NEE_annual_2005_2021 <- terra::rast()
+for (i in 1:length(years)) {
+  print(i)
+  nc_file <- list.files(file.path(dir_rawdata, 'ScaleUp_Global', folder1, folder2[i]), pattern='_025_daily.nc$', full.names = T)
+  NEE_daily <- terra::rast(nc_file)
+  NEE_annual <- terra::app(NEE_daily, fun = 'sum', na.rm=T)
+  NEE_annual_2005_2021 <- c(NEE_annual_2005_2021, NEE_annual)
+}
+
+writeRaster(NEE_annual_2005_2021, filename = 'data/NEE_annual_2005_2021_fluxcom.tif', overwrite=TRUE)
+
+NEE_sd_2005_2021_fluxcom <- terra::app(NEE_annual_2005_2021, fun = 'sd', na.rm=T)
+NEE_slope_2005_2021_fluxcom <- terra::app(NEE_annual_2005_2021, function(x) {ifelse(any(is.na(x)), NA, sens.slope(x)$estimate)})
+plot(NEE_sd_2005_2021_fluxcom)
+plot(NEE_slope_2005_2021_fluxcom)
+
+```
+
+
+```{r convert standardized NEE trends to normal NEE trend}
+NEE_annual_2005_2021 <- terra::rast('data/NEE_annual_2005_2021_fluxcom.tif')
+NEE_sd_2005_2021_fluxcom <- terra::app(NEE_annual_2005_2021, fun = 'sd', na.rm=T)
+
+# we cannot use this, because so many areas on earth the sd is just zero; this just does not make sense. 
+quantile(terra::values(NEE_sd_2005_2021_fluxcom), c(0.99, 0.9, 0.75, 0.5, 0.25, 0.1, 0.01), na.rm=T)
+
+#
+NEE_trend_fut <- terra::rast('data/NEE_trend_future_prediction.tif')
+NEE_trend_past <- terra::rast('data/NEE_trend_past_prediction.tif')
+
+NEE_trend_fut_unit <- NEE_trend_fut * NEE_sd_2005_2021_fluxcom
+NEE_trend_past_unit <- NEE_trend_past * NEE_sd_2005_2021_fluxcom
+
+plot(NEE_trend_fut_unit, range=c(-20, 30))
+plot(NEE_trend_past_unit, range=c(-20, 30))
+
+mean(NEE_trend_fut_unit, na.rm=T)
+mean(NEE_trend_past_unit, na.rm=T)
+density(NEE_trend_fut_unit)
+density(NEE_trend_past_unit)
+
+writeRaster(NEE_trend_fut_unit, filename = 'data/NEE_trend_future_prediction_unit.tif', overwrite=TRUE)
+writeRaster(NEE_trend_past_unit, filename = 'data/NEE_trend_past_prediction_unit.tif', overwrite=TRUE)
+
+```
+
+
+```{r change in growing season solar radiaiton and precipitation}
+# here I want to address two questions: 
+# (1) do model products underestimate growing season shortwave radiations?
+# (2) how global shortwave radiation trends are changing?
+# (3) how global precipitation trends are changing? 
+# (4) how global warming trends are changing?
+# answer Q1: 
+ssrd_gs <- terra::rast('data/ssrd_gs_2005_2023.tif')
+ssrd_gs_slope_past <- terra::app(ssrd_gs, function(x) {ifelse(any(is.na(x)), NA, sens.slope(x)$estimate / sd(x))})
+
+#
+sub_time_series <- read.csv("data/sub_time_series_potential_drivers_sen.csv")
+sites_long <- read.csv('data/long_term_ec_sites.csv')
+if (! "category" %in% names(sub_time_series)) {
+  sub_time_series <- sub_time_series %>% 
+    left_join(sites_long[, c("site_ID", "category", "Long")], by="site_ID") %>%
+    rename("NEE_trend"="NEEtrend_lm")
+}
+
+# extract ssrd_gs_slope at observation locations
+xy <- sub_time_series[, c("Long", "Lat")]
+sub_time_series$ssrd_gs_slope_sites <- terra::extract(ssrd_gs_slope, xy)$lyr.1
+cor.test(sub_time_series$ssrd_gs_slope_sites, sub_time_series$SW_gs_t)
+# p-value = 0.002496! climate re-analysis data did consist with site-level shortwave radiation change. 
+
+for (group in unique(sub_time_series$category) ) {
+  plot(sub_time_series$ssrd_gs_slope_sites[sub_time_series$category==group], 
+       sub_time_series$SW_gs_t[sub_time_series$category==group], main = group)
+}
+
+# answer Q2:
+ssrd_gs <- terra::rast('data/rsds_gs_2026_2050.tif')   
+ssrd_gs_slope_fut <- terra::app(ssrd_gs, function(x) {ifelse(any(is.na(x)), NA, sens.slope(x)$estimate / sd(x))})
+#
+ssrd_gs_slope_fut <- terra::resample(ssrd_gs_slope_fut, ssrd_gs_slope_past)
+#
+ssrd_gs_slope_change <- ssrd_gs_slope_fut - ssrd_gs_slope_past
+plot(ssrd_gs_slope_change)
+#
+writeRaster(ssrd_gs_slope_change, filename = 'data/ssrd_gs_slope_change.tif', overwrite=TRUE)
+# this should be a map of global coverage. 
+mean(terra::values(ssrd_gs_slope_change), na.rm=T) # -0.00193066
+
+# answer Q3:
+tp_gs <- terra::rast('data/tp_gs_2005_2023.tif')   
+tp_gs_slope_past <- terra::app(tp_gs, function(x) {ifelse(any(is.na(x)), NA, sens.slope(x)$estimate / sd(x))})
+#
+tp_gs <- terra::rast('data/pr_gs_2026_2050.tif')   
+tp_gs_slope_fut <- terra::app(tp_gs, function(x) {ifelse(any(is.na(x)), NA, sens.slope(x)$estimate / sd(x))})
+#
+tp_gs_slope_fut <- terra::resample(tp_gs_slope_fut, tp_gs_slope_past)
+#
+tp_gs_slope_change <- tp_gs_slope_fut - tp_gs_slope_past
+plot(tp_gs_slope_change)
+#
+writeRaster(tp_gs_slope_change, filename = 'data/tp_gs_slope_change.tif', overwrite=TRUE)
+
+# answer Q4:
+t2m_gs <- terra::rast('data/t2m_gs_2005_2023.tif')   
+t2m_gs_slope_past <- terra::app(t2m_gs, function(x) {ifelse(any(is.na(x)), NA, sens.slope(x)$estimate / sd(x))})
+#
+t2m_gs <- terra::rast('data/tas_gs_2026_2050.tif')   
+t2m_gs_slope_fut <- terra::app(t2m_gs, function(x) {ifelse(any(is.na(x)), NA, sens.slope(x)$estimate / sd(x))})
+#
+t2m_gs_slope_fut <- terra::resample(t2m_gs_slope_fut, t2m_gs_slope_past)
+#
+t2m_gs_slope_change <- t2m_gs_slope_fut - t2m_gs_slope_past
+plot(t2m_gs_slope_change)
+#
+writeRaster(t2m_gs_slope_change, filename = 'data/t2m_gs_slope_change.tif', overwrite=TRUE)
+
+
+```
+

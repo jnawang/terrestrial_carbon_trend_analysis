@@ -96,7 +96,7 @@ files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BAS
 sites_long <- read.csv('data/long_term_ec_sites.csv')
 #
 for (i in 1:nrow(sites_long)) {
-#  i = 30
+  i = 55
   site_ID <- sites_long$site_ID[i]
   print(site_ID)
   # AmeriFlux and European flux; Do I need to differentiate them? Hopefully they use the same notation
