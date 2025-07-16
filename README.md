@@ -27,4 +27,3 @@ This project uses global eddy covariance CO2 flux data from AmeriFlux, FLUXNET, 
 -   03_scale_up
     -   03_00_download_future_climate.py
     -   03_01_upscale_global_NEE_trends.Rmd
--   04_make_plots (all plots for manuscript)
