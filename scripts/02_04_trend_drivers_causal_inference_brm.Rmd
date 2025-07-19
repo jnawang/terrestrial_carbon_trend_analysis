@@ -306,7 +306,7 @@ for (exposure_var in exposure_vars) {
 
 #----------------------------------------------------------------------
 ####I should use a different way to plot the two figures!
-ggplot(data=data_cold_DBF_MF, aes(x=LE_gs_t, y=NEE_trend, col=IGBP)) + 
+ggplot(data=data_cold_DBF_MF, aes(x=LE_gs_t, y=NEE_trend, col=IGBP)) +  #  SW_ngs_t [this is still solar radition's effects]
   geom_point() +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
@@ -348,8 +348,8 @@ plot(graphLayout(DAG_cold_nonforest))
 
 data_cold_nonforest <- data %>% filter(category == "cold") %>%
   filter(!IGBP %in% c("DBF", "MF", "ENF", "EBF")) %>%  # , "MF"
-  dplyr::select(-c("category", "P_t", "SW_t", "LE_t", "Age")) # %>% filter(!is.na(Lgs_t)) 
-# %>% filter(site_ID !='BE-Maa')
+  dplyr::select(-c("category", "P_t", "SW_t", "LE_t", "Age")) # %>% filter(site_ID !='BE-Maa')
+
 
 data_cold_nonforest_DAG <- data_cold_nonforest %>% dplyr::select(-c("IGBP", "site_ID"))
 
@@ -375,7 +375,7 @@ direct_effects <- data.frame(from = edges$v, to = edges$w)
 # set priors
 priors <- c(
   prior(normal(0.5, 0.5), class = "sd", lb = 0),  # Stronger prior for group-level SDs
-  prior(normal(0.5, 0.1), class = "sigma", lb = 0)  # For residual error, this prior is confident
+  prior(normal(0.5, 0.1), class = "sigma", lb = 0)  # For residual error
 )
 
 # call functions
@@ -397,7 +397,7 @@ for (exposure_var in exposure_vars) {
 
 #----------------------------------------------------------------------
 ####I should use a different way to plot the two figures!
-ggplot(data=data_cold_nonforest, aes(x=P_gs_t, y=NEE_trend, col=IGBP)) + 
+ggplot(data=data_cold_nonforest, aes(x=P_gs_t, y=NEE_trend)) + #, col=IGBP
   geom_point() +
   geom_smooth(method = lm) +
   stat_cor()
