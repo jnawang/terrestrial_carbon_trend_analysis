@@ -13,8 +13,8 @@ This project uses global eddy covariance CO2 flux data from AmeriFlux, FLUXNET, 
 -   00_download_data
     -   00_download_flux_data
     -   00_01_era5_api_daily.py (API for downloading daily global climate data from ERA5)
-    -   00_01_era5_api.py (API for downloading hourly climate data at certain locations from ERA5)
-    -   00_02_ERA5_csv.rmd (convert data from ERA5 to csv files)
+    -   00_02_era5_api.py (API for downloading hourly climate data at certain locations from ERA5)
+    -   00_03_ERA5_csv.rmd (convert data from ERA5 to csv files)
 -   01_data_harmonization
     -   01_01_Ustar-filter_gap-fill_partition_AmeriFlux-BASE_sites.Rmd
     -   01_02_connect_European_FLUXNET_recent_ICOS.Rmd
