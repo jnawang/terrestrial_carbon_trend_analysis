@@ -2654,3 +2654,55 @@ ggsave(file.path(dir_fig, 'FigS_trend_drivers_longterm_sites.png'), width = 8, h
 ```
 
 
+```{r create a site DOI table}
+sites_long  <- read.csv('data/long_term_ec_sites.csv')
+sites_info_AmeriFlux <- read.csv('data/AmeriFlux-site-search-results-202501071742.csv')
+sites_info_Fluxnet <- read.csv(file.path(dir_rawdata, "FLUXNET2020", "!TOC.csv"))
+sites_info_ICOS <- read.csv(file.path(dir_rawdata, "ICOS_FLUXNET", "!TOC.csv"))
+sites_info_ICOS <- sites_info_ICOS %>% filter(grepl("FLUXNET", File.name))
+
+if (!"AmeriFlux.BASE.DOI" %in% names(sites_long)) {
+  sites_long <- sites_long %>% left_join(sites_info_AmeriFlux[, c("Site.ID", "AmeriFlux.BASE.DOI", "AmeriFlux.FLUXNET.DOI")], by=c("site_ID" = "Site.ID"))
+}
+# add some missing AmeriFlux DOIs
+sites_long$AmeriFlux.FLUXNET.DOI[sites_long$site_ID == "US-BZB"] <- "https://doi.org/10.17190/AMF/1881569"
+sites_long$AmeriFlux.FLUXNET.DOI[sites_long$site_ID == "US-BZF"] <- "https://doi.org/10.17190/AMF/1881570"
+sites_long$AmeriFlux.FLUXNET.DOI[sites_long$site_ID == "US-BZS"] <- "https://doi.org/10.17190/AMF/1881572"
+sites_long$AmeriFlux.FLUXNET.DOI[sites_long$site_ID == "US-ICh"] <- "https://doi.org/10.17190/AMF/2007175"
+sites_long$AmeriFlux.FLUXNET.DOI[sites_long$site_ID == "US-ICs"] <- "https://doi.org/10.17190/AMF/1871138"
+sites_long$AmeriFlux.FLUXNET.DOI[sites_long$site_ID == "US-ICt"] <- "https://doi.org/10.17190/AMF/1881583"
+sites_long$AmeriFlux.FLUXNET.DOI[sites_long$site_ID == "US-Tw1"] <- "https://doi.org/10.17190/AMF/1832165"
+
+sites_info_Fluxnet$site_ID <- substr(sites_info_Fluxnet$File.name, 5, 10)
+if (!"Landing.page" %in% names(sites_long)) {
+  sites_long <- sites_long %>% left_join(sites_info_Fluxnet[, c("site_ID", "Landing.page")], by="site_ID") %>% 
+    rename("Landing.page.Fluxnet" = "Landing.page")
+}
+
+sites_info_ICOS$site_ID <- substr(sites_info_ICOS$File.name, 9, 14)
+if (!"Landing.page.ICOS" %in% names(sites_long)) {
+  sites_long <- sites_long %>% left_join(sites_info_ICOS[, c("site_ID", "Landing.page")], by="site_ID") %>%
+    rename("Landing.page.ICOS" = "Landing.page")
+}
+
+
+sites_long$DOI <- ''
+for (i in 1:nrow(sites_long)) {
+  if (sites_long$source[i] == "AmeriFlux_FLUXNET") {
+    sites_long$DOI[i] <- sites_long$AmeriFlux.FLUXNET.DOI[i]
+  } else if (sites_long$source[i] == "AmeriFlux_BASE") {
+    sites_long$DOI[i] <- sites_long$AmeriFlux.BASE.DOI[i]
+  } else if (sites_long$source[i] == "EuropFlux_FLUXNET2023") {
+    sites_long$DOI[i] <- paste(sites_long$Landing.page.Fluxnet[i], sites_long$Landing.page.ICOS[i], "\n")
+  } else if (sites_long$source[i] == "EuropFlux_FLUXNET2020") {
+    sites_long$DOI[i] <- sites_long$Landing.page.Fluxnet[i]
+  }
+}
+
+# write.csv(sites_long[, c("site_ID", "DOI")], "/Users/jw2946/Downloads/site.doi.csv")
+
+```
+
+
+
+
