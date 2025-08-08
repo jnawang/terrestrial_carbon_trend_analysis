@@ -239,7 +239,7 @@ abrupt_change$cpAbruptChange[abrupt_change$site_ID == "CA-Cbo"] <- 2008
 
 # "US-PFa" is broken up around 2007 because of long-term drought. 
 abrupt_change$cpAbruptChange[abrupt_change$site_ID == "US-PFa"] <- 2007
-# "US-PFa" is broken up at 2010 because US-Ho1 is also broken in this year; and data quality at the identified 2015 year is too bad. 
+
 abrupt_change$cpAbruptChange[abrupt_change$site_ID == "US-Ho2"] <- 2010   
 # the identified year 2015 is not measured well. 
 

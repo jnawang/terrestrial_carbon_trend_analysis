@@ -55,8 +55,15 @@ for (site_ID in sites_shared) {
   a_YY_2020 <- read.csv(files.unzip.Europ[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_YY"), files.unzip.Europ)])
   #
   # read data from ICOS FLUXNET after 2020
-  a_HH_zip <- file.path(dir_rawdata, "ICOS_FLUXNET", paste0("ICOSETC_", site_ID, "_FLUXNET_INTERIM_HH_L2.zip"))
-  a_HH_2023 <- read.csv(unz(a_HH_zip, paste0("ICOSETC_", site_ID, "_FLUXNET_INTERIM_HH_L2.csv")))
+  if (site_ID == "BE-Maa") {
+    # use newer data for this site because old data may have some problems
+    a_HH_zip <- file.path(dir_rawdata, "ICOS_FLUXNET", paste0("ICOSETC_", site_ID, "_FLUXNET_HH_L2.zip"))
+    a_HH_2023 <- read.csv(unz(a_HH_zip, paste0("ICOSETC_", site_ID, "_FLUXNET_HH_L2.csv")))
+  } else {
+    a_HH_zip <- file.path(dir_rawdata, "ICOS_FLUXNET", paste0("ICOSETC_", site_ID, "_FLUXNET_INTERIM_HH_L2.zip"))
+    a_HH_2023 <- read.csv(unz(a_HH_zip, paste0("ICOSETC_", site_ID, "_FLUXNET_INTERIM_HH_L2.csv")))
+  }
+  
   #
   a_HH_2020[a_HH_2020<=-9999] <- NA
   a_HH_2023[a_HH_2023<=-9999] <- NA
@@ -66,11 +73,19 @@ for (site_ID in sites_shared) {
   if (identical(start_merge_index, integer(0))) {
     start_merge_index = 1
   }
-  end_merge_index <- which(a_HH_2023$TIMESTAMP_END == 202401010000)
-  if (identical(end_merge_index, integer(0))) {
-    end_merge_index = nrow(end_merge_index)
+  if (site_ID == "BE-Maa") {
+    # not use the first two year data 2016 and 2017, according to site PI.
+    start_merge_index <- which(a_HH_2020$TIMESTAMP_START == 201801010000)
+    end_merge_index <- which(a_HH_2020$TIMESTAMP_END == 202001010000)
+    a_HH <- bind_rows(a_HH_2020[start_merge_index:end_merge_index, ], a_HH_2023)
+  } else {
+    end_merge_index <- which(a_HH_2023$TIMESTAMP_END == 202401010000)
+    if (identical(end_merge_index, integer(0))) {
+      end_merge_index = nrow(end_merge_index)
+    }
+    a_HH <- bind_rows(a_HH_2020, a_HH_2023[start_merge_index:end_merge_index, ])    
   }
-  a_HH <- bind_rows(a_HH_2020, a_HH_2023[start_merge_index:end_merge_index, ])
+
   # calculate a_DD and a_YY
   dt <- as.numeric(difftime(ymd_hm(a_HH$TIMESTAMP_END[2]), ymd_hm(a_HH$TIMESTAMP_END[1]), units=c('days')))
   # I directly add TS and SWC if all the 30 sites have them. 

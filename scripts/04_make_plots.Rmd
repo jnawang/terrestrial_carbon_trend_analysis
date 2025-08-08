@@ -243,7 +243,7 @@ for (i in 1:5) {
   } else if (i==4) {
     data <- sub_time_series %>% filter(category=='cold' & IGBP %in% c('DBF', 'MF'))
   } else if (i==5) {
-    data <- sub_time_series %>% filter(category=='cold' & !IGBP %in% c('DBF', 'MF', 'ENF', 'EBF')) %>% filter(GPPtrend_lm < 100)
+    data <- sub_time_series %>% filter(category=='cold' & !IGBP %in% c('DBF', 'MF', 'ENF', 'EBF'))
   }
   
 #   # use Huber weights robust linear regression
@@ -297,7 +297,7 @@ group_feature <- sub_time_series %>% mutate(group = case_when(category=='wet' ~ 
                 IGBP %in% c("ENF", "EBF") & category=='cold' ~ "ENF and EBF in wet-cold climate", 
                  IGBP %in% c("DBF", "MF") & category=='cold' ~ "DBF and MF in wet-cold climate",
    !IGBP %in% c("ENF", "EBF","DBF", "MF") & category=='cold' ~ "Non-forests in wet-cold climate")) %>%
-  group_by(group) %>% summarise(NEE=median(NEE), GPP=median(GPP), ER=median(ER), NEEtrend=median(NEE_trend), GPPtrend=median(GPPtrend_lm), ERtrend=median(ERtrend_lm))
+  group_by(group) %>% summarise(NEE=mean(NEE), GPP=mean(GPP), ER=mean(ER), NEEtrend=mean(NEE_trend), GPPtrend=mean(GPPtrend_lm), ERtrend=mean(ERtrend_lm))
 
 ```
 
@@ -465,8 +465,8 @@ p2 <- data_plot %>%
                 color = "black")
 p2
 
-# Figures about relationships between GPP trend and NEE trend; and GPP trend and ER  
-data_plot3 <- data_plot %>% filter(group %in% c('2. All ecosystems in wet-warm climate', '3. ENF and EBF in wet-cold climate', '5. Non-forests in wet-cold climate')) %>% filter(GPPtrend_lm < 100)
+# Figures about relationships between GPP trend and NEE trend; and GPP trend and ER
+data_plot3 <- data_plot %>% filter(group %in% c('2. All ecosystems in wet-warm climate', '3. ENF and EBF in wet-cold climate', '5. Non-forests in wet-cold climate'))
   summary(lm(data=data_plot3, NEE_trend ~ GPPtrend_lm))
   # GPPtrend_lm -0.31097    0.07941  -3.916 0.000191 ***
   # Multiple R-squared:  0.1643
@@ -479,11 +479,13 @@ data_plot3_GPP <- data_plot3 %>% filter(GPPtrend_lm > -29)
   intercept_uptake <- summary(lm(data=data_plot3_GPP, ERtrend_lm ~ GPPtrend_lm))$coefficients[1, 1]
   
 # get the slope when GPP trend is <= -29 gC/m2/yr2
-data_plot3 %>% filter(GPPtrend_lm <= -29) %>% 
-  mutate(x_adj = GPPtrend_lm - -29, y_adj = ERtrend_lm - -19) %>%
-  lm(data=., y_adj ~ x_adj + 0) %>% summary()
-#       Estimate Std. Error t value Pr(>|t|)
-# x_adj  -0.6113     0.7173  -0.852    0.427
+GPPtrend_thresh <- -29
+ERtrend_thresh <- intercept_uptake + slope_uptake * GPPtrend_thresh
+
+slope_uptake_disturbed <- data_plot3 %>% filter(GPPtrend_lm <= -29) %>% 
+  mutate(x_adj = GPPtrend_lm - GPPtrend_thresh, y_adj = ERtrend_lm - ERtrend_thresh) %>%
+  lm(data=., y_adj ~ x_adj + 0) %>% summary() %>% coefficients() %>% 
+  .[[1]]
 
   
 data_plot4 <- data_plot %>% filter(!group %in% c('2. All ecosystems in wet-warm climate', '3. ENF and EBF in wet-cold climate', '5. Non-forests in wet-cold climate')) 
@@ -499,7 +501,7 @@ data_plot4 <- data_plot %>% filter(!group %in% c('2. All ecosystems in wet-warm 
 
   
   df_segment <- data.frame(x_start = c(-60, -29), x_end = c(-29, 80), y_start=0, y_end=0)
-  df_segment[1, 3:4] <- -19.1 + -0.6113 * (df_segment[1, 1:2] - -29)   # this can be modified
+  df_segment[1, 3:4] <- ERtrend_thresh + slope_uptake_disturbed * (df_segment[1, 1:2] - GPPtrend_thresh)   # this can be modified
   # df_segment[1, 3:4] <- intercept_uptake + slope_uptake * df_segment[1, 2]
   df_segment[2, 3:4] <- intercept_uptake + slope_uptake * df_segment[2, 1:2]      
   df_segment$linetype <- c("solid", "dashed")
@@ -518,7 +520,7 @@ p3 <- ggplot(data=data_plot3, aes(x=GPPtrend_lm, y=ERtrend_lm)) +
   #   "3. ENF and EBF in wet-cold climate",
   #   "5. Non-forests in wet-cold climate",
   #   sep = "\n"), hjust = 0, size = 3.5) +
-  geom_text(x = 60, y = -40, label = expression(atop(italic("r") ~ '= 0.58, ' ~ italic('p') ~ ' < 0.001', italic("slope") ~ " = " ~ bold("0.61") ~" ± 0.10")), size = 3) +
+  geom_text(x = 60, y = -40, label = expression(atop(italic("r") ~ '= 0.63, ' ~ italic('p') ~ ' < 0.001', italic("slope") ~ " = " ~ bold("0.65") ~" ± 0.10")), size = 3) +
   theme_classic() +
   theme(legend.position = c(0.35, 0.95),
         legend.text = element_text(size = 8),

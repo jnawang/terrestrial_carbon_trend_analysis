@@ -404,7 +404,7 @@ for (group in unique_climate_veg_groups$label) {
   } else if (group == 'cold_DBF') {
     NEE_trend_past[cells] <- -0.36844 * et_gs_slope[cells] + 0.01111   # 
   } else if (group %in% c('cold_nonforest')) {
-    NEE_trend_past[cells] <- -0.331190 * tp_gs_slope[cells] + 0.527238 * ssrd_gs_slope[cells] + -0.011522 * canopy_height[cells] + 0.141098
+    NEE_trend_past[cells] <- -0.292777 * tp_gs_slope[cells] + 0.457980 * ssrd_gs_slope[cells] + -0.011463 * canopy_height[cells] + 0.135375
   }
   #
   print(mean(terra::values(NEE_trend_past)[cells], na.rm=T))
@@ -647,7 +647,7 @@ for (group in unique_climate_veg_groups$label) {
   } else if (group == 'cold_DBF') {
     NEE_trend_fut[cells] <- -0.36844 * et_gs_slope[cells] + 0.01111   # 
   } else if (group == 'cold_nonforest') {
-    NEE_trend_fut[cells] <- -0.331190 * tp_gs_slope[cells] + 0.527238 * ssrd_gs_slope[cells] + -0.011522 * canopy_height[cells] + 0.141098
+    NEE_trend_fut[cells] <- -0.292777 * tp_gs_slope[cells] + 0.457980 * ssrd_gs_slope[cells] + -0.011463 * canopy_height[cells] + 0.135375
   }
   #
   print(mean(terra::values(NEE_trend_fut)[cells], na.rm=T))

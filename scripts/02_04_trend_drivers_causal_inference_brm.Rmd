@@ -347,8 +347,8 @@ DAG_cold_nonforest <- dagitty("dag {
 plot(graphLayout(DAG_cold_nonforest))
 
 data_cold_nonforest <- data %>% filter(category == "cold") %>%
-  filter(!IGBP %in% c("DBF", "MF", "ENF", "EBF")) %>%  # , "MF"
-  dplyr::select(-c("category", "P_t", "SW_t", "LE_t", "Age")) # %>% filter(site_ID !='BE-Maa')
+  filter(!IGBP %in% c("DBF", "MF", "ENF", "EBF")) %>%  
+  dplyr::select(-c("category", "P_t", "SW_t", "LE_t", "Age")) 
 
 
 data_cold_nonforest_DAG <- data_cold_nonforest %>% dplyr::select(-c("IGBP", "site_ID"))
@@ -413,6 +413,10 @@ ggplot(data=data_cold_nonforest, aes(x=SW_gs_t, y=NEE_trend, col=IGBP)) +   # , 
   geom_smooth(method = lm) +
   stat_cor()
 
+# ggplot(data=data_cold_nonforest, aes(x=LE_gs_t, y=NEE_trend)) +   # , col=IGBP
+#   geom_point() +
+#   geom_smooth(method = lm) +
+#   stat_cor()
 
 
 ```
@@ -625,11 +629,11 @@ data_cold_nonforest <- data %>% filter(category == "cold" & IGBP %in% c("GRA", "
 # merge open shrublands and close shrublands
 data_cold_nonforest$IGBP_new <- data_cold_nonforest$IGBP
 data_cold_nonforest$IGBP_new[data_cold_nonforest$IGBP %in% c('OSH', 'CSH')] <- 'SH'
-summary(lm(NEE_trend ~ Height + P_gs_t + SW_gs_t, data=data_cold_nonforest))  # R2 = 0.5645 / 0.5023  # + IGBP_new
-# (Intercept)  0.141098   0.059422   2.374  0.02718 * 
-# Height      -0.011522   0.004504  -2.558  0.01832 * 
-# P_gs_t      -0.331190   0.149073  -2.222  0.03743 * 
-# SW_gs_t      0.527238   0.183009   2.881  0.00894 **
+summary(lm(NEE_trend ~ Height + P_gs_t + SW_gs_t, data=data_cold_nonforest))  # R2 = 0.5416 / 0.4762  # + IGBP_new
+# (Intercept)  0.135375   0.056196   2.409   0.0253 *
+# Height      -0.011463   0.004247  -2.699   0.0134 *
+# P_gs_t      -0.292777   0.139345  -2.101   0.0479 *
+# SW_gs_t      0.457980   0.175652   2.607   0.0165 *
 
 
 data_cold_DBF <- data %>% filter(category == "cold" & IGBP %in% c("DBF", "MF")) 
