@@ -7,6 +7,7 @@ This project uses global eddy covariance CO2 flux data from AmeriFlux, FLUXNET, 
 -   Calculate decadal trends of CO2 fluxes over the past two decades across a wide range of terrestrial ecosystems.
 -   Identify the drivers of CO2 trends for different ecosystems.
 -   Estimate the changes in CO2 flux trends at two-decade-long sites.
+-   Predict CO2 flux trends of the past and future two decades at global vegetated areas.
 
 ## Structure of R and Python scripts
 
