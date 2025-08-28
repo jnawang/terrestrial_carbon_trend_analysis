@@ -1,0 +1,744 @@
+---
+title: "identify trend drivers using causal inference"
+output: pdf_document
+date: "2025-04-08"
+author: "Junna Wang"
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+
+```{r raw data location}
+rm(list=ls())
+# change this location where the raw data will be saved accordingly
+# dir_rawdata <- '/Users/jw2946/Documents/stability_project/SiteData/'
+dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
+#
+library(librarian)
+shelf(tidyverse, ggpubr, lme4, dagitty, lmerTest, brms, randomForest)
+#
+```
+
+
+```{r read data}
+#-------------------------------------------------------------------------------
+sub_time_series <- read.csv("sub_time_series_potential_drivers_sen.csv")
+sites_long <- read.csv('long_term_ec_sites.csv')
+if (! "category" %in% names(sub_time_series)) {
+  sub_time_series <- sub_time_series %>% 
+    left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>%
+    rename("NEE_trend"="NEEtrend_lm")
+}
+
+data <- sub_time_series %>% 
+  dplyr::select(c("NEE_trend", "TA_t", "TA_gs_t", "TA_ngs_t", "P_t", "P_gs_t", "P_ngs_t", 
+           "VPD_gs_t", "VPD_ngs_t", 
+           "SW_t", "SW_gs_t", "SW_ngs_t", "LE_t", "LE_gs_t", "LE_ngs_t", "Lgs_t", 
+           "MAT", "MAP", "Height", "Age", "Nmean", "CO2_t", "IGBP", "category", "site_ID"))
+
+
+df_total_effect <- data.frame(climate_veg = character(), exposure = character(), outcome = character(), effect_type = character(), 
+                              estimate = double(), ci_lower_2.5 = double(), ci_lower_5 = double(), ci_upper_95 = double(), ci_upper_97.5 = double(), 
+                              formula = character())
+
+df_direct_effect <- df_total_effect
+
+```
+
+
+```{r a function to calculate direct and total effects based on DAG}
+options(mc.cores = parallel::detectCores())
+#
+run_adjusted_model <- function(
+  dag,
+  exposure,
+  outcome,
+  data,
+  group_vars = NULL,
+  priors = NULL,
+  backend = "cmdstanr",
+  iter = 4000,
+  adapt_delta = 0.99,
+  max_treedepth = 10, 
+  effect_type = c("direct", "total")
+) {
+  effect_type <- match.arg(effect_type)
+
+  # Determine adjustment set
+  if (effect_type == "direct") {
+    adjustment_set <- adjustmentSets(dag, exposure = exposure, outcome = outcome, type = c("minimal"), effect = c("direct"))
+  } else if (effect_type == "total") {
+    adjustment_set <- adjustmentSets(dag, exposure = exposure, outcome = outcome, type = c("minimal"), effect = "total")
+  }
+
+  if (length(adjustment_set) == 0) {
+    message(paste("No adjustment set found for ", effect_type, " effect:", exposure, "→", outcome))
+    adjust_vars <- character(0)
+  } else {
+    adjust_vars <- unlist(adjustment_set[[1]])
+    message(paste("Adjustment set found for ", effect_type, " effect:", exposure, "→", outcome, "  ", adjustment_set[[1]]))
+  }
+  
+  rhs_terms <- paste(c(exposure, adjust_vars), collapse = " + ")
+  formula_str <- paste(outcome, "~", rhs_terms)
+
+  # Add random effects if specified
+  if (!is.null(group_vars)) {
+    group_terms <- paste0("(1|", group_vars, ")", collapse = " + ")
+    formula_str <- paste(formula_str, "+", group_terms)
+  }
+  message(formula_str)
+  
+  # Fit the model
+  fit <- brm(
+    formula = as.formula(formula_str),
+    data = data,
+    prior = priors,
+    backend = backend,
+    iter = iter,
+    control = list(adapt_delta = adapt_delta, max_treedepth = max_treedepth),
+    silent = TRUE
+  )
+
+  print(summary(fit))
+  # Extract coefficient summary with additional quantiles
+  summary_fit <- posterior_summary(fit, probs = c(0.025, 0.05, 0.95, 0.975))
+  coef_name <- paste0("b_", exposure)
+#  browser()
+  
+  if (!(coef_name %in% rownames(summary_fit))) {
+    stop(paste("Coefficient", coef_name, "not found in model summary"))
+  }
+
+  coef_row <- summary_fit[coef_name, ]
+
+  result <- data.frame(
+    exposure = exposure,
+    outcome = outcome,
+    effect_type = effect_type,
+    estimate = coef_row["Estimate"],
+    ci_lower_2.5 = coef_row["Q2.5"],
+    ci_lower_5 = coef_row["Q5"],
+    ci_upper_95 = coef_row["Q95"],
+    ci_upper_97.5 = coef_row["Q97.5"],
+    formula = formula_str
+  )
+
+  rownames(result) <- NULL
+  return(result)
+}
+
+```
+
+
+```{r Evergreen forests in cold climate}
+
+DAG_cold_forest <- dagitty("dag {
+  Age -> NEE_trend
+  Age -> Height -> NEE_trend
+  TA_gs_t -> LE_gs_t <- P_gs_t
+  TA_gs_t -> NEE_trend
+  P_gs_t -> NEE_trend
+  LE_gs_t -> NEE_trend
+  TA_gs_t -> Lgs_t -> NEE_trend
+  Height -> LE_gs_t
+  Height -> Lgs_t
+  P_gs_t -> Lgs_t
+  SW_gs_t -> NEE_trend
+  P_gs_t -> SW_gs_t
+  SW_gs_t -> TA_gs_t
+  SW_gs_t -> LE_gs_t
+  SW_gs_t -> Lgs_t
+  Age -> SW_gs_t
+}")
+
+
+plot(graphLayout(DAG_cold_forest))
+#----------------------------------------------
+data_cold_ENF_noAge <- data %>% 
+  filter(IGBP %in% c('ENF', 'EBF') & category == "cold") %>% 
+  dplyr::select(-c("category", "P_t", "SW_t", "LE_t"))
+
+data_cold_ENF <- data %>% 
+  filter(IGBP %in% c('ENF', 'EBF') & category == "cold") %>% 
+  dplyr::select(-c("category", "P_t", "SW_t", "LE_t")) %>% filter(!is.na(Age) & !is.na(Lgs_t))
+
+data_cold_ENF_DAG <- data_cold_ENF %>% dplyr::select(-c("IGBP", "site_ID"))
+
+r <- localTests(x = DAG_cold_forest, data=data_cold_ENF_DAG, type='cis', abbreviate.names = F)
+plotLocalTestResults(r)
+print(subset(r, p.value < 0.05))
+
+#-------------------------------------------------------------------------------
+for (i in 1:ncol(data_cold_ENF)) {
+  if (!names(data_cold_ENF)[i] %in% c('IGBP', "site_ID")) {
+    data_cold_ENF[, i] <- scale(data_cold_ENF[, i])
+  }
+}
+
+for (i in 1:ncol(data_cold_ENF_noAge)) {
+  if (!names(data_cold_ENF_noAge)[i] %in% c('IGBP', "site_ID")) {
+    data_cold_ENF_noAge[, i] <- scale(data_cold_ENF_noAge[, i])
+  }
+}
+
+#-------------------------------------------------------------------------------
+# get all the direct effects
+edges <- edges(DAG_cold_forest)
+direct_effects <- data.frame(from = edges$v, to = edges$w)
+
+# set priors
+priors <- c(
+  prior(normal(0.5, 0.5), class = "sd", lb = 0),    # Stronger prior for group-level SDs
+  prior(normal(0.5, 0.5), class = "sigma", lb = 0)  # For residual error, this prior is confident
+)
+
+# call functions 1:nrow(direct_effects)
+for (i in 1:nrow(direct_effects)) {
+  adjustment_set <- adjustmentSets(DAG_cold_forest, exposure = direct_effects$from[i], outcome = direct_effects$to[i], type = c("minimal"), effect = c("direct"))
+  #
+  if (direct_effects$from[i]=='Age' | direct_effects$to[i]=='Age' | "Age" %in% adjustment_set[[1]]) {
+    data_use <- data_cold_ENF
+  } else {
+    data_use <- data_cold_ENF_noAge
+  }
+  # data_use <- data_cold_ENF
+  #
+  if (direct_effects$from[i]=='Age' & direct_effects$to[i]=='Height') {
+    r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = direct_effects$from[i], outcome = direct_effects$to[i], effect_type = "direct", data = data_use) 
+  } else {
+    r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = direct_effects$from[i], outcome = direct_effects$to[i], effect_type = "direct", 
+                           data = data_use, group_vars = c("site_ID"), priors = priors)
+  }
+  #
+  df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+}
+#
+#------------------------------------------------------------------------------------------------
+#--------------------calculate total effect size of each driver----------------------------------
+exposure_vars <- c("P_gs_t", "Lgs_t", "SW_gs_t", "LE_gs_t", "TA_gs_t", "Height", "Age")
+for (exposure_var in exposure_vars) {
+    if (exposure_var=='Age') {
+    data_use <- data_cold_ENF
+  } else {
+    data_use <- data_cold_ENF_noAge
+  }
+  #
+  r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = exposure_var, outcome = "NEE_trend", effect_type = "total", 
+                   data = data_use, group_vars = c("site_ID"), priors = priors)
+  df_total_effect <- rbind(df_total_effect, data.frame(climate_veg = 'wet_cold_ENF', r1))
+}
+
+#------------------------------------------------------------------------------------------------
+#------------------------------------------------Making plots------------------------------------
+ggplot(data=data_cold_ENF, aes(x=P_gs_t, y=NEE_trend, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='red')
+
+ggplot(data=data_cold_ENF, aes(x=Lgs_t, y=NEE_trend, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='red')
+
+ggplot(data=data_cold_ENF, aes(x=Age, y=NEE_trend, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='red')
+
+```
+
+
+```{r cold DBF and MF}
+data_cold_DBF_MF_noAge <- data %>% 
+  filter(IGBP %in% c("MF", "DBF") & category == "cold") %>%  # "DBF", "MF"
+  dplyr::select(-c("category", "P_t", "SW_t", "LE_t"))
+
+data_cold_DBF_MF <- data %>% 
+  filter(IGBP %in% c("MF", "DBF") & category == "cold") %>%  # "DBF", "MF"
+  dplyr::select(-c("category", "P_t", "SW_t", "LE_t")) %>% filter(!is.na(Age) & !is.na(Lgs_t))
+
+data_cold_DBF_MF_DAG <- data_cold_DBF_MF %>% dplyr::select(-c("IGBP", "site_ID"))
+
+r <- localTests(x = DAG_cold_forest, data=data_cold_DBF_MF_DAG, type='cis', abbreviate.names = F)
+plotLocalTestResults(r)
+print(subset(r, p.value < 0.05))
+#------------------------------------------------------------------------------- 
+
+for (i in 1:ncol(data_cold_DBF_MF)) {
+  if (!names(data_cold_DBF_MF)[i] %in% c('IGBP', 'site_ID')) {
+    data_cold_DBF_MF[, i] <- scale(data_cold_DBF_MF[, i])
+  }
+}
+
+ggplot(data=data_cold_DBF_MF, aes(y=NEE_trend, x=IGBP)) + 
+  geom_boxplot()
+#-------------------------------------------------------------------------------
+# get all the direct effects
+edges <- edges(DAG_cold_forest)
+direct_effects <- data.frame(from = edges$v, to = edges$w)
+
+# set priors
+priors <- c(
+  prior(normal(0.5, 0.5), class = "sd", lb = 0)    # Stronger prior for group-level SDs
+)
+
+# call functions
+for (i in 1:nrow(direct_effects)) {
+  r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = direct_effects$from[i], outcome = direct_effects$to[i], effect_type = "direct", 
+                           data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+  df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+}
+#
+#------------------------------------------------------------------------------------------------
+#--------------------calculate total effect size of each driver----------------------------------
+exposure_vars <- c("LE_gs_t", "Age", "TA_gs_t", "Lgs_t", "SW_gs_t", "P_gs_t", "Height")
+for (exposure_var in exposure_vars) {
+  r1 <- run_adjusted_model(dag = DAG_cold_forest, exposure = exposure_var, outcome = "NEE_trend", effect_type = "total", 
+                   data = data_cold_DBF_MF, group_vars = c("IGBP", "site_ID"), priors = priors)
+  df_total_effect <- rbind(df_total_effect, data.frame(climate_veg = 'wet_cold_DBF_MF', r1))
+}
+
+#----------------------------------------------------------------------
+####I should use a different way to plot the two figures!
+ggplot(data=data_cold_DBF_MF, aes(x=LE_gs_t, y=NEE_trend, col=IGBP)) +  #  SW_ngs_t [this is still solar radition's effects]
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+ggplot(data=data_cold_DBF_MF, aes(x=P_gs_t, y=NEE_trend, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+
+####use the same slope but different intercept. 
+ggplot(data=data_cold_DBF_MF, aes(x=Age, y=NEE_trend, col=IGBP)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+```
+
+
+```{r cold and nonforest}
+DAG_cold_nonforest <- dagitty("dag {
+  TA_gs_t -> LE_gs_t <- P_gs_t
+  TA_gs_t -> NEE_trend
+  P_gs_t -> NEE_trend
+  LE_gs_t -> NEE_trend
+  TA_gs_t -> Lgs_t -> NEE_trend
+  Height -> NEE_trend
+  Height -> LE_gs_t
+  Height -> Lgs_t
+  P_gs_t -> Lgs_t
+  SW_gs_t -> NEE_trend
+  P_gs_t -> SW_gs_t
+  SW_gs_t -> TA_gs_t
+  SW_gs_t -> LE_gs_t
+  SW_gs_t -> Lgs_t
+}")
+
+plot(graphLayout(DAG_cold_nonforest))
+
+data_cold_nonforest <- data %>% filter(category == "cold") %>%
+  filter(!IGBP %in% c("DBF", "MF", "ENF", "EBF")) %>%  
+  dplyr::select(-c("category", "P_t", "SW_t", "LE_t", "Age")) 
+
+
+data_cold_nonforest_DAG <- data_cold_nonforest %>% dplyr::select(-c("IGBP", "site_ID"))
+
+r <- localTests(x = DAG_cold_nonforest, data=data_cold_nonforest_DAG, type='cis', abbreviate.names = F)
+plotLocalTestResults(r)
+print(subset(r, p.value < 0.05))
+
+summary(aov(data=data_cold_nonforest, NEE_trend ~ IGBP))
+#             Df Sum Sq Mean Sq F value  Pr(>F)   
+# IGBP         3 0.1704 0.05679   3.752 0.0266 *
+# Residuals   21 0.3178 0.01513
+#----------------------------------------------------------------------------------
+for (i in 1:ncol(data_cold_nonforest)) {
+  if (!names(data_cold_nonforest)[i] %in% c('IGBP', 'site_ID')) {
+    data_cold_nonforest[, i] <- scale(data_cold_nonforest[, i])
+  }
+}
+#--------------
+# get all the direct effects
+edges <- edges(DAG_cold_nonforest)
+direct_effects <- data.frame(from = edges$v, to = edges$w)
+
+# set priors
+priors <- c(
+  prior(normal(0.5, 0.5), class = "sd", lb = 0),  # Stronger prior for group-level SDs
+  prior(normal(0.5, 0.1), class = "sigma", lb = 0)  # For residual error
+)
+
+# call functions
+for (i in 1:nrow(direct_effects)) {
+  r1 <- run_adjusted_model(dag = DAG_cold_nonforest, exposure = direct_effects$from[i], outcome = direct_effects$to[i], effect_type = "direct", 
+                           data = data_cold_nonforest, group_vars = c("IGBP", "site_ID"), priors = priors)
+  df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet_cold_nonforest', r1))
+}
+
+#------------------------------------------------------------------------------------------------
+#--------------------calculate total effect size of each driver----------------------------------
+exposure_vars <- c("Height", "P_gs_t", "SW_gs_t", "LE_gs_t", "Lgs_t", "TA_gs_t")
+for (exposure_var in exposure_vars) {
+  r1 <- run_adjusted_model(dag = DAG_cold_nonforest, exposure = exposure_var, outcome = "NEE_trend", 
+                           effect_type = "total", data = data_cold_nonforest, 
+                           group_vars = c("IGBP", "site_ID"), priors = priors)
+  df_total_effect <- rbind(df_total_effect, data.frame(climate_veg = 'wet_cold_nonforest', r1))
+}
+
+#----------------------------------------------------------------------
+####I should use a different way to plot the two figures!
+ggplot(data=data_cold_nonforest, aes(x=P_gs_t, y=NEE_trend)) + #, col=IGBP
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor()
+
+####use the same slope but different intercept. 
+ggplot(data=data_cold_nonforest, aes(x=Height, y=NEE_trend)) +   # , col=IGBP
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+ggplot(data=data_cold_nonforest, aes(x=SW_gs_t, y=NEE_trend, col=IGBP)) +   # , col=IGBP
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor()
+
+# ggplot(data=data_cold_nonforest, aes(x=LE_gs_t, y=NEE_trend)) +   # , col=IGBP
+#   geom_point() +
+#   geom_smooth(method = lm) +
+#   stat_cor()
+
+
+```
+
+
+```{r dry climate}
+#-----construct DAG
+DAG_dry <- dagitty("dag {
+  TA_gs_t -> VPD_gs_t <- P_gs_t
+  TA_gs_t -> NEE_trend
+  P_gs_t -> NEE_trend
+  VPD_gs_t -> NEE_trend
+  TA_ngs_t -> NEE_trend
+  P_ngs_t -> NEE_trend
+  TA_ngs_t -> VPD_ngs_t <- P_ngs_t
+  VPD_ngs_t -> NEE_trend
+  Lgs_t -> NEE_trend
+  Height -> NEE_trend
+  Height -> TA_gs_t
+  SW_gs_t -> NEE_trend
+  SW_gs_t -> VPD_gs_t
+  SW_gs_t -> TA_gs_t
+  SW_ngs_t -> NEE_trend
+  SW_ngs_t -> VPD_ngs_t
+  SW_ngs_t -> TA_ngs_t
+}")
+plot(graphLayout(DAG_dry))
+  #  
+  # SW_gs_t -> VPD_ngs_t  ; removed!! 
+  # VPD_ngs_t -> Lgs_t
+  # TA_ngs_t -> Lgs_t 
+  # SW_ngs_t -> Lgs_t
+  # VPD_gs_t -> VPD_ngs_t
+  # TA_gs_t -> P_gs_t
+
+#----Test model-data consistency
+data_dry <- data %>% 
+  filter(category == "dry") %>% 
+  dplyr::select(-c("category", "P_t", "SW_t", "LE_t", "Age"))  %>% filter(!is.na(Lgs_t))
+
+data_dry_DAG <- data_dry %>% dplyr::select(-c("IGBP", "site_ID"))
+
+r <- localTests(x = DAG_dry, data=data_dry_DAG, type='cis', abbreviate.names = F)
+plotLocalTestResults(r)
+print(subset(r, p.value < 0.05))
+
+#----calculate direct effect
+# scale all the variables using Z score
+for (i in 1:ncol(data_dry)) {
+  if (!names(data_dry)[i] %in% c('IGBP', 'site_ID')) {
+    data_dry[, i] <- scale(data_dry[, i])
+  }
+}
+
+# get all the direct effects
+edges <- edges(DAG_dry)
+direct_effects <- data.frame(from = edges$v, to = edges$w)
+
+# set priors
+priors <- c(
+  prior(normal(0.5, 0.5), class = "sd", lb = 0),  # Stronger prior for group-level SDs
+  prior(normal(0.5, 0.1), class = "sigma", lb = 0)  # For residual error, this prior is confident
+)
+
+# call functions
+for (i in 1:nrow(direct_effects)) {
+  r1 <- run_adjusted_model(dag = DAG_dry, exposure = direct_effects$from[i], outcome = direct_effects$to[i], effect_type = "direct", 
+                           data = data_dry, group_vars = c("IGBP", "site_ID"), priors = priors, max_treedepth = 20)
+  df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'dry', r1))
+}
+
+#------------------------------------------------------------------------------------------------
+#--------------------calculate total effect size of each driver----------------------------------
+exposure_vars <- c("VPD_ngs_t", "TA_gs_t", "P_gs_t", "SW_ngs_t", "Height", "P_ngs_t", "TA_ngs_t", "SW_gs_t", "VPD_gs_t", "Lgs_t")
+for (exposure_var in exposure_vars) {
+  r1 <- run_adjusted_model(dag = DAG_dry, exposure = exposure_var, outcome = "NEE_trend", 
+                           effect_type = "total", data = data_dry, 
+                           group_vars = c("IGBP", "site_ID"), priors = priors, max_treedepth = 20)
+  df_total_effect <- rbind(df_total_effect, data.frame(climate_veg = 'dry', r1))
+}
+
+#----------------------------------------------------------------------
+# Precipitation in non-growing season; Air temperature in growing season. 
+# this makes lots of sense now!
+ggplot(data=data_dry, aes(x=P_gs_t, y=NEE_trend)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+ggplot(data=data_dry, aes(x=VPD_ngs_t, y=NEE_trend)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+ggplot(data=data_dry, aes(x=P_ngs_t, y=NEE_trend)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+
+```
+
+
+```{r wet warm climate}
+DAG_wet <- dagitty("dag {
+  TA_t -> LE_t <- P_t
+  TA_t -> NEE_trend
+  P_t -> NEE_trend
+  LE_t -> NEE_trend
+  Height -> NEE_trend
+  Height -> LE_t
+  SW_t -> NEE_trend
+  SW_t -> TA_t
+  SW_t -> LE_t
+  P_t -> SW_t
+}")
+plot(graphLayout(DAG_wet))
+
+
+data_wet <- data %>% 
+  filter(category == "wet") %>% 
+  dplyr::select(-c("category", "TA_gs_t", "P_gs_t", "SW_gs_t", "LE_gs_t", 
+            "TA_ngs_t", "P_ngs_t", "LE_ngs_t", "Age")) # %>% filter(!is.na(CO2_t))
+
+data_wet_DAG <- data_wet %>% dplyr::select(-c("IGBP", "site_ID"))
+
+r <- localTests(x = DAG_wet, data=data_wet_DAG, type='cis', abbreviate.names = F)
+plotLocalTestResults(r)
+print(subset(r, p.value < 0.05))
+
+summary(aov(data=data_wet, NEE_trend ~ IGBP)) # p = 0.169 # do not differentiate vegetation. 
+#-------------------------------------------------------------------------------------
+#----calculate direct effect
+# scale all the variables using Z score
+for (i in 1:ncol(data_wet)) {
+  if (!names(data_wet)[i] %in% c('IGBP', 'site_ID')) {
+    data_wet[, i] <- scale(data_wet[, i])
+  }
+}
+
+# get all the direct effects
+edges <- edges(DAG_wet)
+direct_effects <- data.frame(from = edges$v, to = edges$w)
+
+# set priors
+priors <- c(
+  prior(normal(0.5, 0.5), class = "sd", lb = 0),  # Stronger prior for group-level SDs
+  prior(normal(0.5, 0.1), class = "sigma", lb = 0)  # For residual error, this prior is confident 
+)
+
+# call functions
+for (i in 1:nrow(direct_effects)) {
+  r1 <- run_adjusted_model(dag = DAG_wet, exposure = direct_effects$from[i], outcome = direct_effects$to[i], effect_type = "direct", 
+                           data = data_wet, group_vars = c("IGBP", "site_ID"), priors = priors)
+  df_direct_effect <- rbind(df_direct_effect, data.frame(climate_veg = 'wet-warm', r1))
+}
+
+#------------------------------------------------------------------------------------------------
+#--------------------calculate total effect size of each driver----------------------------------
+exposure_vars <- c("SW_t", "P_t", "LE_t", "TA_t", "Height")
+for (exposure_var in exposure_vars) {
+  r1 <- run_adjusted_model(dag = DAG_wet, exposure = exposure_var, outcome = "NEE_trend", 
+                           effect_type = "total", data = data_wet, 
+                           group_vars = c("IGBP", "site_ID"), priors = priors)
+  df_total_effect <- rbind(df_total_effect, data.frame(climate_veg = 'wet-warm', r1))
+}
+
+#-------------------------------------------------------------------------------
+ggplot(data=data_wet, aes(x=LE_t, y=NEE_trend)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+ggplot(data=data_wet, aes(x=SW_t, y=NEE_trend)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+ggplot(data=data_wet, aes(x=P_t, y=NEE_trend)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+ggplot(data=data_wet, aes(x=P_t, y=SW_t)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+write.csv(row.names = F, df_total_effect, 'data/total_effect_NEE_trend_driver_sen.csv')
+write.csv(row.names = F, df_direct_effect, 'data/direct_effect_NEE_trend_driver_sen.csv')
+
+```
+
+
+```{r get equations to project for future NEE trends and growing season length}
+data_wet <- data %>% filter(category == "wet") 
+summary(lm(data=data_wet, NEE_trend ~ SW_t)) # R2 = 0.5088/0.4737 
+#              Estimate Std. Error t value Pr(>|t|)  
+# (Intercept) -0.00942    0.02968  -0.317  0.75567   
+# SW_t         0.60216    0.15812   3.808  0.00192 **
+
+data_dry <- data %>% filter(category == "dry") 
+summary(lm(data=data_dry, NEE_trend ~ P_ngs_t + P_gs_t)) # R2 = 0.7295/0.6909
+#              Estimate Std. Error t value Pr(>|t|)
+# (Intercept)  0.05882    0.02326   2.529 0.024080 *  
+# P_ngs_t      0.92125    0.20348   4.527 0.000474 ***
+# P_gs_t      -1.21953    0.26864  -4.540 0.000463 ***  
+
+data_cold_nonforest <- data %>% filter(category == "cold" & IGBP %in% c("GRA", "WET", "OSH", "CSH"))   # , "CSH"
+# merge open shrublands and close shrublands
+data_cold_nonforest$IGBP_new <- data_cold_nonforest$IGBP
+data_cold_nonforest$IGBP_new[data_cold_nonforest$IGBP %in% c('OSH', 'CSH')] <- 'SH'
+summary(lm(NEE_trend ~ Height + P_gs_t + SW_gs_t, data=data_cold_nonforest))  # R2 = 0.5416 / 0.4762  # + IGBP_new
+# (Intercept)  0.135375   0.056196   2.409   0.0253 *
+# Height      -0.011463   0.004247  -2.699   0.0134 *
+# P_gs_t      -0.292777   0.139345  -2.101   0.0479 *
+# SW_gs_t      0.457980   0.175652   2.607   0.0165 *
+
+
+data_cold_DBF <- data %>% filter(category == "cold" & IGBP %in% c("DBF", "MF")) 
+summary(lm(NEE_trend ~ LE_gs_t, data=data_cold_DBF))  # R2 = 0.1739/0.1408 
+# (Intercept)  0.01111    0.02825   0.393   0.6976  
+# LE_gs_t     -0.36844    0.16061  -2.294   0.0305 *
+
+data_cold_ENF <- data %>% filter(category == "cold" & IGBP %in% c("ENF", "EBF")) 
+summary(lm(NEE_trend ~ P_gs_t + Lgs_t, data=data_cold_ENF))  # R2 = 0.3775/0.3429 
+# (Intercept) -0.06156    0.02404  -2.560 0.014797 *  
+# P_gs_t      -0.74007    0.19920  -3.715 0.000686 ***
+# Lgs_t       -0.67349    0.18225  -3.695 0.000725 ***
+
+summary(lm(Lgs_t ~ P_gs_t + TA_gs_t, data=data_cold_ENF))  # R2 = 0.102 / 0.1493
+# R2 = 0.102
+# (Intercept) -0.03637    0.02065  -1.761   0.0867 .
+# P_gs_t      -0.30871    0.16864  -1.831   0.0755 .
+# TA_gs_t     -0.25552    0.13657  -1.871   0.0695 .
+
+# summary(lm(Lgs_t ~ P_gs_t + TA_gs_t, data=data_cold_ENF))
+
+
+```
+
+
+```{r look at driver trends}
+# cold evergreen forests
+# growing season length is reducing. 
+data %>% 
+  filter(category == "cold") %>% 
+  filter(IGBP %in% c('ENF', 'EBF')) %>%
+  ggplot(aes(y=Lgs_t)) +
+  geom_boxplot()
+
+# P stays the same mostly
+data %>% 
+  filter(category == "cold") %>% 
+  filter(IGBP %in% c('ENF', 'EBF')) %>%
+  ggplot(aes(y=P_gs_t)) +
+  geom_boxplot()  
+
+#---------cold DBF and MF forests
+# LE is increasing. 
+data %>% 
+  filter(category == "cold") %>% 
+  filter(IGBP %in% c('DBF', 'MF')) %>%
+  ggplot(aes(y=LE_gs_t)) +
+  geom_boxplot()
+
+#---------cold nonforests
+# P_gs_t increased a lot. 
+data %>% 
+  filter(category == "cold") %>% 
+  filter(!IGBP %in% c('ENF', 'EBF', 'DBF', 'MF')) %>%
+  ggplot(aes(y=P_gs_t)) +
+  geom_boxplot()
+
+
+#---------dry climate; two layers of factors are at play; therefore strong carbon sequestration. 
+# growing season P increased a lot
+data %>% 
+  filter(category == "dry") %>% 
+  ggplot(aes(y=P_gs_t)) +
+  geom_boxplot()
+
+# VPD non-growing season increase a lot; good for dryland carbon sequestration.
+# less carbon is lost in non-growing season. 
+data %>% 
+  filter(category == "dry") %>% 
+  ggplot(aes(y=VPD_ngs_t)) +
+  geom_boxplot()
+
+#---------wet climate
+data %>% 
+  filter(category == "wet") %>% 
+  ggplot(aes(y=SW_t)) +
+  geom_boxplot()
+
+data %>% 
+  filter(category == "wet") %>% 
+  ggplot(aes(y=P_t)) +
+  geom_boxplot()
+
+```
+
+
+
+```{r NEE trends vary with climate and vegetation classes}
+summary(aov(data=data, NEE_trend ~ IGBP + category))
+
+summary(lm(data=data, NEE_trend ~ category))
+
+data_cold <- data %>% filter(category=='cold')
+summary(aov(data = data_cold, NEE_trend ~ IGBP))
+summary(lm(data = data_cold, NEE_trend ~ IGBP))
+
+ggplot(data=data_cold, aes(y=NEE_trend, x=IGBP)) + 
+  geom_boxplot()
+
+ggplot(data=data, aes(y=NEE_trend, x=category)) + 
+  geom_boxplot()
+
+
+```
+
+
+
+
