@@ -30,7 +30,7 @@ This project uses global eddy covariance CO2 flux data from AmeriFlux, FLUXNET, 
     -   03_01_upscale_global_NEE_trends.Rmd
   
 ## Operation system requirements
--   These scripts have been run and tested on the Mac mini system. It should work on normal window systems. 
+-   These scripts have been run and tested on the Mac mini system. It should work on window systems. 
 -   We used R version 4.3.2 and python3 to run the R and python scripts. 
 -   It does not need any non-standard hardware. 
 
