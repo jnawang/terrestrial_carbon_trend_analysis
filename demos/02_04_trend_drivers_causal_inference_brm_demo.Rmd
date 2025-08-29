@@ -15,9 +15,6 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r raw data location}
 rm(list=ls())
-# change this location where the raw data will be saved accordingly
-# dir_rawdata <- '/Users/jw2946/Documents/stability_project/SiteData/'
-dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 #
 library(librarian)
 shelf(tidyverse, ggpubr, lme4, dagitty, lmerTest, brms, randomForest)
@@ -605,8 +602,8 @@ ggplot(data=data_wet, aes(x=P_t, y=SW_t)) +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
 
-write.csv(row.names = F, df_total_effect, 'data/total_effect_NEE_trend_driver_sen.csv')
-write.csv(row.names = F, df_direct_effect, 'data/direct_effect_NEE_trend_driver_sen.csv')
+write.csv(row.names = F, df_total_effect, 'total_effect_NEE_trend_driver_sen.csv')
+write.csv(row.names = F, df_direct_effect, 'direct_effect_NEE_trend_driver_sen.csv')
 
 ```
 
@@ -716,26 +713,6 @@ data %>%
   filter(category == "wet") %>% 
   ggplot(aes(y=P_t)) +
   geom_boxplot()
-
-```
-
-
-
-```{r NEE trends vary with climate and vegetation classes}
-summary(aov(data=data, NEE_trend ~ IGBP + category))
-
-summary(lm(data=data, NEE_trend ~ category))
-
-data_cold <- data %>% filter(category=='cold')
-summary(aov(data = data_cold, NEE_trend ~ IGBP))
-summary(lm(data = data_cold, NEE_trend ~ IGBP))
-
-ggplot(data=data_cold, aes(y=NEE_trend, x=IGBP)) + 
-  geom_boxplot()
-
-ggplot(data=data, aes(y=NEE_trend, x=category)) + 
-  geom_boxplot()
-
 
 ```
 
