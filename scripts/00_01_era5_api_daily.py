@@ -11,9 +11,7 @@ import os
 
 # Set the API credentials as environment variables
 os.environ['CDSAPI_URL'] = 'https://cds.climate.copernicus.eu/api'
-os.environ['CDSAPI_KEY'] = '47eed9ac-8876-4a98-93b1-d0a00c32e849'  # get that key from your CDS account; Junna's account
-# os.environ['CDSAPI_KEY'] = '8938d21f-2336-42c4-8fe5-5783996193b0'  # this is David's account
-# os.environ['CDSAPI_KEY'] = '0a2b0eec-ed62-4a42-8fb8-83ca726ef382'    # this is Ammara's account
+os.environ['CDSAPI_KEY'] = '******'  # get that key from your CDS account; Junna's account
 
 
 dataset = "derived-era5-single-levels-daily-statistics"
