@@ -25,19 +25,33 @@ library(librarian)
 shelf(ggplot2, dplyr, tidyr, lubridate)
 ####
 #
-# find the sites with > 6 year data, and non crop sites
+# find the sites with >= 10 year data, and non crop sites
 # this following meta file is downloaded from Ameriflux with the search criteria: FC=true, NEE=true, data length >= 5 years
-sites <- read.csv('data/AmeriFlux-site-search-results-202501071742.csv')
+# sites <- read.csv('data/AmeriFlux-site-search-results-202501071742.csv')
+# we used FC=true, length >=10 years
+sites <- read.csv('data/AmeriFlux-site-search-results-202512092232.csv')
 #
 # remove cropland "CRO", Cropland/natural vegetation mosaics "CVM", "BSV": Barren?, water: "WAT", Urban and built-up lands:"URB", Snow and ice: "SNO"
 sites_selected <- sites %>% filter(!Vegetation.Abbreviation..IGBP. %in% c("CRO", "CVM", "BSV", "WAT", "URB", "SNO")) %>% filter(Data.Use.Policy=='CC-BY-4.0')
-## 129 sites
+## 113 sites
 ##
 ## US-Ho3 and CA-SJ2 were removed because they are harvested
 ## US-Ho3: Howland Forest (harvest site); shelterwood harvest clearly affect NEE (https://www.mdpi.com/2073-445X/10/4/436); 
 ## CA-SJ2: Saskatchewan - Western Boreal, Jack Pine forest harvested in 2002; removed because they are a series of sites. 
-sites_selected_BASE <- sites_selected %>% filter(AmeriFlux.BASE.Data.End - AmeriFlux.BASE.Data.Start >= 6) %>% filter(AmeriFlux.FLUXNET.Data == "No") %>% filter(!Site.ID %in% c("US-Ho3", "CA-SJ2"))
+## CA-SJ1: Saskatchewan - Western Boreal, Jack Pine forest harvested in 1994; measurement from 2000.
+## CA-Qcu: Quebec - Eastern Boreal, Black Spruce/Jack Pine Cutover; removed due to cutover
+## US-An1 and US-An2: burned, moderately burned sites in 2007.removed
+## US-SP2: plantted in Jan. 1999; removed!
+## US-UiD: Mesuarement paused in 2016~2024, removed. 
+## "US-KL2", "US-KL3", US-KM2, US-KM3: should use data after 2011, due to consistent measurement
+## US-KM4: should use data after 2010
+## US-Fo1: data paused for a while, only measured during campaigns
+sites_selected_BASE <- sites_selected %>% filter(AmeriFlux.BASE.Data.End - AmeriFlux.BASE.Data.Start >= 9) %>% filter(AmeriFlux.FLUXNET.Data == "No") %>% filter(!Site.ID %in% c("US-Ho3", "CA-SJ2", "CA-SJ1", "US-An1", "US-An2", "US-SP2", "US-UiD", "CA-Qcu", "US-Fo1"))
 ##
+
+## sites I should work on: [1] "BR-Ma2" "US-An3" "US-Aud" "US-Blo" "US-ChR" "US-Cwt" "US-Ha2" "US-IB2" "US-KL2" "US-KL3"
+## [11] "US-KM2" "US-KM3" "US-KM4" "US-LA2" "US-MBP" "US-Me4" "US-NR3" "US-NR4" "US-Vcs" "US-Wrc"
+
 
 ```
 
@@ -81,7 +95,7 @@ library(librarian)
 shelf(amerifluxr)
 #
 #
-FC_duration_thresh <- 6 * 365       # unit days
+FC_duration_thresh <- 9 * 365       # unit days
 gap_thresh <- 182                   # unit days
 #
 site_to_remove <- c()
@@ -113,8 +127,9 @@ for (i in 1:nrow(sites_selected_BASE)) {
   #
 }
 #
-# sites to remove: "CA-TP2" "US-xLE" "US-xNW" "US-xRN" (large gaps year after year)
+# sites to remove: "US-An3",  "US-LA2", "US-Me4", "US-Vcs" (large gaps year after year)
 # this code will take ~10 min
+
 ```
 
 
@@ -228,7 +243,7 @@ library(librarian)
 shelf(amerifluxr)
 #
 # remove 4 sites that are not long enough, using results from the last chunk. 
-site_to_remove <- c("CA-TP2", "US-xLE", "US-xNW", "US-xRN")       # this is actually calculated before
+site_to_remove <- c("US-An3", "US-LA2", "US-Me4", "US-Vcs")       # this is actually calculated in the previous chunks
 # further remove "US-xSP", because of poor data quality
 site_to_remove <- c(site_to_remove, "US-xSP")
 #
@@ -392,10 +407,19 @@ files     <- list.files(file.path(dir_rawdata, 'Ameriflux_BASE'), pattern="zip",
 files_ERA <- list.files(file.path(dir_rawdata, 'ERA5_Tair_Prec'), pattern=".csv$", full.names = T)
 files_ERA_SW <- list.files(file.path(dir_rawdata, 'ERA5_SW'), pattern=".csv$", full.names = T)
 for (i in 1:nrow(sites_selected_BASE1)) {
+  # "BR-Ma2" "US-Aud" "US-ChR" "US-Cwt" "US-Ha2" "US-IB2" "US-KL2" "US-KL3" "US-KM2" "US-KM3"
+  # "US-KM4" "US-MBP" "US-NR3" "US-NR4"
+  # i = 1
 #  i = 12  # 12-13: US-Elm, US-Esm 1:nrow(sites_selected_BASE1)
   ####Step 0: Prepare for requested variables for each site: DateTime, NEE, Rg (shortwave radiation), Tair, Ustar, rH (relative humidity), and VPD
+  
   name_site <- sites_selected_BASE1$Site.ID[i]
   print(name_site)
+  
+  if (!name_site %in% c("US-Aud", "US-Blo", "US-ChR", "US-Cwt", "US-Ha2", "US-IB2", "US-KL2", "US-KL3", "US-KM2", "US-KM3", "US-KM4", "US-MBP", "US-NR3", "US-NR4")) {
+    next
+  }
+  
   # the site US-PFa should be processed separately, so skip it now. 
   if (name_site == "US-PFa") { next }
   #

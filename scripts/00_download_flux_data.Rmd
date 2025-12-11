@@ -20,34 +20,28 @@ dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 ```
 
 
-
 ```{r download datasets}
 library(librarian)
 shelf(ggplot2, dplyr, tidyr, amerifluxr, data.table, pander, lubridate)
 #
-for (pkg in packages) {
-  if (!require(pkg, character.only = TRUE)) {
-    install.packages(pkg, dependencies = TRUE)
-    library(pkg, character.only = TRUE)
-  }
-}
-#
-# find the sites with > 6 year data, and non crop sites
+# find the sites with >= 10 year data, and non crop sites
 # sites <- amf_site_info()  # this is not complete
 #
-# this following meta file is downloaded from Ameriflux with the search criteria: FC=true, NEE=true, data length >= 5 years
-sites <- read.csv('data/AmeriFlux-site-search-results-202501071742.csv')
+# this following meta file is downloaded from Ameriflux with the search criteria: FC=true, NEE=true, data length >= 5 years for the file AmeriFlux-site-search-results-202501071742
+# sites <- read.csv('data/AmeriFlux-site-search-results-202501071742.csv')
+# for this file "AmeriFlux-site-search-results-202512092232.csv": we used FC=true, length >=10 years
+sites <- read.csv('data/AmeriFlux-site-search-results-202512092232.csv')
 #
 # remove cropland "CRO", Cropland/natural vegetation mosaics "CVM", "BSV": Barren?, water: "WAT", Urban and built-up lands:"URB", Snow and ice: "SNO"
 sites.selected <- sites %>% filter(!Vegetation.Abbreviation..IGBP. %in% c("CRO", "CVM", "BSV", "WAT", "URB", "SNO")) %>% filter(Data.Use.Policy=='CC-BY-4.0')
-## 129 sites
+## 113 sites
 
-sites.selected.FLUXNET <- sites.selected %>% filter(AmeriFlux.FLUXNET.Data.End - AmeriFlux.FLUXNET.Data.Start >= 4)
-## 79 sites
+sites.selected.FLUXNET <- sites.selected %>% filter(AmeriFlux.FLUXNET.Data.End - AmeriFlux.FLUXNET.Data.Start >= 10)
+## 58 sites
 
-# I have fifty sites to download, gap fill and partition
+# I have 55 sites to download, gap fill and partition
 sites.selected.BASE <- sites.selected$Site.ID[(!sites.selected$Site.ID %in% sites.selected.FLUXNET$Site.ID)]
-# base data was accessed in 1/7/2025
+# base data was accessed in 12/10/2025
 for (site in sites.selected.BASE) {
   floc2 <- amf_download_base(
   user_id = "wangjunna2013",
@@ -59,7 +53,7 @@ for (site in sites.selected.BASE) {
   intended_use = "other",
   intended_use_text = "amerifluxr data synthesis",
   verbose = TRUE,
-  out_dir = file.path(dir.rawdata, 'Ameriflux_BASE')
+  out_dir = file.path(dir_rawdata, 'Ameriflux_BASE')
 )
 }
 
@@ -69,8 +63,8 @@ for (site in sites.selected.BASE) {
 
 ```{r unzip AmeriFlux FLUXNET files, be careful, used only once}
 #### I am going to unzip all the files
-files <- list.files(file.path(dir.rawdata, "Ameriflux_FLUXNET"), pattern = "\\.zip$", full.names = T)
-exdir <- file.path(dir.rawdata, "Ameriflux_FLUXNET", "unzip")
+files <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET"), pattern = "\\.zip$", full.names = T)
+exdir <- file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip")
 # 
 # files <- list.files(file.path(dir.rawdata, "FLUXNET2020"), pattern = "\\.zip$", full.names = T)
 # exdir <- file.path(dir.data, "FLUXNET2020", "unzip")
@@ -94,14 +88,16 @@ files.unzip.Europ2023 <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET", "unzi
 files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
 #
 sites_long <- read.csv('data/long_term_ec_sites.csv')
+
+rm_years <- data.frame(Site.ID=character(), years=integer())
 #
-for (i in 1:nrow(sites_long)) {
-  i = 55
+for (i in 112:nrow(sites_long)) {
+  # i = 103
   site_ID <- sites_long$site_ID[i]
   print(site_ID)
   # AmeriFlux and European flux; Do I need to differentiate them? Hopefully they use the same notation
   if (sites_long$source[i] == "AmeriFlux_FLUXNET") {
-    if (site_ID %in% c("US-Cop")) {
+    if (site_ID %in% c("US-Cop", "US-Ha1", "US-MMS")) {
       a_HH <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_HR"), files.unzip.Ameri)])
       a_DD <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_DD"), files.unzip.Ameri)])
       a_YY <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_YY"), files.unzip.Ameri)])
@@ -179,8 +175,12 @@ for (i in 1:nrow(sites_long)) {
   tmp <- f.data.measured$`year(TIMESTAMP)`[is.na(f.data.measured$f) | f.data.measured$f < minf]
   print(tmp)
   #
+  if (length(tmp) > 0) {
+    rm_years <- rbind(rm_years, data.frame(Site.ID=site_ID, years=tmp))
+  }
 }
 #
+# write.csv(rm_years, file = 'data/remove_years_Ameriflux2025.csv', row.names = F)
 ```
 
 ## Selected qualifed FLUXNET sites

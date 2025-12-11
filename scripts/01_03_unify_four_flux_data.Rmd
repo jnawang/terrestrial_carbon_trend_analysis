@@ -143,7 +143,7 @@ sites_long$Climate.class[sites_long$site_ID %in% c("US-Elm", "US-Esm")] <- "Cwa"
 ## CA-Ca2: British Columbia - Clearcut Douglas-fir stand (harvested winter 1999/2000)
 ## US-Rpf: Poker Flat Research Range: Succession from fire scar to deciduous forest; 
 ## US-Me6: this is a burned sites. 
-## US-My: a restoration site
+## US-Myb: a restoration site
 ## CA-Ca2: clearcut around 2000
 ## US-KLS: actually a crop site, not a grassland site. 
 ## US-NC1: In 2004, 70 ha of 75 year old native hardwoods was harvested. Following the clearcut,the stand was bedded and planted with loblolly pine seedlings.

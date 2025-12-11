@@ -292,8 +292,6 @@ for(i in 1:nrow(df.sitemetadata)){
 }
 
 ####### start of API code
-##### THIS IS DAVID'S KEY, PLEASE CHANGE!
-# wf_set_key("8938d21f-2336-42c4-8fe5-5783996193b0")
 
 ##### Junna's key
 wf_set_key('47eed9ac-8876-4a98-93b1-d0a00c32e849')
@@ -389,9 +387,9 @@ for(i in 1:nrow(df.sitemetadata)){
 
 
 ```{r convert ERA5 nc to csv}
-cat(paste0('"', 2016:2017, '"', collapse = ", "))
+cat(paste0('"', 1997:2017, '"', collapse = ", "))
 
-coor <- round(c(31.6637, -110.1777), 2)
+coor <- round(c(38.8953, -120.6328), 2)
 
 paste(as.character(round(c(coor[1] + 0.006, coor[2]-0.006, coor[1] - 0.006, coor[2]+0.006), 2)), collapse = ", ")
 

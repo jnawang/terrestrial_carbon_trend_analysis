@@ -17,8 +17,8 @@ os.environ['CDSAPI_KEY'] = '******'  # get that key from your CDS account; Junna
 dataset = "derived-era5-single-levels-daily-statistics"
 request = {
     "product_type": "reanalysis",
-    "variable": ["2m_temperature"],
-    "year": "2012",
+    "variable": ["total_precipitation"],
+    "year": "2024",
     "month": [
         "01", "02", "03",
         "04", "05", "06",
