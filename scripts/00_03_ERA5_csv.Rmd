@@ -416,13 +416,14 @@ for(i in 1:nrow(df.sitemetadata)){
 
 
 ```{r convert ERA5 nc to csv}
-cat(paste0('"', 1997:2017, '"', collapse = ", "))
+cat(paste0('"', 1994:2025, '"', collapse = ", "))
 
-coor <- round(c(38.8953, -120.6328), 2)
+coor <- round(c(44.3184,	-79.9341), 2)
 
 paste(as.character(round(c(coor[1] + 0.006, coor[2]-0.006, coor[1] - 0.006, coor[2]+0.006), 2)), collapse = ", ")
 
 
-
 ```
+
+
 
