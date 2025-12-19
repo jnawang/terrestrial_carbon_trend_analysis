@@ -19,6 +19,46 @@ dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 ```
 
 
+```{r connect FLUXNET2015 and FLUXNET2020}
+library(librarian)
+shelf(tidyverse)
+
+files_FLUXNET2015 <- list.files(path = file.path('/Volumes/MaloneLab/Research/Stability_Project/Thermal_Acclimation/SiteData', "FLUXNET2015"), pattern = ".zip$")
+FLUXNET2015_metadata <- data.frame(site_ID = substring(files_FLUXNET2015, 5, 10), 
+                                   year_start = as.numeric(substring(files_Europ, 32, 35)), 
+                                   year_end = as.numeric(substring(files_Europ, 32, 35)), stringsAsFactors = FALSE)
+
+files_FLUXNET2020 <- list.files(path = file.path(dir_rawdata, "FLUXNET2020"), pattern = "_FLUXNET_HH_L2.zip$")
+FLUXNET2020_metadata <- data.frame(site_ID = substring(files_Europ, 5, 10),
+                                   year_start = as.numeric(substring(files_Europ, 32, 35)), 
+                                   year_end = as.numeric(substring(files_Europ, 37, 40)),
+                                   stringsAsFactors = FALSE)
+
+intersect(FLUXNET2015_metadata$site_ID, files_FLUXNET2020$site_ID)
+
+files_ICOS <- list.files(path = file.path(dir_rawdata, "ICOS_FLUXNET2025-1"), pattern = "_FLUXNET_HH_L2.zip$")
+ICOS_metadata <- data.frame(site_ID = substring(files_ICOS, 9, 14), 
+                            year_start = 0, year_end = 0, stringsAsFactors = FALSE)
+
+intersect(FLUXNET2015_metadata$site_ID, ICOS_metadata$site_ID)
+
+intersect(FLUXNET2015_metadata$site_ID, ICOS_metadata$site_ID)
+
+# I should calculate ICOS year_start, year_end. 
+for (site_ID in files_ICOS$site_ID) {
+  # read data from ICOS FLUXNET after 2020
+  a_HH_zip <- file.path(dir_rawdata, "ICOS_FLUXNET2025-1", paste0("ICOSETC_", site_ID, "_FLUXNET_HH_L2.zip"))
+  a_HH_2023 <- read.csv(unz(a_HH_zip, paste0("ICOSETC_", site_ID, "_FLUXNET_HH_L2.csv")))
+  a_HH_2023[a_HH_2023<=-9999] <- NA
+  
+  ICOS_metadata$year_start[ICOS_metadata$site_ID == site_ID] <- year(ymd_hm(a_HH_2023$TIMESTAMP_START[1]))
+  ICOS_metadata$year_end[ICOS_metadata$site_ID == site_ID] <- year(ymd_hm(a_HH_2023$TIMESTAMP_START[nrow(a_HH_2023)]))
+}
+
+
+```
+
+
 ```{r add ICOS interrim flux into european flux}
 # This takes about 2 hour to run. 
 
