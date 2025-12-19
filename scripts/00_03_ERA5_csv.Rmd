@@ -56,10 +56,14 @@ utc_offset(40, -100)
 
 ```{r read era5 precipitation data, convert it to csv files}
 #### read nc files
-## read each file, get long, lat, var, and years
-nc_files <- list.files(file.path(dir_rawdata, 'ERA5_Tair_Prec'), pattern='.nc$')
+##ERA5_Tair_Prec
+data.folder <- 'ERA5_prep'
 ##
-sites_Ameri <- read.csv('data/AmeriFlux-site-search-results-202501071742.csv')
+## read each file, get long, lat, var, and years
+nc_files <- list.files(file.path(dir_rawdata, data.folder), pattern='.nc$')
+##
+# sites_Ameri <- read.csv('data/AmeriFlux-site-search-results-202501071742.csv')
+sites_Ameri <- read.csv('data/AmeriFlux-site-search-results-202512092232.csv')
 sites_Ameri <- sites_Ameri[, c("Site.ID", "Longitude..degrees.", "Latitude..degrees.")]
 names(sites_Ameri) <- c("site_ID", "Long", "Lat")
 ##
@@ -67,7 +71,7 @@ df <- data.frame(Long=double(), Lat=double(), Var=character(), site_ID=character
 ##
 for (i in 1:length(nc_files)) {
 #  i = 35
-  nc_file <- nc_open(file.path(dir_rawdata, 'ERA5_Tair_Prec', nc_files[i]))
+  nc_file <- nc_open(file.path(dir_rawdata, data.folder, nc_files[i]))
   df[i,3] <- names(nc_file$var)[3]
   df$Long[i] <- ncvar_get(nc_file, "longitude")
   df$Lat[i]  <- ncvar_get(nc_file, "latitude")
@@ -83,6 +87,15 @@ for (i in 1:length(nc_files)) {
   } else if (length(id) > 1 & id[1]=="CL-SDF") {
     df$site_ID[i] <- id[2]
     print(id)    
+  } else if (length(id) > 1 & id[1] == 'US-KL1') {
+    df$site_ID[i] <- id[2]
+    print(id)     
+  } else if (length(id) > 1 & id[1] == 'US-NR3') {
+    df$site_ID[i] <- id[1]
+    print(id)     
+  } else if (length(id) > 1 & id[1] == 'US-Ha1') {
+    df$site_ID[i] <- id[2]
+    print(id)     
   }
   #
 }
@@ -96,7 +109,7 @@ for (site in sites_BASE) {
   hour_offset <- utc_offset(df_sub$Lat[1], df_sub$Long[1])
   #
   for (i in 1:nrow(df_sub)) {
-    nc_file <- nc_open(file.path(dir_rawdata, 'ERA5_Tair_Prec', nc_files[df_sub$file_ID[i]]))
+    nc_file <- nc_open(file.path(dir_rawdata, data.folder, nc_files[df_sub$file_ID[i]]))
     time <- ncvar_get(nc_file, "valid_time")
     prec <- ncvar_get(nc_file, "tp")  # precipitation unit m
     #
@@ -110,6 +123,9 @@ for (site in sites_BASE) {
     #
   }
   print(paste0("Check duplicates for ", site, ": ", sum(duplicated(df_prec$time))))
+  if (sum(duplicated(df_prec$time)) > 0) {
+    df_prec <- df_prec[!duplicated(df_prec$time), ]
+  }
   df_prec <- df_prec %>% arrange(time)
   #
   # start from the first time of a year and the end time of a year
@@ -141,17 +157,21 @@ for (site in sites_BASE) {
   # convert date time to numbers
   df_output$time <- format(df_output$time, "%Y%m%d%H%M")
   
-  # save to csv files: site_ID, var, year_start, year_end
-  write.csv(df_output, file=file.path(dir_rawdata, 'ERA5_Tair_Prec', paste0(site, "_", df_sub$Var[1], "_", year_start, "_", year_end, ".csv")), row.names = F)
+  # save to csv files: site_ID, var, year_start, year_end; 
+  write.csv(df_output, file=file.path(dir_rawdata, data.folder, paste0(site, "_", df_sub$Var[1], "_", year_start, "_", year_end, ".csv")), row.names = F)
 }
 
 ```
 
 
 ```{r convert ERA solar radiaiton data to csv files}
-nc_files <- list.files(file.path(dir_rawdata, 'ERA5_SW'), pattern='.nc$')
+##ERA5_SW
+data.folder <- 'ERA5_SW2'
+
+nc_files <- list.files(file.path(dir_rawdata, data.folder), pattern='.nc$')
 ##
-sites_Ameri <- read.csv('data/AmeriFlux-site-search-results-202501071742.csv')
+# sites_Ameri <- read.csv('data/AmeriFlux-site-search-results-202501071742.csv')
+sites_Ameri <- read.csv('data/AmeriFlux-site-search-results-202512092232.csv')
 sites_Ameri <- sites_Ameri[, c("Site.ID", "Longitude..degrees.", "Latitude..degrees.")]
 names(sites_Ameri) <- c("site_ID", "Long", "Lat")
 ##
@@ -159,7 +179,7 @@ df <- data.frame(Long=double(), Lat=double(), Var=character(), site_ID=character
 ##
 for (i in 1:length(nc_files)) {
 #  i = 35
-  nc_file <- nc_open(file.path(dir_rawdata, 'ERA5_SW', nc_files[i]))
+  nc_file <- nc_open(file.path(dir_rawdata, data.folder, nc_files[i]))
   df[i,3] <- names(nc_file$var)[3]
   df$Long[i] <- ncvar_get(nc_file, "longitude")
   df$Lat[i]  <- ncvar_get(nc_file, "latitude")
@@ -175,6 +195,15 @@ for (i in 1:length(nc_files)) {
   } else if (length(id) > 1 & id[1]=="CL-SDF") {
     df$site_ID[i] <- id[2]
     print(id)    
+  } else if (length(id) > 1 & id[1] == 'US-KL1') {
+    df$site_ID[i] <- id[2]
+    print(id)     
+  } else if (length(id) > 1 & id[1] == 'US-NR3') {
+    df$site_ID[i] <- id[1]
+    print(id)     
+  } else if (length(id) > 1 & id[1] == 'US-Ha1') {
+    df$site_ID[i] <- id[2]
+    print(id)     
   } else {
     print(paste0("no matching Ameriflux sites found for the long and lat: ", df$Long[i], '-', df$Lat[i]))
   }
@@ -191,7 +220,7 @@ for (site in sites_BASE) {
   hour_offset <- utc_offset(df_sub$Lat[1], df_sub$Long[1])
   #
   for (i in 1:nrow(df_sub)) {
-    nc_file <- nc_open(file.path(dir_rawdata, 'ERA5_SW', nc_files[df_sub$file_ID[i]]))
+    nc_file <- nc_open(file.path(dir_rawdata, data.folder, nc_files[df_sub$file_ID[i]]))
     time <- ncvar_get(nc_file, "valid_time")
     ssrd <- ncvar_get(nc_file, "ssrd")  # ssrd unit: J/m2; I need to divide this by 3600 seconds. 
     #
@@ -247,14 +276,14 @@ for (site in sites_BASE) {
   df_output$time <- format(df_output$time, "%Y%m%d%H%M")
   
   # save to csv files: site_ID, var, year_start, year_end
-  write.csv(df_output, file=file.path(dir_rawdata, 'ERA5_SW', paste0(site, "_", df_sub$Var[1], "_", year_start, "_", year_end, ".csv")), row.names = F)
+  write.csv(df_output, file=file.path(dir_rawdata, data.folder, paste0(site, "_", df_sub$Var[1], "_", year_start, "_", year_end, ".csv")), row.names = F)
 }
 
 ```
 
 
 ```{r download Tair and solar radiation data from ERA5}
-
+# this chunk is not used. we eventually used api.py to download ERA5 data. 
 # prepare for site meta-data
 sites_long <- read.csv('data/long_term_ec_sites.csv')
 sites <- read.csv('data/AmeriFlux-site-search-results-202501071742.csv')

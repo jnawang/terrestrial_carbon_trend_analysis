@@ -27,12 +27,12 @@ shelf(tidyverse, Kendall, Rbeast, cowplot, ggpubr, tidyterra, ggpubr, viridis, R
 ```{r look at all annual NEE data }
 ####I need to pay attention to Reynold watershed sites####
 
-sites_long <- read.csv('data/long_term_ec_sites.csv')
-rm_years   <- read.csv('data/years_to_remove.csv')
+sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
+rm_years   <- read.csv(file.path('data', 'years_to_remove.csv'))
 #
 files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), full.names = T)
 files.unzip.Europ2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
-files.unzip.Europ2023 <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET", "unzip_connect2020"), full.names = T)
+files.unzip.Europ2023 <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), full.names = T)
 files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
 #
 a_YY_all <- data.frame(site_ID=character(), TIMESTAMP=integer(), NEE_VUT_REF=double())
@@ -65,7 +65,8 @@ for (i in 1:nrow(sites_long)) {
   a_YY_all <- rbind(a_YY_all, data.frame(site_ID=site_ID, a_YY_good[, c("TIMESTAMP", "NEE_VUT_REF")]))
 }
 #
-ggplot(data=a_YY_all, aes(x=TIMESTAMP, y=NEE_VUT_REF, color=site_ID)) +
+a_YY_all %>% filter(site_ID %in% c("BE-Vie", "CH-Dav", "DE-Tha", "FI-Hyy", "US-Ha1")) %>% 
+ggplot(aes(x=TIMESTAMP, y=NEE_VUT_REF, color=site_ID)) +
   geom_point() +
   geom_line() +
   labs(x='Year', y='Net ecosystem exchange (g C/m2/year)') + 
@@ -107,7 +108,7 @@ sites_long %>% group_by(category) %>% summarise(nSites=n())
 tmp <- a_YY_all %>% group_by(site_ID) %>% summarise(nYears=n()) 
 
 # only 25 sites with > 18 year data; only 21 sites with > 19 year data. 
-tmp %>%  #    filter(nYears > 18)
+tmp %>%  # filter(nYears > 26) %>%
   ggplot(aes(x=nYears)) +
   geom_histogram() + 
   labs(x='Number of years', y='Number of sites') +

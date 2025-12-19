@@ -20,53 +20,68 @@ dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 
 
 ```{r add ICOS interrim flux into european flux}
+# This takes about 2 hour to run. 
+
 library(librarian)
 shelf(tidyverse)
+# in January, 2025, we used interrim data
 # citation can be find here: https://meta.icos-cp.eu/collections/5J8Kx5LlmEb1EjPJL7dKZBAL
+# in December, 2025, we used final data, which including more sites. 
+# citation can be find here: https://www.icos-cp.eu/data-products/ecosystem-release
 # 
-ICOS_interim_metadata <- read.csv('data/Carbon Portal Search Result.csv')
-# get site_ID and start and end years
-ICOS_interim_metadata$site_ID <- unlist(lapply(ICOS_interim_metadata$fileName, function(x) substring(x, 9, 14)))
-ICOS_interim_metadata$start_year <- pmax(year(ymd_hms(ICOS_interim_metadata$timeStart) + days(1)), 2021)
-ICOS_interim_metadata$data_length <- 2024-ICOS_interim_metadata$start_year
+files_ICOS <- list.files(path = file.path(dir_rawdata, "ICOS_FLUXNET2025-1"), pattern = "_FLUXNET_HH_L2.zip$")
+# we only need hourly fluxnet data
+# get site_ID
+ICOS_metadata <- data.frame(site_ID = substring(files_ICOS, 9, 14), 
+                            year_start = 0, year_end = 0, stringsAsFactors = FALSE)
 #
 files_Europ <- list.files(path =  file.path(dir_rawdata, "FLUXNET2020"), pattern = "\\.zip$")
-sites_Europ <- unlist(lapply(files_Europ, function(x) substring(x, 5, 10)))
-data_length <- unlist(lapply(files_Europ, function(x) (-as.numeric(substring(x, 32, 35))) + as.numeric(substring(x, 37, 40))))
+Europ_metadata <- data.frame(site_ID = substring(files_Europ, 5, 10),
+                             year_start = as.numeric(substring(files_Europ, 32, 35)), 
+                             year_end = as.numeric(substring(files_Europ, 37, 40)),
+                             stringsAsFactors = FALSE)
 #
-sites_shared <- intersect(ICOS_interim_metadata$site_ID, sites_Europ)
-# 30 sites are shared 
-# sites_ICOSonly <- setdiff(ICOS_interim_metadata$site_ID, sites_Europ)
-# subset(ICOS_interim_metadata, site_ID %in% sites_ICOSonly)
+sites_shared <- intersect(ICOS_metadata$site_ID, Europ_metadata$site_ID)
+# 45 sites are shared
+
+sites_ICOSonly <- setdiff(ICOS_metadata$site_ID, Europ_metadata$site_ID)
+# we has 25 sites
+
+data_length_thresh <- 10
 #
-# adding data to the 30 sites if the total number of years are longer than 7 years
-# all the sites have >= 8 years data, so do the data_connection
+# adding data to the 30 sites if the total number of years are longer than 10 years
+# all the sites have >= 10 years data, so do the data_connection
 files.unzip.Europ <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
+#
+if (!dir.exists(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"))) {
+  dir.create(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), recursive = TRUE)
+}
+#
 for (site_ID in sites_shared) {
   #
   # site_ID <- "SE-Svb" # "BE-Bra"
-  # 
-  print(data_length[which(site_ID==sites_Europ)])
-  print(data_length[which(site_ID==sites_Europ)] + ICOS_interim_metadata$data_length[ICOS_interim_metadata$site_ID==site_ID])
   #
   # read data from European FLUXNET2020
   a_HH_2020 <- read.csv(files.unzip.Europ[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_HH"), files.unzip.Europ)])
   a_DD_2020 <- read.csv(files.unzip.Europ[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_DD"), files.unzip.Europ)])
   a_YY_2020 <- read.csv(files.unzip.Europ[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_YY"), files.unzip.Europ)])
+  a_HH_2020[a_HH_2020<=-9999] <- NA
   #
   # read data from ICOS FLUXNET after 2020
-  if (site_ID == "BE-Maa") {
-    # use newer data for this site because old data may have some problems
-    a_HH_zip <- file.path(dir_rawdata, "ICOS_FLUXNET", paste0("ICOSETC_", site_ID, "_FLUXNET_HH_L2.zip"))
-    a_HH_2023 <- read.csv(unz(a_HH_zip, paste0("ICOSETC_", site_ID, "_FLUXNET_HH_L2.csv")))
-  } else {
-    a_HH_zip <- file.path(dir_rawdata, "ICOS_FLUXNET", paste0("ICOSETC_", site_ID, "_FLUXNET_INTERIM_HH_L2.zip"))
-    a_HH_2023 <- read.csv(unz(a_HH_zip, paste0("ICOSETC_", site_ID, "_FLUXNET_INTERIM_HH_L2.csv")))
-  }
-  
-  #
-  a_HH_2020[a_HH_2020<=-9999] <- NA
+  a_HH_zip <- file.path(dir_rawdata, "ICOS_FLUXNET2025-1", paste0("ICOSETC_", site_ID, "_FLUXNET_HH_L2.zip"))
+  a_HH_2023 <- read.csv(unz(a_HH_zip, paste0("ICOSETC_", site_ID, "_FLUXNET_HH_L2.csv")))
   a_HH_2023[a_HH_2023<=-9999] <- NA
+  
+  ICOS_metadata$year_start[ICOS_metadata$site_ID == site_ID] <- year(ymd_hm(a_HH_2023$TIMESTAMP_START[1]))
+  ICOS_metadata$year_end[ICOS_metadata$site_ID == site_ID] <- year(ymd_hm(a_HH_2023$TIMESTAMP_START[nrow(a_HH_2023)]))
+  
+  if (ICOS_metadata$year_end[ICOS_metadata$site_ID == site_ID] - Europ_metadata$year_start[Europ_metadata$site_ID == site_ID] + 1 < data_length_thresh) {
+    next
+  }
+  #
+  print(site_ID)
+  print(Europ_metadata$year_start[Europ_metadata$site_ID == site_ID])
+  print(ICOS_metadata$year_end[ICOS_metadata$site_ID == site_ID])
   #
   # merge them: first find where to merge
   start_merge_index <- which(a_HH_2023$TIMESTAMP_START == a_HH_2020$TIMESTAMP_END[nrow(a_HH_2020)])
@@ -79,9 +94,9 @@ for (site_ID in sites_shared) {
     end_merge_index <- which(a_HH_2020$TIMESTAMP_END == 202001010000)
     a_HH <- bind_rows(a_HH_2020[start_merge_index:end_merge_index, ], a_HH_2023)
   } else {
-    end_merge_index <- which(a_HH_2023$TIMESTAMP_END == 202401010000)
+    end_merge_index <- which(a_HH_2023$TIMESTAMP_END == 202501010000)
     if (identical(end_merge_index, integer(0))) {
-      end_merge_index = nrow(end_merge_index)
+      end_merge_index = nrow(a_HH_2023)
     }
     a_HH <- bind_rows(a_HH_2020, a_HH_2023[start_merge_index:end_merge_index, ])    
   }
@@ -89,6 +104,9 @@ for (site_ID in sites_shared) {
   # calculate a_DD and a_YY
   dt <- as.numeric(difftime(ymd_hm(a_HH$TIMESTAMP_END[2]), ymd_hm(a_HH$TIMESTAMP_END[1]), units=c('days')))
   # I directly add TS and SWC if all the 30 sites have them. 
+  if (!"SWC_F_MDS_1" %in% names(a_HH)) {
+    a_HH$SWC_F_MDS_1 <- NA
+  }
   a_DD <- a_HH %>% mutate(YEAR=year(ymd_hm(TIMESTAMP_START)), MONTH=month(ymd_hm(TIMESTAMP_START)),     
                           DAY=day(ymd_hm(TIMESTAMP_START)), TIMESTAMP=sprintf("%04d%02d%02d", YEAR, MONTH, DAY)) %>% 
                    group_by(TIMESTAMP) %>% summarise(TA_F_MDS=mean(TA_F_MDS), VPD_F_MDS=mean(VPD_F_MDS), 
@@ -126,12 +144,27 @@ for (site_ID in sites_shared) {
   #
   # write the data out
   file_name <- paste0('ICOSETC_', site_ID, '_FLUXNET_HH_L2.csv')
-  write.csv(a_HH, file.path(dir_rawdata, 'ICOS_FLUXNET', "unzip_connect2020", file_name), row.names = FALSE)
+  write.csv(a_HH, file.path(dir_rawdata, 'ICOS_FLUXNET2025-1', "unzip_connect2020", file_name), row.names = FALSE)
   file_name <- paste0('ICOSETC_', site_ID, '_FLUXNET_DD_L2.csv')
-  write.csv(a_DD, file.path(dir_rawdata, 'ICOS_FLUXNET', "unzip_connect2020", file_name), row.names = FALSE)
+  write.csv(a_DD, file.path(dir_rawdata, 'ICOS_FLUXNET2025-1', "unzip_connect2020", file_name), row.names = FALSE)
   file_name <- paste0('ICOSETC_', site_ID, '_FLUXNET_YY_L2.csv')
-  write.csv(a_YY, file.path(dir_rawdata, 'ICOS_FLUXNET', "unzip_connect2020", file_name), row.names = FALSE)
+  write.csv(a_YY, file.path(dir_rawdata, 'ICOS_FLUXNET2025-1', "unzip_connect2020", file_name), row.names = FALSE)
 }
+
+# take a look at ICOSonly sites: all the sites have < 10 years of data except IT-Trf but this site has abnormal data. 
+# for (site_ID in sites_ICOSonly) {
+#   # read data from ICOS FLUXNET after 2020
+#   a_HH_zip <- file.path(dir_rawdata, "ICOS_FLUXNET2025-1", paste0("ICOSETC_", site_ID, "_FLUXNET_HH_L2.zip"))
+#   a_HH_2023 <- read.csv(unz(a_HH_zip, paste0("ICOSETC_", site_ID, "_FLUXNET_HH_L2.csv")))
+#   a_HH_2023[a_HH_2023<=-9999] <- NA
+#   
+#   ICOS_metadata$year_start[ICOS_metadata$site_ID == site_ID] <- year(ymd_hm(a_HH_2023$TIMESTAMP_START[1]))
+#   ICOS_metadata$year_end[ICOS_metadata$site_ID == site_ID] <- year(ymd_hm(a_HH_2023$TIMESTAMP_START[nrow(a_HH_2023)]))
+#   
+#   print(site_ID)
+#   print(ICOS_metadata$year_start[ICOS_metadata$site_ID == site_ID])
+#   print(ICOS_metadata$year_end[ICOS_metadata$site_ID == site_ID])
+# }
 #
 # this means that I will have four data sources for all the sites
 

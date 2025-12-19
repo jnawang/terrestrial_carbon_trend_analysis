@@ -19,25 +19,25 @@ dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 ```
 
 
-```{r all long-term sites with no less than 7-year data}
+```{r all long-term sites with no less than 10-year data}
 library(librarian)
 shelf(tidyverse, terra)
 #
-data_length_thresh <- 7
+data_length_thresh <- 10
 #
 # sites in Ameriflux FLUXNET
 files_Ameri <- list.files(path =  file.path(dir_rawdata, "Ameriflux_FLUXNET"), pattern="\\.zip$")
-data_length <- unlist(lapply(files_Ameri, function(x) (-as.numeric(substring(x, 28, 31))) + as.numeric(substring(x, 33, 36))))
+data_length <- unlist(lapply(files_Ameri, function(x) (-as.numeric(substring(x, 28, 31))) + as.numeric(substring(x, 33, 36)) + 1))
 sites_Ameri <- unlist(lapply(files_Ameri, function(x) substring(x, 5, 10)))
 sites_Ameri <- sites_Ameri[data_length >= data_length_thresh]
 #
 # sites in European FLUXNET and also in ICOS FLUXNET
-files_Europ2023 <- list.files(path =  file.path(dir_rawdata, "ICOS_FLUXNET", "unzip_connect2020"), pattern = "_FLUXNET_HH_L2.csv$")
+files_Europ2023 <- list.files(path =  file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), pattern = "_FLUXNET_HH_L2.csv$")
 sites_Europ2023 <- unlist(lapply(files_Europ2023, function(x) substring(x, 9, 14)))
 #
 # sites in European FLUXNET but not in ICOS FLUXNET
 files_Europ <- list.files(path =  file.path(dir_rawdata, "FLUXNET2020"), pattern = "\\.zip$")
-data_length <- unlist(lapply(files_Europ, function(x) (-as.numeric(substring(x, 32, 35))) + as.numeric(substring(x, 37, 40))))
+data_length <- unlist(lapply(files_Europ, function(x) (-as.numeric(substring(x, 32, 35))) + as.numeric(substring(x, 37, 40)) + 1))
 sites_Europ <- unlist(lapply(files_Europ, function(x) substring(x, 5, 10)))
 sites_Europ <- sites_Europ[data_length >= data_length_thresh]
 sites_Europ2020 <- setdiff(sites_Europ, sites_Europ2023)
@@ -45,6 +45,7 @@ sites_Europ2020 <- setdiff(sites_Europ, sites_Europ2023)
 # sites in Ameriflux BASE
 files_Ameri_BASE <- list.files(path =  file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), pattern = "\\_HH.csv$")
 sites_Ameri_BASE <- unlist(lapply(files_Ameri_BASE, function(x) substring(x, 5, 10)))
+sites_Ameri_BASE <- setdiff(sites_Ameri_BASE, sites_Ameri)
 #
 # characteristics of these sites: climate, vegetation, MAP, MAT, Elevation
 sites_long <- data.frame(site_ID = c(sites_Ameri, sites_Ameri_BASE, sites_Europ2023, sites_Europ2020), 
@@ -54,7 +55,7 @@ sites_long <- data.frame(site_ID = c(sites_Ameri, sites_Ameri_BASE, sites_Europ2
                                      rep("EuropFlux_FLUXNET2020", length(sites_Europ2020))) )
 #
 # get climate and vegetation information for these sites
-sites_info_Ameri <- read.delim("data/AmeriFlux-site-search-results-202502051229.tsv", header=T)
+sites_info_Ameri <- read.csv(file.path('data', 'AmeriFlux-site-search-results-202512092232.csv'))
 #
 # rename some of these columns
 sites_info_Ameri <- sites_info_Ameri %>% rename("Lat"="Latitude..degrees.", "Long"="Longitude..degrees.",
@@ -63,7 +64,7 @@ sites_info_Ameri <- sites_info_Ameri %>% rename("Lat"="Latitude..degrees.", "Lon
                                                 "MAT"="Mean.Average.Temperature..degrees.C.",  
                                                 "MAP"="Mean.Average.Precipitation..mm.")
 #
-sites_info_Europ <- read.csv("data/European_SitesList.csv")
+sites_info_Europ <- read.csv(file.path("data", "European_SitesList.csv"))
 #
 sites_info_Europ <- sites_info_Europ %>% rename("Site.ID"="Site.Code", "Lat"="Site.Latitude",
                                                 "Long"="Site.Longitude", "IGBP"="IGBP.Code", 
@@ -133,12 +134,12 @@ sites_all$Climate.class[sites_all$Site.ID=='US-MBP'] <- 'Dfb'
 sites_all$Climate.class[sites_all$Site.ID=='IT-Tor'] <- 'Dfc'
 #
 sites_long <- sites_long %>% left_join(sites_all, by=c("site_ID" = "Site.ID")) %>% filter(IGBP!='CRO')
-# how many cropland sites? 129-116 = 13
 # 
 # giving missing climate classes to US-Elm, US-Esm: Cwa
 sites_long$Climate.class[sites_long$site_ID %in% c("US-Elm", "US-Esm")] <- "Cwa"
+sites_long$Climate.class[sites_long$site_ID %in% c("US-Akn")] <- "Cfa"
 
-## remove some long-term sites:
+## remove some long-term sites that are managed, disturbance affected, or data with known problems:
 ## CA-TP1: Ontario - Turkey Point 2002 Plantation White Pine; 
 ## CA-Ca2: British Columbia - Clearcut Douglas-fir stand (harvested winter 1999/2000)
 ## US-Rpf: Poker Flat Research Range: Succession from fire scar to deciduous forest; 
@@ -147,12 +148,16 @@ sites_long$Climate.class[sites_long$site_ID %in% c("US-Elm", "US-Esm")] <- "Cwa"
 ## CA-Ca2: clearcut around 2000
 ## US-KLS: actually a crop site, not a grassland site. 
 ## US-NC1: In 2004, 70 ha of 75 year old native hardwoods was harvested. Following the clearcut,the stand was bedded and planted with loblolly pine seedlings.
-## US-NC3: The North Carolina Clearcut site #3 
+## US-NC3: The North Carolina Clearcut site #3.  
 ## US-Tw4: The Twitchell East End Wetland is a newly constructed restored wetland on Twitchell Island, CA. 
-## US-SP2: Even aged slash pine (Pinus elliottii) plantation. Planted in Jan. 1999. data 1999-2009
-## CL-SDP: Bad quality data, especially in 2020
-## DE-Hzd: a strong storm cleared this site
-sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6', 'US-Myb', "CA-Ca2", "US-KLS", "US-NC1", "US-NC3", "US-Tw4", "US-SP2", "CL-SDP", "DE-Hzd"))
+## US-SP2: Even aged slash pine (Pinus elliottii) plantation. Planted in Jan. 1999. data 1999-2009.
+## CL-SDP: Bad quality data, especially in 2020.
+## DE-Hzd: a strong storm cleared this site. 
+## US-Blo: 10-year data but large gaps in some years. 
+## US-NR3 and US-NR4: long time series but large gaps. Alpine tundra sites. 
+## IT-Lav and IT-TrF: nighttime NEEs have problems at the two sites. 
+## the US-Akn measurements actually started from 2016; removed
+sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6', 'US-Myb', "CA-Ca2", "US-KLS", "US-NC1", "US-NC3", "US-Tw4", "US-SP2", "CL-SDP", "DE-Hzd", "US-Blo", "US-NR3", "US-NR4", "IT-Lav", "IT-TrF", "US-Akn"))
 ##
 ```
 
@@ -160,22 +165,27 @@ sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6'
 ```{r remove some years}
 ##this chunk generates the years we should remove; 
 # it takes about 1 hour.
+data_length_thresh <- 10
 #
 files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), full.names = T)
 files.unzip.Europ2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
-files.unzip.Europ2023 <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET", "unzip_connect2020"), full.names = T)
+files.unzip.Europ2023 <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), full.names = T)
 files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
 #
 rm_years <- data.frame(site_ID=character(), years=list())
 rm_sites <- c()
 #
 for (i in 1:nrow(sites_long)) {
-#  i=101
+  # i = 41
   print(i)
   site_ID <- sites_long$site_ID[i]
   print(site_ID)
   if (sites_long$source[i] == "AmeriFlux_FLUXNET") {
-    a_HH <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_HH"), files.unzip.Ameri)])
+    if (site_ID %in% c("US-Ha1", "US-MMS", "US-Ne1", "US-Cop")) {
+      a_HH <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_HR"), files.unzip.Ameri)])
+    } else {
+      a_HH <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_HH"), files.unzip.Ameri)])
+    }
     a_YY <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_YY"), files.unzip.Ameri)])
   } else if (sites_long$source[i] == "EuropFlux_FLUXNET2023") {
     a_HH <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_HH"), files.unzip.Europ2023)])
@@ -190,17 +200,17 @@ for (i in 1:nrow(sites_long)) {
   a_HH[a_HH<=-9999] <- NA
   a_YY[a_YY<=-9999] <- NA
   #
-  #### The first rule to remove years: the percentage of measured data < 0.333 of the average percentage of measured data
+  #### The first rule to remove years: the percentage of measured data < 0.2 of the average percentage of measured data; this is a very loose rule. 
   ## for each year, get the percentage of time when data is interpolated. 
   a_HH$TIMESTAMP <- ymd_hm(a_HH$TIMESTAMP_START) + (ymd_hm(a_HH$TIMESTAMP_END) - ymd_hm(a_HH$TIMESTAMP_START)) / 2.0
   f.data.measured <- a_HH %>% mutate(YEAR=year(TIMESTAMP)) %>% group_by(YEAR) %>% summarise(f=sum(NEE_VUT_REF_QC==0) / n())
-#  print(f.data.measured)
+  # print(f.data.measured)
   #
   tmp <- f.data.measured %>% filter(f > 0.1 & !is.na(f))
   meanf <- mean(tmp$f)
   #
-  tmp <- f.data.measured$YEAR[is.na(f.data.measured$f) | f.data.measured$f < max(0.1, meanf/3)]
-  print(tmp)
+  tmp <- f.data.measured$YEAR[is.na(f.data.measured$f) | f.data.measured$f < min(0.1, meanf/5)]
+  # print(tmp)
   #
   #### The second rule to remove years: there are NA values in yearly data. 
   tmp <- c(tmp, a_YY$TIMESTAMP[is.na(a_YY$NEE_VUT_REF)])
@@ -209,12 +219,12 @@ for (i in 1:nrow(sites_long)) {
   # detect outliers: Using the Interquartile Range (IQR) Method, NOT the sd method
   Q1 <- quantile(a_YY$NEE_VUT_REF, 0.25, na.rm=T)
   Q3 <- quantile(a_YY$NEE_VUT_REF, 0.75, na.rm=T)
-  IQR <- Q3 - Q1
+  IQR <- max(Q3 - Q1, 100)
   outlier <- !between(a_YY$NEE_VUT_REF, Q1 - 1.5 * IQR, Q3 + 1.5 * IQR)
   tmp <- c(tmp, a_YY$TIMESTAMP[which(outlier & f.data.measured$f < meanf * 0.5)])
   #
   outlier_extreme <- !between(a_YY$NEE_VUT_REF, Q1 - 3 * IQR, Q3 + 3 * IQR)
-  tmp <- c(tmp, a_YY$TIMESTAMP[which(outlier_extreme & f.data.measured$f < meanf)])   # have to have enough observations.
+  tmp <- c(tmp, a_YY$TIMESTAMP[which(outlier_extreme & f.data.measured$f < meanf * 0.75)])   # have to have enough observations.
   #
   #### the fourth rule: if the outlier is in the first year, discard it; the first year measurement has lots of uncertainties.
   if (!is.na(outlier[1]) & outlier[1] & f.data.measured$f[1] < 0.5) {
@@ -222,30 +232,33 @@ for (i in 1:nrow(sites_long)) {
   }
   #
   #### the fifth rule: the first and the last year must have at least 50% of average data
-  year1 <- min((setdiff(a_YY$TIMESTAMP, unique(tmp))))
-  if (f.data.measured$f[a_YY$TIMESTAMP==year1] < meanf * 0.5) {
-    tmp <- c(tmp, year1)
-  }
-  year1 <- max((setdiff(a_YY$TIMESTAMP, unique(tmp))))
-  if (f.data.measured$f[a_YY$TIMESTAMP==year1] < meanf * 0.5) {
-    tmp <- c(tmp, year1)
-  }
+  # year1 <- min((setdiff(a_YY$TIMESTAMP, unique(tmp))))
+  # if (f.data.measured$f[a_YY$TIMESTAMP==year1] < meanf * 0.5) {
+  #   tmp <- c(tmp, year1)
+  # }
+  # year1 <- max((setdiff(a_YY$TIMESTAMP, unique(tmp))))
+  # if (f.data.measured$f[a_YY$TIMESTAMP==year1] < meanf * 0.5) {
+  #   tmp <- c(tmp, year1)
+  # }
   #
   #### the six rule: there should be enough monthly variations
-  monthly_NEE_day <- a_HH %>% mutate(YEAR=year(TIMESTAMP), MONTH=month(TIMESTAMP)) %>%
-    group_by(YEAR, MONTH) %>% summarise(NEE=mean(NEE_VUT_REF, na.rm=T))
-  # remove incomplete years
-  monthly_NEE_day <- monthly_NEE_day %>% group_by(YEAR) %>% summarise(n=n()) %>% merge(monthly_NEE_day, by="YEAR") %>% filter(n==12) %>% select(-n)
-  #
-  monthly_NEE_day_pattern <- monthly_NEE_day %>% filter(!YEAR %in% unique(tmp)) %>% group_by(MONTH) %>%
-    summarise(Q2=quantile(NEE, 0.5, na.rm=T), Q1=quantile(NEE, 0.25, na.rm=T), Q3=quantile(NEE, 0.75, na.rm=T)) %>%
-    mutate(lowlimit=Q1 - 2.0 * (Q3 - Q1), uplimit=Q3 + 2.0 * (Q3 - Q1))
-  #
-  monthly_NEE_var <- monthly_NEE_day %>% group_by(YEAR) %>% summarise(sd=sd(NEE, na.rm=T)) %>% 
-    filter(sd < (sd(monthly_NEE_day_pattern$Q1)+sd(monthly_NEE_day_pattern$Q3))/10)
-  if (nrow(monthly_NEE_var) > 0) {
-    tmp <- c(tmp, monthly_NEE_var$YEAR)
-    print(paste0('remove no monthly variation: ', site_ID, monthly_NEE_var$YEAR))
+  #### this does not apply to tropical sites. 
+  if (!site_ID %in% c("BR-Sa1", "BR-Ma2", "GF-Guy")) {
+    monthly_NEE_day <- a_HH %>% mutate(YEAR=year(TIMESTAMP), MONTH=month(TIMESTAMP)) %>%
+      group_by(YEAR, MONTH) %>% summarise(NEE=mean(NEE_VUT_REF, na.rm=T))
+    # remove incomplete years
+    monthly_NEE_day <- monthly_NEE_day %>% group_by(YEAR) %>% summarise(n=n()) %>% merge(monthly_NEE_day, by="YEAR") %>% filter(n==12) %>% select(-n)
+    #
+    monthly_NEE_day_pattern <- monthly_NEE_day %>% filter(!YEAR %in% unique(tmp)) %>% group_by(MONTH) %>%
+      summarise(Q2=quantile(NEE, 0.5, na.rm=T), Q1=quantile(NEE, 0.25, na.rm=T), Q3=quantile(NEE, 0.75, na.rm=T)) %>%
+      mutate(lowlimit=Q1 - 2.0 * (Q3 - Q1), uplimit=Q3 + 2.0 * (Q3 - Q1))
+    #
+    monthly_NEE_var <- monthly_NEE_day %>% group_by(YEAR) %>% summarise(sd=sd(NEE, na.rm=T)) %>% 
+      filter(sd < (sd(monthly_NEE_day_pattern$Q1)+sd(monthly_NEE_day_pattern$Q3))/10)
+    if (nrow(monthly_NEE_var) > 0) {
+      tmp <- c(tmp, monthly_NEE_var$YEAR)
+      print(paste0('remove no monthly variation: ', site_ID, monthly_NEE_var$YEAR))
+    }
   }
   #
   #### the seventh rule: monthly average NEE should be within a bound
@@ -259,24 +272,32 @@ for (i in 1:nrow(sites_long)) {
   #
   #### the eighth rule: monthly average NEE should be similar to average seasonal patterns ####
   #### only applies sites with seasonal pattern, not in tropical and subtropical
-  if (!site_ID %in% c("BR-Sa1", "US-LL3", "US-LL1", "US-LL2", "GF-Guy", "CL-SDF")) {
+  if (!site_ID %in% c("BR-Sa1", "BR-Ma2", "US-LL3", "US-LL1", "US-LL2", "GF-Guy", "CL-SDF", "US-SP1", "US-SP3")) {
     monthly_NEE_var <- monthly_NEE_day %>% group_by(YEAR) %>% summarise(cor=cor(NEE, monthly_NEE_day_pattern$Q2)) 
     Q1 <- as.numeric(quantile(monthly_NEE_var$cor, 0.25, na.rm=T))
     Q3 <- as.numeric(quantile(monthly_NEE_var$cor, 0.75, na.rm=T))
-    monthly_NEE_var_extreme <- monthly_NEE_var %>% filter(!between(cor, Q1 - 3*(Q3-Q1), Q3 + 3*(Q3-Q1)) & cor < 0.5 | is.na(cor))
+    monthly_NEE_var_extreme <- monthly_NEE_var %>% filter(!between(cor, Q1 - 3*(Q3-Q1), Q3 + 3*(Q3-Q1)) & cor < 0.4 | is.na(cor))
     if (nrow(monthly_NEE_var_extreme) > 0) {
       tmp <- c(tmp, monthly_NEE_var_extreme$YEAR)
       print(paste0('remove monthly extreme low correlation: ', site_ID, monthly_NEE_var_extreme$YEAR))
     }
     #
     monthly_NEE_var_extreme <- monthly_NEE_var %>% left_join(f.data.measured, by='YEAR') %>% 
-      filter(!between(cor, Q1 - 1.5*(Q3-Q1), Q3 + 1.5*(Q3-Q1)) & f < meanf & cor < 0.45)
+      filter(!between(cor, Q1 - 1.5*(Q3-Q1), Q3 + 1.5*(Q3-Q1)) & f < 0.75 * meanf & cor < 0.4)
     if (nrow(monthly_NEE_var_extreme) > 0) {
       tmp <- c(tmp, monthly_NEE_var_extreme$YEAR)
       print(paste0('remove monthly low correlation and less data: ', site_ID, monthly_NEE_var_extreme$YEAR))
     }
   }
-  #
+  ## data in 2009 at US-KL2, US-KL3, US-KM2, US-KM3, US-KM4 should not be used. 
+  ## due to land use change from soybean to natural land cover in 2009.
+  if (site_ID %in% c("US-KL2", "US-KL3", "US-KM2", "US-KM3", "US-KM4")) {
+    tmp <- c(tmp, 2009)
+  }
+  if (site_ID == "US-Rws") {
+    # use the first year data at this site, because that year's data is consistent with overall trend, and we need sites in dry climate. 
+    tmp <- c()
+  }
   #
   #########process the removed years, and put them into dataframe
   tmp <- unique(tmp)
@@ -294,14 +315,14 @@ for (i in 1:nrow(sites_long)) {
   } else {
     plot(a_YY_good$TIMESTAMP, a_YY_good$GPP_NT_VUT_REF, main=site_ID)
   }
-  #
-  if (nrow(a_YY_good) < 6) {
-    rm_sites <- c(rm_sites, site_ID)       # 'US-KS2', 'US-Elm' were removed. 
+  # remove the sites without enough data
+  if (a_YY_good$TIMESTAMP[nrow(a_YY_good)] - a_YY_good$TIMESTAMP[1] < data_length_thresh) {
+    rm_sites <- c(rm_sites, site_ID)
   }
 }
 ##
 sites_long <- sites_long %>% filter(!site_ID %in% rm_sites)
-write.csv(rm_years, file = 'data/years_to_remove.csv', row.names = F)
+write.csv(rm_years, file = file.path('data', 'years_to_remove.csv'), row.names = F)
 ##
 
 ```
@@ -317,7 +338,7 @@ library(librarian)
 shelf(amerifluxr, Evapotranspiration)
 data(constants)
 #
-sites_long <- read.csv('data/long_term_ec_sites.csv')
+# sites_long <- read.csv('data/long_term_ec_sites.csv')
 #
 # solar radiation should have the unit mega-joule / m2
 # 1 W = 1 J/s; daily data is the average of subhourly data
@@ -325,7 +346,7 @@ sites_long <- read.csv('data/long_term_ec_sites.csv')
 #
 files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), full.names = T)
 files.unzip.Europ2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
-files.unzip.Europ2023 <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET", "unzip_connect2020"), full.names = T)
+files.unzip.Europ2023 <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), full.names = T)
 files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
 files.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_BASE"), pattern=".zip$", full.names=T)
 #
@@ -340,11 +361,15 @@ for (i in 1:nrow(sites_long)) {
   water_flux[i,1] <- site_ID
   # AmeriFlux and European flux; Do I need to differentiate them? Hopefully they use the same notation
   if (sites_long$source[i] == "AmeriFlux_FLUXNET") {
-    a_HH <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_HH"), files.unzip.Ameri)])
+    if (site_ID %in% c("US-Ha1", "US-MMS", "US-Ne1", "US-Cop")) {
+      a_HH <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_HR"), files.unzip.Ameri)])
+    } else {
+      a_HH <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_HH"), files.unzip.Ameri)])
+    }
     a_YY <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_YY"), files.unzip.Ameri)])
   } else if (sites_long$source[i] == "EuropFlux_FLUXNET2020") {
-    a_HH <- read.csv(files.unzip.Europ[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_HH"), files.unzip.Europ)])
-    a_YY <- read.csv(files.unzip.Europ[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_YY"), files.unzip.Europ)])
+    a_HH <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_HH"), files.unzip.Europ2020)])
+    a_YY <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_YY"), files.unzip.Europ2020)])
   } else if (sites_long$source[i] == "EuropFlux_FLUXNET2023") {
     a_HH <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_HH"), files.unzip.Europ2023)])
     a_YY <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_YY"), files.unzip.Europ2023)])
@@ -427,23 +452,23 @@ message="yes", AdditionalStats="yes", save.csv="no"))  ###reference crop ET; sho
 }
 water_flux$AI <- water_flux$AET / water_flux$PET
 #####what is the best method for PET calculation in the field? 
-write.csv(water_flux, 'data/water_flux_AI.csv', row.names = F)
+write.csv(water_flux, file.path('data', 'water_flux_AI.csv'), row.names = F)
 #
 ```
 
 
 ```{r dry, wet, and cold sites classification}
 #
-water_flux <- read.csv('data/water_flux_AI.csv')
+water_flux <- read.csv(file.path('data', 'water_flux_AI.csv'))
 #
 if (!"AI" %in% names(sites_long)) {
   sites_long <- sites_long %>% left_join(water_flux, by='site_ID')
 }
 #
 sites_long <- sites_long %>% 
-  mutate(category=case_when(Climate.class %in% c("Csa", "Csb", "Bsh", "Bsk", "BWh") & AI < 0.5 ~ 'dry',
-                            Climate.class %in% c("Csa", "Csb", "Bsh", "Bsk", "BWh") & AI >= 0.5 ~ 'wet', 
-                            Climate.class %in% c("Am", "Cwa") ~ "wet", 
+  mutate(category=case_when(Climate.class %in% c("Csa", "Csb", "Bsh", "Bsk", "BWh", "Bwk") & AI < 0.5 ~ 'dry',
+                            Climate.class %in% c("Csa", "Csb", "Bsh", "Bsk", "BWh", "Bwk") & AI >= 0.5 ~ 'wet', 
+                            Climate.class %in% c("Am", "Cwa", "Af") ~ "wet", 
                             Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "ET", "Dwc") ~ "cold",
                             Climate.class %in% c("Cfa") ~ "wet",
                             Climate.class %in% c("Cfb") ~ "cold"         # those sites has winters and in high latitudes
@@ -457,12 +482,15 @@ sites_long <- sites_long %>%
 # sites_long$category[is.na(sites_long$category) & sites_long$Climate.class %in% c('Cfa', 'Cfb')] <- 'wet'
 # sites_long$category[is.na(sites_long$category) & sites_long$Climate.class %in% c('Csa')] <- 'dry'
 #
-sum(sites_long$category=='dry')
-# we have 13 dry sites.
-sum(sites_long$category=='wet')
-# we have 16 wet sites.
-sum(sites_long$category=='cold')
-# we have 74 cold sites. 
+
+sites_long$category[sites_long$site_ID %in% c("US-Rls", "US-Rms", "US-Rwf", "US-Rws")] = 'dry'
+
+sum(sites_long$category=='dry', na.rm = T)
+# we have 20 dry sites.
+sum(sites_long$category=='wet', na.rm = T)
+# we have 24 wet sites.
+sum(sites_long$category=='cold', na.rm = T)
+# we have 77 cold sites. 
 write.csv(sites_long, file = 'data/long_term_ec_sites.csv', row.names = F)
 
 ```

@@ -48,9 +48,9 @@ sites_selected <- sites %>% filter(!Vegetation.Abbreviation..IGBP. %in% c("CRO",
 ## US-Fo1: data paused for a while, only measured during campaigns
 sites_selected_BASE <- sites_selected %>% filter(AmeriFlux.BASE.Data.End - AmeriFlux.BASE.Data.Start >= 9) %>% filter(AmeriFlux.FLUXNET.Data == "No") %>% filter(!Site.ID %in% c("US-Ho3", "CA-SJ2", "CA-SJ1", "US-An1", "US-An2", "US-SP2", "US-UiD", "CA-Qcu", "US-Fo1"))
 ##
-
-## sites I should work on: [1] "BR-Ma2" "US-An3" "US-Aud" "US-Blo" "US-ChR" "US-Cwt" "US-Ha2" "US-IB2" "US-KL2" "US-KL3"
-## [11] "US-KM2" "US-KM3" "US-KM4" "US-LA2" "US-MBP" "US-Me4" "US-NR3" "US-NR4" "US-Vcs" "US-Wrc"
+sites_selected_BASE <- rbind(sites_selected_BASE, sites_selected[sites_selected$Site.ID == 'CA-Cbo', ])
+## sites I should work on: "BR-Ma2" "US-An3" "US-Aud" "US-Blo" "US-ChR" "US-Cwt" "US-Ha2" "US-IB2" "US-KL2" "US-KL3"
+## "US-KM2" "US-KM3" "US-KM4" "US-LA2" "US-MBP" "US-Me4" "US-NR3" "US-NR4" "US-Vcs" "US-Wrc"
 
 
 ```
@@ -95,7 +95,7 @@ library(librarian)
 shelf(amerifluxr)
 #
 #
-FC_duration_thresh <- 9 * 365       # unit days
+FC_duration_thresh <- 10 * 365       # unit days
 gap_thresh <- 182                   # unit days
 #
 site_to_remove <- c()
@@ -127,7 +127,7 @@ for (i in 1:nrow(sites_selected_BASE)) {
   #
 }
 #
-# sites to remove: "US-An3",  "US-LA2", "US-Me4", "US-Vcs" (large gaps year after year)
+# sites to remove: "US-An3" "US-Blo" "US-Ced" "US-LA2" "US-Me4" "US-Vcs" (large gaps year after year)
 # this code will take ~10 min
 
 ```
@@ -242,8 +242,8 @@ blend_ERA5_FLUX <- function(merged_data, varname_FLUX, varname_ERA5, blending_ru
 library(librarian)
 shelf(amerifluxr)
 #
-# remove 4 sites that are not long enough, using results from the last chunk. 
-site_to_remove <- c("US-An3", "US-LA2", "US-Me4", "US-Vcs")       # this is actually calculated in the previous chunks
+# remove 6 sites that are not long enough, using results from the last chunk. 
+# site_to_remove <- c("US-An3", "US-Blo", "US-Ced", "US-LA2", "US-Me4", "US-Vcs")       # this is actually calculated in the previous chunks
 # further remove "US-xSP", because of poor data quality
 site_to_remove <- c(site_to_remove, "US-xSP")
 #
@@ -409,14 +409,12 @@ files_ERA_SW <- list.files(file.path(dir_rawdata, 'ERA5_SW'), pattern=".csv$", f
 for (i in 1:nrow(sites_selected_BASE1)) {
   # "BR-Ma2" "US-Aud" "US-ChR" "US-Cwt" "US-Ha2" "US-IB2" "US-KL2" "US-KL3" "US-KM2" "US-KM3"
   # "US-KM4" "US-MBP" "US-NR3" "US-NR4"
-  # i = 1
-#  i = 12  # 12-13: US-Elm, US-Esm 1:nrow(sites_selected_BASE1)
+  # i = 2
   ####Step 0: Prepare for requested variables for each site: DateTime, NEE, Rg (shortwave radiation), Tair, Ustar, rH (relative humidity), and VPD
   
   name_site <- sites_selected_BASE1$Site.ID[i]
   print(name_site)
-  
-  if (!name_site %in% c("US-Aud", "US-Blo", "US-ChR", "US-Cwt", "US-Ha2", "US-IB2", "US-KL2", "US-KL3", "US-KM2", "US-KM3", "US-KM4", "US-MBP", "US-NR3", "US-NR4")) {
+  if (!name_site %in% c("BR-Ma2", "US-NC2", "CA-Cbo")) {
     next
   }
   
@@ -427,15 +425,19 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   data_BASE <- amf_read_base(files[grepl(name_site, files)], parse_timestamp=TRUE, unzip = T)
   # set abnormal values (<=-9999) to NA
   data_BASE[data_BASE<=-9999] <- NA
+  
+  if (name_site == "US-KM2") {
+    data_BASE$TS_1_2_1 <- as.numeric(data_BASE$TS_1_2_1)
+  }
   #
   dt <- as.numeric(difftime(ymd_hm(data_BASE$TIMESTAMP_END[2]), ymd_hm(data_BASE$TIMESTAMP_END[1]), units=c('days')))
   #
   # remove the low quality data for US-Elm and US-Esm due to the shift of time after 2016
-  # remove the low quality data for US-NC2 due to the incomplete and abnormal NEE values after 2020
+  # remove the low quality data for US-NC2 due to the incomplete and abnormal NEE values after 2021
   if (name_site %in% c('US-Elm', 'US-Esm')) {
     data_BASE <- data_BASE %>% filter(year(ymd_hm(data_BASE$TIMESTAMP_START)) <= 2016)
   } else if (name_site %in% c('US-NC2')) {
-    data_BASE <- data_BASE %>% filter(year(ymd_hm(data_BASE$TIMESTAMP_START)) <= 2020)
+    data_BASE <- data_BASE %>% filter(year(ymd_hm(data_BASE$TIMESTAMP_START)) <= 2021)
   }
   #
   var_names <- names(data_BASE)
@@ -449,11 +451,14 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   }
   #
   # calculate NEE, and adding one more column
+  # note: the original design is forest sites have to have FC and SC, but we later allowed forest sites to have FC only. 
   if (is_forest) {
     if (any(FC_names_sort %in% var_names) & any(SC_names_sort %in% var_names)) {
       data_BASE$NEE <- coalesce(!!!data_BASE[, FC_names_sort[FC_names_sort %in% var_names], drop=FALSE])  
       SC <- coalesce(!!!data_BASE[, SC_names_sort[SC_names_sort %in% var_names], drop=FALSE])
       data_BASE$NEE[!is.na(data_BASE$NEE) & !is.na(SC)] <- data_BASE$NEE[!is.na(data_BASE$NEE) & !is.na(SC)] + SC[!is.na(data_BASE$NEE) & !is.na(SC)] 
+    } else if (any(FC_names_sort %in% var_names)) {
+      data_BASE$NEE <- coalesce(!!!data_BASE[, FC_names_sort[FC_names_sort %in% var_names], drop=FALSE])       
     }
   } else {
     if ( any(FC_names_sort %in% var_names) ) {
@@ -574,31 +579,32 @@ for (i in 1:nrow(sites_selected_BASE1)) {
     uStarTh <- EProc$sEstUstarThold()
   }
   #
-  # gap fill NEE and LE after Ustar filter; this takes minutes. 
+  # gap fill Rg, Tair, VPD, 'Ustar', TS, SWC; no need to gap fill 'PA','NETRAD', and 'H'. 
+  ##################################################
+    EProc$sMDSGapFill('Tair', FillAll=FALSE)
+    #
+    EProc$sMDSGapFill('Rg', FillAll=FALSE)
+    #
+    EProc$sMDSGapFill('VPD', FillAll=FALSE)
+    #
+    EProc$sMDSGapFill('Ustar', FillAll=FALSE)
+    #
+    if (col_names_used[10]) {
+      EProc$sMDSGapFill('CO2', FillAll=FALSE)
+    }
+    #
+    if (col_names_used[11]) {
+      EProc$sMDSGapFill('TS', FillAll=FALSE)
+    }
+    #
+    if (col_names_used[12]) {
+      EProc$sMDSGapFill('SWC', FillAll=FALSE)
+    } 
+
+  # gap fill NEE and LE after Ustar filter; this takes minutes.
   EProc$sMDSGapFillAfterUstar('NEE')
   
   EProc$sMDSGapFillAfterUstar('LE')
-  #
-  # gap fill Rg, Tair, VPD, TS, SWC; no need to gap fill 'Ustar','PA','NETRAD', and 'H'. 
-  ##################################################
-  #
-  EProc$sMDSGapFill('Tair', FillAll=FALSE)
-  #
-  EProc$sMDSGapFill('Rg', FillAll=FALSE)
-  #
-  EProc$sMDSGapFill('VPD', FillAll=FALSE)
-  #
-  if (col_names_used[10]) {
-    EProc$sMDSGapFill('CO2', FillAll=FALSE)
-  }
-  #
-  if (col_names_used[11]) {
-    EProc$sMDSGapFill('TS', FillAll=FALSE)
-  }
-  #
-  if (col_names_used[12]) {
-    EProc$sMDSGapFill('SWC', FillAll=FALSE)
-  }
   #
   # please note: I have to add Suffix.s='uStar' because we used uStar filled NEE
   if (name_site %in% c("CL-SDP", "US-xSP")) {
@@ -615,7 +621,11 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   daytime_partition_success <- FALSE
   tryCatch(
     {
-      EProc$sGLFluxPartition(Suffix.s='uStar')  
+      if (name_site %in% c("BR-Ma2", "BR-Sa1")) {
+        EProc$sGLFluxPartitionUStarScens(Suffix.s='uStar', controlGLPart = partGLControl(smoothTempSensEstimateAcrossTime = FALSE))
+      } else {
+        EProc$sGLFluxPartition(Suffix.s='uStar') 
+      }
       daytime_partition_success <- TRUE
     }, error=function(e) {
       message("Daytime partitioning does not work: ", e$message)
@@ -668,7 +678,14 @@ for (i in 1:nrow(sites_selected_BASE1)) {
     EProc$sPlotFingerprint("GPP_uStar_f", Format = 'pdf', Dir='plots')
     EProc$sPlotFingerprint("Reco_uStar", Format = 'pdf', Dir='plots')
   }
-  #######################################################################################################
+  
+  ####fill large gaps in NEE using partitioned GPP and ER
+  # this is more reliable than using MDS gap fill method directly. 
+  if (daytime_partition_success) {
+    output$NEE_uStar_f[is.na(output$NEE_uStar_f)] <- output$Reco_DT_uStar[is.na(output$NEE_uStar_f)] - output$GPP_DT_uStar[is.na(output$NEE_uStar_f)]
+  } 
+  
+  #####################################################################################################
   ####Output hourly, daily, and yearly gap-filled data
   a_HH <- data_BASE %>% select(c(TIMESTAMP_START, TIMESTAMP_END)) %>% filter(year(ymd_hm(TIMESTAMP_START)) >= year_first_NEE)
   # 
