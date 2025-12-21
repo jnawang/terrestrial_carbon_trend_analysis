@@ -186,11 +186,20 @@ files.unzip.FLUXNET2020_ICOS <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2
 files.unzip.FLUXNET2015_ICOS <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2015"), full.names = T)
 files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
 #
-df_file_structure <- dataframe(source = c(), 
-                              folder = c(), 
-                              HHfile = c(), 
-                              DDfile = c(),
-                              YYfile = c())
+df_file_structure <- data.frame(sources = c("AmeriFlux_FLUXNET", "AmeriFlux_BASE", 
+                                           "FLUXNET2020_ICOS", "FLUXNET2015_ICOS", "FLUXNET2020", "FLUXNET2015"), 
+                               folders = c(files.unzip.Ameri, files.Ameri.ReddyProcGapFill, 
+                                           files.unzip.FLUXNET2020_ICOS, files.unzip.FLUXNET2015_ICOS,
+                                           files.unzip.FLUXNET2020, files.unzip.FLUXNET2015), 
+                               HHfiles = c("_FLUXNET_FULLSET_(HR|HH)", "_EDDYPROC_FULLSET_HH",
+                                           "_FLUXNET_HH", "_FLUXNET_HH", 
+                                           "_FLUXNET2015_FULLSET_(HR|HH)", "_FLUXNET2015_FULLSET_(HR|HH)"), 
+                               DDfiles = c("_FLUXNET_FULLSET_DD", "_EDDYPROC_FULLSET_DD",
+                                           "_FLUXNET_DD", "_FLUXNET_DD", 
+                                           "_FLUXNET2015_FULLSET_YY", "_FLUXNET2015_FULLSET_YY"),
+                               YYfiles = c("_FLUXNET_FULLSET_YY", "_EDDYPROC_FULLSET_YY", 
+                                           "_FLUXNET_YY", "_FLUXNET_YY", 
+                                           "_FLUXNET2015_FULLSET_YY", "_FLUXNET2015_FULLSET_YY"))
 #
 rm_years <- data.frame(site_ID=character(), years=list())
 rm_sites <- c()
@@ -200,32 +209,12 @@ for (i in 1:nrow(sites_long)) {
   print(i)
   site_ID <- sites_long$site_ID[i]
   print(site_ID)
-  if (sites_long$source[i] == "AmeriFlux_FLUXNET") {
-    a_HH <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_(HR|HH)"), files.unzip.Ameri)])
-    a_YY <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_YY"), files.unzip.Ameri)])
-  } else if (sites_long$source[i] == "FLUXNET2020_ICOS") {
-    a_HH <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_HH"), files.unzip.Europ2023)])
-    a_YY <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_YY"), files.unzip.Europ2023)])
-  } else if (sites_long$source[i] == "FLUXNET2015_ICOS") {
-    a_HH <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_HH"), files.unzip.Europ2023)])
-    a_YY <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_YY"), files.unzip.Europ2023)])
-  }
-  
-  
-  else if (sites_long$source[i] == "FLUXNET2020") {
-    a_HH <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_HH"), files.unzip.FLUXNET2020)])
-    a_YY <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_YY"), files.unzip.FLUXNET2020)])
-  } else if (sites_long$source[i] == "FLUXNET2015") {
-    a_HH <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_HH"), files.unzip.FLUXNET2015)])
-    a_YY <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_YY"), files.unzip.FLUXNET2015)])
-  } 
-  
-  
-  
-  else if (sites_long$source[i] == "AmeriFlux_BASE") {
-    a_HH <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_HH"), files.Ameri.ReddyProcGapFill)])
-    a_YY <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_YY"), files.Ameri.ReddyProcGapFill)])
-  }
+  folder <- df_file_structure$folders[df_file_structure$sources == sites_long$source[i]]
+  HHfile <- df_file_structure$HHfiles[df_file_structure$sources == sites_long$source[i]]
+  YYfile <- df_file_structure$YYfiles[df_file_structure$sources == sites_long$source[i]]
+  a_HH <- read.csv(folder[grepl(pattern=paste0(site_ID, HHfile), folder)])
+  a_YY <- read.csv(folder[grepl(pattern=paste0(site_ID, YYfile), folder)])
+  #
   a_HH[a_HH<=-9999] <- NA
   a_YY[a_YY<=-9999] <- NA
   #
