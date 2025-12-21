@@ -179,7 +179,7 @@ sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6'
 # it takes about 1 hour.
 data_length_thresh <- 10
 #
-files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), full.names = T)
+files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), pattern = '', full.names = T)
 files.unzip.FLUXNET2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
 files.unzip.FLUXNET2015 <- list.files(file.path(dir_rawdata, "FLUXNET2015_10yr_only"), full.names = T)
 files.unzip.FLUXNET2020_ICOS <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), full.names = T)
@@ -188,9 +188,9 @@ files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BAS
 #
 df_file_structure <- data.frame(sources = c("AmeriFlux_FLUXNET", "AmeriFlux_BASE", 
                                            "FLUXNET2020_ICOS", "FLUXNET2015_ICOS", "FLUXNET2020", "FLUXNET2015"), 
-                               folders = c(files.unzip.Ameri, files.Ameri.ReddyProcGapFill, 
-                                           files.unzip.FLUXNET2020_ICOS, files.unzip.FLUXNET2015_ICOS,
-                                           files.unzip.FLUXNET2020, files.unzip.FLUXNET2015), 
+                               folders = I(list(list(files.unzip.Ameri), list(files.Ameri.ReddyProcGapFill), 
+                                           list(files.unzip.FLUXNET2020_ICOS), list(files.unzip.FLUXNET2015_ICOS),
+                                           list(files.unzip.FLUXNET2020), list(files.unzip.FLUXNET2015))), 
                                HHfiles = c("_FLUXNET_FULLSET_(HR|HH)", "_EDDYPROC_FULLSET_HH",
                                            "_FLUXNET_HH", "_FLUXNET_HH", 
                                            "_FLUXNET2015_FULLSET_(HR|HH)", "_FLUXNET2015_FULLSET_(HR|HH)"), 
@@ -209,7 +209,7 @@ for (i in 1:nrow(sites_long)) {
   print(i)
   site_ID <- sites_long$site_ID[i]
   print(site_ID)
-  folder <- df_file_structure$folders[df_file_structure$sources == sites_long$source[i]]
+  folder <- unlist(df_file_structure$folders[df_file_structure$sources == sites_long$source[i]])
   HHfile <- df_file_structure$HHfiles[df_file_structure$sources == sites_long$source[i]]
   YYfile <- df_file_structure$YYfiles[df_file_structure$sources == sites_long$source[i]]
   a_HH <- read.csv(folder[grepl(pattern=paste0(site_ID, HHfile), folder)])
