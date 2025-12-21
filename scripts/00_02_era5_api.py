@@ -38,7 +38,7 @@ request = {
         "surface_solar_radiation_downwards"
     ],
     "year": [
-        "2024", "2025"
+        "2002", "2003"
     ],
     "month": [
         "01", "02", "03",
@@ -71,7 +71,7 @@ request = {
     ],
     "data_format": "netcdf",
     "download_format": "unarchived",
-    "area": [44.33, -79.94, 44.31, -79.92]
+    "area": [-2.85, -54.97, -2.87, -54.95]
 }
 
 client = cdsapi.Client()

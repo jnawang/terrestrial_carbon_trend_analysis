@@ -17,6 +17,7 @@ dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 #
 library(librarian)
 shelf(tidyverse, ncdf4, lubridate, ecmwfr, terra, lutz)
+
 ```
 
 
@@ -416,9 +417,9 @@ for(i in 1:nrow(df.sitemetadata)){
 
 
 ```{r convert ERA5 nc to csv}
-cat(paste0('"', 1994:2025, '"', collapse = ", "))
+cat(paste0('"', 2002:2011, '"', collapse = ", "))
 
-coor <- round(c(44.3184,	-79.9341), 2)
+coor <- round(c(-2.8567,	-54.9589), 2)
 
 paste(as.character(round(c(coor[1] + 0.006, coor[2]-0.006, coor[1] - 0.006, coor[2]+0.006), 2)), collapse = ", ")
 
