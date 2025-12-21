@@ -31,16 +31,24 @@ data_length <- unlist(lapply(files_Ameri, function(x) (-as.numeric(substring(x, 
 sites_Ameri <- unlist(lapply(files_Ameri, function(x) substring(x, 5, 10)))
 sites_Ameri <- sites_Ameri[data_length >= data_length_thresh]
 #
-# sites in European FLUXNET and also in ICOS FLUXNET
-files_Europ2023 <- list.files(path =  file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), pattern = "_FLUXNET_HH_L2.csv$")
-sites_Europ2023 <- unlist(lapply(files_Europ2023, function(x) substring(x, 9, 14)))
+# sites in FLUXNET2020 and also in ICOS FLUXNET
+files_FLUXNET2020_ICOS <- list.files(path =  file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), pattern = "_FLUXNET_HH_L2.csv$")
+sites_FLUXNET2020_ICOS <- unlist(lapply(files_FLUXNET2020_ICOS, function(x) substring(x, 9, 14)))
 #
-# sites in European FLUXNET but not in ICOS FLUXNET
-files_Europ <- list.files(path =  file.path(dir_rawdata, "FLUXNET2020"), pattern = "\\.zip$")
-data_length <- unlist(lapply(files_Europ, function(x) (-as.numeric(substring(x, 32, 35))) + as.numeric(substring(x, 37, 40)) + 1))
-sites_Europ <- unlist(lapply(files_Europ, function(x) substring(x, 5, 10)))
-sites_Europ <- sites_Europ[data_length >= data_length_thresh]
-sites_Europ2020 <- setdiff(sites_Europ, sites_Europ2023)
+# sites in FLUXNET2015 and also in ICOS FLUXNET
+files_FLUXNET2015_ICOS <- list.files(path =  file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2015"), pattern = "_FLUXNET_HH_L2.csv$")
+sites_FLUXNET2015_ICOS <- unlist(lapply(files_FLUXNET2015_ICOS, function(x) substring(x, 9, 14)))
+#
+# sites in FLUXNET2020 but not in ICOS FLUXNET
+files_FLUXNET2020 <- list.files(path =  file.path(dir_rawdata, "FLUXNET2020"), pattern = "\\.zip$")
+data_length <- unlist(lapply(files_FLUXNET2020, function(x) (-as.numeric(substring(x, 32, 35))) + as.numeric(substring(x, 37, 40)) + 1))
+sites_FLUXNET2020 <- unlist(lapply(files_FLUXNET2020, function(x) substring(x, 5, 10)))
+sites_FLUXNET2020 <- sites_FLUXNET2020[data_length >= data_length_thresh]
+sites_FLUXNET2020 <- setdiff(sites_FLUXNET2020, sites_FLUXNET2020_ICOS)
+#
+# sites in FLUXNET2015 only
+files_FLUXNET2015 <- list.files(path =  file.path(dir_rawdata, "FLUXNET2015_10yr_only"), pattern = "_FLUXNET2015_FULLSET_HH_")
+sites_FLUXNET2015 <- unlist(lapply(files_FLUXNET2015, function(x) substring(x, 5, 10)))
 #
 # sites in Ameriflux BASE
 files_Ameri_BASE <- list.files(path =  file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), pattern = "\\_HH.csv$")
@@ -48,11 +56,15 @@ sites_Ameri_BASE <- unlist(lapply(files_Ameri_BASE, function(x) substring(x, 5, 
 sites_Ameri_BASE <- setdiff(sites_Ameri_BASE, sites_Ameri)
 #
 # characteristics of these sites: climate, vegetation, MAP, MAT, Elevation
-sites_long <- data.frame(site_ID = c(sites_Ameri, sites_Ameri_BASE, sites_Europ2023, sites_Europ2020), 
+sites_long <- data.frame(site_ID = c(sites_Ameri, sites_Ameri_BASE, 
+                                     sites_FLUXNET2020_ICOS, sites_FLUXNET2015_ICOS, 
+                                     sites_FLUXNET2020, sites_FLUXNET2015), 
                           source = c(rep("AmeriFlux_FLUXNET", length(sites_Ameri)), 
                                      rep("AmeriFlux_BASE", length(sites_Ameri_BASE)), 
-                                     rep("EuropFlux_FLUXNET2023", length(sites_Europ2023)), 
-                                     rep("EuropFlux_FLUXNET2020", length(sites_Europ2020))) )
+                                     rep("FLUXNET2020_ICOS", length(sites_FLUXNET2020_ICOS)), 
+                                     rep("FLUXNET2015_ICOS", length(sites_FLUXNET2015_ICOS)),
+                                     rep("FLUXNET2020", length(sites_FLUXNET2020)), 
+                                     rep("FLUXNET2015", length(sites_FLUXNET2015)) ) )
 #
 # get climate and vegetation information for these sites
 sites_info_Ameri <- read.csv(file.path('data', 'AmeriFlux-site-search-results-202512092232.csv'))
@@ -168,9 +180,17 @@ sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6'
 data_length_thresh <- 10
 #
 files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), full.names = T)
-files.unzip.Europ2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
-files.unzip.Europ2023 <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), full.names = T)
+files.unzip.FLUXNET2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
+files.unzip.FLUXNET2015 <- list.files(file.path(dir_rawdata, "FLUXNET2015_10yr_only"), full.names = T)
+files.unzip.FLUXNET2020_ICOS <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), full.names = T)
+files.unzip.FLUXNET2015_ICOS <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2015"), full.names = T)
 files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
+#
+df_file_structure <- dataframe(source = c(), 
+                              folder = c(), 
+                              HHfile = c(), 
+                              DDfile = c(),
+                              YYfile = c())
 #
 rm_years <- data.frame(site_ID=character(), years=list())
 rm_sites <- c()
@@ -181,19 +201,28 @@ for (i in 1:nrow(sites_long)) {
   site_ID <- sites_long$site_ID[i]
   print(site_ID)
   if (sites_long$source[i] == "AmeriFlux_FLUXNET") {
-    if (site_ID %in% c("US-Ha1", "US-MMS", "US-Ne1", "US-Cop")) {
-      a_HH <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_HR"), files.unzip.Ameri)])
-    } else {
-      a_HH <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_HH"), files.unzip.Ameri)])
-    }
+    a_HH <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_(HR|HH)"), files.unzip.Ameri)])
     a_YY <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_YY"), files.unzip.Ameri)])
-  } else if (sites_long$source[i] == "EuropFlux_FLUXNET2023") {
+  } else if (sites_long$source[i] == "FLUXNET2020_ICOS") {
     a_HH <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_HH"), files.unzip.Europ2023)])
     a_YY <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_YY"), files.unzip.Europ2023)])
-  } else if (sites_long$source[i] == "EuropFlux_FLUXNET2020") {
-    a_HH <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_HH"), files.unzip.Europ2020)])
-    a_YY <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_YY"), files.unzip.Europ2020)])
-  } else if (sites_long$source[i] == "AmeriFlux_BASE") {
+  } else if (sites_long$source[i] == "FLUXNET2015_ICOS") {
+    a_HH <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_HH"), files.unzip.Europ2023)])
+    a_YY <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_YY"), files.unzip.Europ2023)])
+  }
+  
+  
+  else if (sites_long$source[i] == "FLUXNET2020") {
+    a_HH <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_HH"), files.unzip.FLUXNET2020)])
+    a_YY <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_YY"), files.unzip.FLUXNET2020)])
+  } else if (sites_long$source[i] == "FLUXNET2015") {
+    a_HH <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_HH"), files.unzip.FLUXNET2015)])
+    a_YY <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_YY"), files.unzip.FLUXNET2015)])
+  } 
+  
+  
+  
+  else if (sites_long$source[i] == "AmeriFlux_BASE") {
     a_HH <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_HH"), files.Ameri.ReddyProcGapFill)])
     a_YY <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_YY"), files.Ameri.ReddyProcGapFill)])
   }

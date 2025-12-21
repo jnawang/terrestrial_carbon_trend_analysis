@@ -407,14 +407,14 @@ files     <- list.files(file.path(dir_rawdata, 'Ameriflux_BASE'), pattern="zip",
 files_ERA <- list.files(file.path(dir_rawdata, 'ERA5_Tair_Prec'), pattern=".csv$", full.names = T)
 files_ERA_SW <- list.files(file.path(dir_rawdata, 'ERA5_SW'), pattern=".csv$", full.names = T)
 for (i in 1:nrow(sites_selected_BASE1)) {
-  # "BR-Ma2" "US-Aud" "US-ChR" "US-Cwt" "US-Ha2" "US-IB2" "US-KL2" "US-KL3" "US-KM2" "US-KM3"
+  # "BR-Ma2" "BR-Sa1" "CA-Cbo" "US-Aud" "US-ChR" "US-Cwt" "US-Ha2" "US-IB2" "US-KL2" "US-KL3" "US-KM2" "US-KM3" "US-NC2"
   # "US-KM4" "US-MBP" "US-NR3" "US-NR4"
   # i = 2
   ####Step 0: Prepare for requested variables for each site: DateTime, NEE, Rg (shortwave radiation), Tair, Ustar, rH (relative humidity), and VPD
   
   name_site <- sites_selected_BASE1$Site.ID[i]
   print(name_site)
-  if (!name_site %in% c("BR-Ma2", "US-NC2", "CA-Cbo")) {
+  if (!name_site %in% c("BR-Sa1", "CA-Cbo")) {
     next
   }
   
@@ -812,6 +812,16 @@ for (i in 1:nrow(sites_selected_BASE1)) {
                         summarise(P_ERA=sum(P_ERA, na.rm=T))
     a_YY <- a_YY %>% left_join(a_YY_P, by="TIMESTAMP")
   }
+  #
+# use published data to replace failed partition at CA-Cbo
+if (name_site %in% c('CA-Cbo')) {
+  FC_publication <- read.csv(file.path(dir_rawdata, 'publication', "publication_carbon_flux.csv"))
+  FC_publication_site <- FC_publication %>% filter(site_ID == name_site) %>% select(-site_ID)
+  merged_df <- left_join(a_YY, FC_publication_site, by = "TIMESTAMP", suffix = c("", ".df2"))
+  a_YY <- merged_df %>%
+  mutate(across(everything(), ~ coalesce(.x, merged_df[[paste0(cur_column(), ".df2")]]))) %>%
+  select(names(a_YY))
+}
   # 
   # write out the three files. 
   file_name <- paste0('AMF_', name_site, '_EDDYPROC_FULLSET_HH.csv')
