@@ -261,7 +261,7 @@ for (i in 1:nrow(sites_long)) {
   #
   #### the six rule: there should be enough monthly variations
   #### this does not apply to tropical sites. 
-  if (!site_ID %in% c("BR-Sa1", "BR-Ma2", "GF-Guy")) {
+  if (!site_ID %in% c("BR-Sa1", "BR-Ma2", "GF-Guy", "ZM-Mon")) {
     monthly_NEE_day <- a_HH %>% mutate(YEAR=year(TIMESTAMP), MONTH=month(TIMESTAMP)) %>%
       group_by(YEAR, MONTH) %>% summarise(NEE=mean(NEE_VUT_REF, na.rm=T))
     # remove incomplete years
@@ -290,7 +290,7 @@ for (i in 1:nrow(sites_long)) {
   #
   #### the eighth rule: monthly average NEE should be similar to average seasonal patterns ####
   #### only applies sites with seasonal pattern, not in tropical and subtropical
-  if (!site_ID %in% c("BR-Sa1", "BR-Ma2", "US-LL3", "US-LL1", "US-LL2", "GF-Guy", "CL-SDF", "US-SP1", "US-SP3")) {
+  if (!site_ID %in% c("BR-Sa1", "BR-Ma2", "ZM-Mon", "US-LL3", "US-LL1", "US-LL2", "GF-Guy", "CL-SDF", "US-SP1", "US-SP3")) {
     monthly_NEE_var <- monthly_NEE_day %>% group_by(YEAR) %>% summarise(cor=cor(NEE, monthly_NEE_day_pattern$Q2)) 
     Q1 <- as.numeric(quantile(monthly_NEE_var$cor, 0.25, na.rm=T))
     Q3 <- as.numeric(quantile(monthly_NEE_var$cor, 0.75, na.rm=T))
