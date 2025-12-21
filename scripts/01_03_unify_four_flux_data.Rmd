@@ -362,10 +362,28 @@ data(constants)
 # 1 W = 1 J/s; daily data is the average of subhourly data
 # I need to get Tmin, Tmax, RHmin, RHmax, uz (ERA, the height wind speed is measured at 10m), u2, n or Cd, solar radiation;
 #
-files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), full.names = T)
-files.unzip.Europ2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
-files.unzip.Europ2023 <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), full.names = T)
+files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), pattern =  "_FLUXNET_FULLSET_(HR|HH|DD|YY)", full.names = T)
+files.unzip.FLUXNET2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), pattern = "_FLUXNET2015_FULLSET_(HR|HH|DD|YY)", full.names = T)
+files.unzip.FLUXNET2015 <- list.files(file.path(dir_rawdata, "FLUXNET2015_10yr_only"), pattern = "", full.names = T)
+files.unzip.FLUXNET2020_ICOS <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), full.names = T)
+files.unzip.FLUXNET2015_ICOS <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2015"), full.names = T)
 files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
+#
+df_file_structure <- data.frame(sources = c("AmeriFlux_FLUXNET", "AmeriFlux_BASE", 
+                                           "FLUXNET2020_ICOS", "FLUXNET2015_ICOS", "FLUXNET2020", "FLUXNET2015"), 
+                               folders = I(list(list(files.unzip.Ameri), list(files.Ameri.ReddyProcGapFill), 
+                                           list(files.unzip.FLUXNET2020_ICOS), list(files.unzip.FLUXNET2015_ICOS),
+                                           list(files.unzip.FLUXNET2020), list(files.unzip.FLUXNET2015))), 
+                               HHfiles = c("_FLUXNET_FULLSET_(HR|HH)", "_EDDYPROC_FULLSET_HH",
+                                           "_FLUXNET_HH", "_FLUXNET_HH", 
+                                           "_FLUXNET2015_FULLSET_(HR|HH)", "_FLUXNET2015_FULLSET_(HR|HH)"), 
+                               DDfiles = c("_FLUXNET_FULLSET_DD", "_EDDYPROC_FULLSET_DD",
+                                           "_FLUXNET_DD", "_FLUXNET_DD", 
+                                           "_FLUXNET2015_FULLSET_YY", "_FLUXNET2015_FULLSET_YY"),
+                               YYfiles = c("_FLUXNET_FULLSET_YY", "_EDDYPROC_FULLSET_YY", 
+                                           "_FLUXNET_YY", "_FLUXNET_YY", 
+                                           "_FLUXNET2015_FULLSET_YY", "_FLUXNET2015_FULLSET_YY"))
+
 files.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_BASE"), pattern=".zip$", full.names=T)
 #
 # water characteristics
@@ -377,23 +395,14 @@ for (i in 1:nrow(sites_long)) {
   print(i)
   site_ID <- sites_long$site_ID[i]
   water_flux[i,1] <- site_ID
-  # AmeriFlux and European flux; Do I need to differentiate them? Hopefully they use the same notation
-  if (sites_long$source[i] == "AmeriFlux_FLUXNET") {
-    if (site_ID %in% c("US-Ha1", "US-MMS", "US-Ne1", "US-Cop")) {
-      a_HH <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_HR"), files.unzip.Ameri)])
-    } else {
-      a_HH <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_HH"), files.unzip.Ameri)])
-    }
-    a_YY <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_YY"), files.unzip.Ameri)])
-  } else if (sites_long$source[i] == "EuropFlux_FLUXNET2020") {
-    a_HH <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_HH"), files.unzip.Europ2020)])
-    a_YY <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_YY"), files.unzip.Europ2020)])
-  } else if (sites_long$source[i] == "EuropFlux_FLUXNET2023") {
-    a_HH <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_HH"), files.unzip.Europ2023)])
-    a_YY <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_YY"), files.unzip.Europ2023)])
-  } else if (sites_long$source[i] == "AmeriFlux_BASE") {
-    a_HH <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_HH"), files.Ameri.ReddyProcGapFill)])
-    a_YY <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_YY"), files.Ameri.ReddyProcGapFill)])
+  # read a_HH and a_YY
+  folder <- unlist(df_file_structure$folders[df_file_structure$sources == sites_long$source[i]])
+  HHfile <- df_file_structure$HHfiles[df_file_structure$sources == sites_long$source[i]]
+  YYfile <- df_file_structure$YYfiles[df_file_structure$sources == sites_long$source[i]]
+  a_HH <- read.csv(folder[grepl(pattern=paste0(site_ID, HHfile), folder)])
+  a_YY <- read.csv(folder[grepl(pattern=paste0(site_ID, YYfile), folder)])
+  # get wind spead, RH, and solar radiation in the Ameriflux base data
+  if (sites_long$source[i] == "AmeriFlux_BASE") {
     a_BASE <- amf_read_base(files.Ameri[grepl(site_ID, files.Ameri)], parse_timestamp=TRUE, unzip = T)
     a_BASE[a_BASE<=-9999] <- NA
     if (!site_ID %in% c("US-Los")) {
