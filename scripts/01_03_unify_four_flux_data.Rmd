@@ -179,9 +179,9 @@ sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6'
 # it takes about 1 hour.
 data_length_thresh <- 10
 #
-files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), pattern = '', full.names = T)
-files.unzip.FLUXNET2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
-files.unzip.FLUXNET2015 <- list.files(file.path(dir_rawdata, "FLUXNET2015_10yr_only"), full.names = T)
+files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), pattern =  "_FLUXNET_FULLSET_(HR|HH|DD|YY)", full.names = T)
+files.unzip.FLUXNET2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), pattern = "_FLUXNET2015_FULLSET_(HR|HH|DD|YY)", full.names = T)
+files.unzip.FLUXNET2015 <- list.files(file.path(dir_rawdata, "FLUXNET2015_10yr_only"), pattern = "", full.names = T)
 files.unzip.FLUXNET2020_ICOS <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), full.names = T)
 files.unzip.FLUXNET2015_ICOS <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2015"), full.names = T)
 files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
