@@ -32,7 +32,10 @@
 ######################
 *.pdf
 /maps/
+/wc2.1_5m/
+/plots/
 /graphs/
+/reports/
 .DS_Store
 scripts/.DS_Store
-wc2.1_5m
+
