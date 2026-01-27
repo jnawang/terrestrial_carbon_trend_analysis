@@ -94,7 +94,6 @@ print(l_pheno$doy$Gu)
 
 ```
 
-
 ```{r use GPP to calculate start and end of growing season}
 # it takes 30 mins. 
 ####it turns out I cannot use NEE for this package. 
@@ -202,17 +201,15 @@ maxExtendMonth <- 1
 minPercValid   <- 0
 lambda         <- 10000        # for daily data
 ##
-####only working on sites that have clear growing seasons
-sites_long <- read.csv('data/long_term_ec_sites.csv')
-rm_years   <- read.csv('data/years_to_remove.csv')
+####only working at sites that have clear growing seasons
+sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
+rm_years   <- read.csv(file.path('data', 'years_to_remove.csv'))
 #
-files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), full.names = T)
-files.unzip.Europ2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
-files.unzip.Europ2023 <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET", "unzip_connect2020"), full.names = T)
-files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
+source(file.path("scripts", "00_functions.R"))
+df_file_structure <- get_rawflux_file_structure(dir_rawdata)
 #
 # sites that grow year-long: MAT >= 20 and in wet climate
-sites_grow_yearlong <- c('BR-Sa1', 'US-Esm', 'US-LL1', 'US-LL2', 'US-LL3', 'US-SP3', 'GF-Guy')
+sites_grow_yearlong <- c('BR-Ma2', 'BR-Sa1', 'US-Elm', 'US-Esm', 'US-LL1', 'US-LL2', 'US-LL3', 'US-SP1', 'US-SP3', 'GF-Guy', 'ZA-Kru', 'ID-PaD')
 #
 data_grow_season <- data.frame(site_ID=character(), year=integer(), sos_Beck=double(), eos_Beck=double(), 
                                sos_Elmore=double(), eos_Elmore=double(), sos_Gu=double(), eos_Gu=double(), 
@@ -229,23 +226,17 @@ for (i in 1:nrow(sites_long)) {
   if (site_ID %in% sites_grow_yearlong) {
     next
   }
-  #
-  if (sites_long$source[i] == "AmeriFlux_FLUXNET") {
-    a_DD <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_DD"), files.unzip.Ameri)])
-  } else if (sites_long$source[i] == "EuropFlux_FLUXNET2023") {
-    a_DD <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_DD"), files.unzip.Europ2023)])
-  } else if (sites_long$source[i] == "EuropFlux_FLUXNET2020") {
-    a_DD <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_DD"), files.unzip.Europ2020)])
-  } else if (sites_long$source[i] == "AmeriFlux_BASE") {
-    a_DD <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_DD"), files.Ameri.ReddyProcGapFill)])
-  }
+  # only need to read daily data
+  folder <- unlist(df_file_structure$folders[df_file_structure$sources == sites_long$source[i]])
+  DDfile <- df_file_structure$DDfiles[df_file_structure$sources == sites_long$source[i]]
+  a_DD <- read.csv(folder[grepl(pattern=paste0(site_ID, DDfile), folder)])
   a_DD[a_DD==-9999] <- NA
   #
   #
   ####read in daily data
   a_DD$TIMESTAMP <- as.Date(as.character(a_DD$TIMESTAMP), format = "%Y%m%d")
   # remove bad years
-  if (!site_ID %in% c('CL-SDF')) {
+  if (!site_ID %in% c('ZA-Kru')) {
     # do not remove years if the site is CL-SDF because southern hemisphere sites have growing seasons cross years
     a_DD <- a_DD %>% filter(!year(TIMESTAMP) %in% rm_years$years[rm_years$site_ID==site_ID])
   }
@@ -289,7 +280,7 @@ for (i in 1:nrow(sites_long)) {
   )
   #
   ####moving growing season division
-  if (site_ID %in% c("CA-LP1", "CA-Gro", "CL-SDF", "US-BZB", "US-BZS", "US-EML", "US-GLE", "US-Ho1", "US-Ho2", "US-Kon", "US-MOz", "US-NC4", "US-Oho", "US-Syv", "US-TP4", "US-los", "US-NC2", "US-PFa", "US-Uaf", "US-WCr", "BE-Bra", "BE-Dor", "BE-Maa", "CZ-BK1", "CZ-Lnz", "DE-HoH", "FI-Hyy", "FI-Sii", "FR-Bil", "FR-FBn", "FR-Hes", "IT-Ren", "SE-Deg", "SE-Svb", "CZ-RAJ", "CZ-Stn", "DE-Akm", "DE-Hai", "DE_Hzd", "ES_Agu", "ES_LJu", "FI-Let", "IT-Lav", "CH-Aws", "CA-Oas", "CA-Oas", "CA-TP4")) {
+  if (site_ID %in% c("CA-LP1", "CA-Gro", "CL-SDF", "US-BZB", "US-BZS", "US-EML", "US-GLE", "US-Ho1", "US-Ho2", "US-Kon", "US-MOz", "US-NC4", "US-Oho", "US-Syv", "US-TP4", "US-los", "US-NC2", "US-PFa", "US-Uaf", "US-WCr", "BE-Bra", "BE-Dor", "BE-Maa", "CZ-BK1", "CZ-Lnz", "DE-HoH", "FI-Hyy", "FI-Sii", "FR-Bil", "FR-FBn", "FR-Hes", "IT-Ren", "SE-Deg", "SE-Svb", "CZ-RAJ", "CZ-Stn", "DE-Akm", "DE-Hai", "DE_Hzd", "ES_Agu", "ES_LJu", "FI-Let", "IT-Lav", "CH-Aws", "CA-Oas", "CA-Oas", "CA-TP4", "JP-Api", "JP-Fhk", "JP-Ta2", "JP-Fjy", "JP-SMF", "JP-Yms")) {
     brks <- season_mov(INPUT,
         list(FUN = "smooth_wWHIT", wFUN = wFUN,
             maxExtendMonth = 2,
@@ -397,7 +388,7 @@ for (i in 1:nrow(sites_long)) {
 }
 #
 data_grow_season <- data_grow_season[!is.na(data_grow_season$year), ]
-write.csv(data_grow_season, 'data/growing_season_yearly.csv', row.names = F)
+write.csv(data_grow_season, file.path('data', 'growing_season_yearly.csv'), row.names = F)
 # save the data frame
 # look into these sites
 # dryland flux should be modeled in different ways. to understand their drivers in more detail. 
@@ -410,7 +401,7 @@ write.csv(data_grow_season, 'data/growing_season_yearly.csv', row.names = F)
 
 ```{r look at the trends of growing season}
 ####
-data_grow_season <- read.csv('data/growing_season_yearly.csv')
+data_grow_season <- read.csv(file.path('data','growing_season_yearly.csv'))
 #
 gw_trend <- data.frame()
 for (i in 1:length(unique(data_grow_season$site_ID))) {

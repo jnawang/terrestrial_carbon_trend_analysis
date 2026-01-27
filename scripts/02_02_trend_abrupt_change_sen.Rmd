@@ -25,34 +25,26 @@ shelf(tidyverse, Kendall, Rbeast, cowplot, ggpubr, tidyterra, ggpubr, viridis, R
 
 
 ```{r look at all annual NEE data }
-####I need to pay attention to Reynold watershed sites####
 
 sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
 rm_years   <- read.csv(file.path('data', 'years_to_remove.csv'))
-#
-files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), full.names = T)
-files.unzip.Europ2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
-files.unzip.Europ2023 <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), full.names = T)
-files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
-#
-a_YY_all <- data.frame(site_ID=character(), TIMESTAMP=integer(), NEE_VUT_REF=double())
+
+source(file.path("scripts", "00_functions.R"))
+df_file_structure <- get_rawflux_file_structure(dir_rawdata)
+
+a_YY_all <- data.frame(site_ID=character(), TIMESTAMP=integer(), NEE_VUT_REF=double(), 
+                       GPP_VUT_REF=double(), RECO_VUT_REF=double())
 #
 sites_long$nyear <- 0
 #
 for (i in 1:nrow(sites_long)) {
-#  i = 53
+  # i = 20
   print(i)
   site_ID <- sites_long$site_ID[i]
   print(site_ID)
-  if (sites_long$source[i] == "AmeriFlux_FLUXNET") {
-    a_YY <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_YY"), files.unzip.Ameri)])
-  } else if (sites_long$source[i] == "EuropFlux_FLUXNET2023") {
-    a_YY <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_YY"), files.unzip.Europ2023)])
-  } else if (sites_long$source[i] == "EuropFlux_FLUXNET2020") {
-    a_YY <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_YY"), files.unzip.Europ2020)])
-  } else if (sites_long$source[i] == "AmeriFlux_BASE") {
-    a_YY <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_YY"), files.Ameri.ReddyProcGapFill)])
-  }
+  folder <- unlist(df_file_structure$folders[df_file_structure$sources == sites_long$source[i]])
+  YYfile <- df_file_structure$YYfiles[df_file_structure$sources == sites_long$source[i]]
+  a_YY <- read.csv(folder[grepl(pattern=paste0(site_ID, YYfile), folder)])
   a_YY[a_YY==-9999] <- NA
   #
   a_YY_good <- a_YY %>% filter(!TIMESTAMP %in% rm_years$years[rm_years$site_ID==site_ID])
@@ -61,15 +53,38 @@ for (i in 1:nrow(sites_long)) {
   # plot(a_YY_good$TIMESTAMP, a_YY_good$NEE_VUT_REF, main=site_ID)
   # plot(a_YY_good$TIMESTAMP, a_YY_good$GPP_NT_VUT_REF, main=site_ID)
   # plot(a_YY_good$TIMESTAMP, a_YY_good$RECO_NT_VUT_REF, main=site_ID)
+  
+  if (sites_long$NEEpartition[i] == 'DT') {
+    df <- a_YY_good[, c("TIMESTAMP", "NEE_VUT_REF", "GPP_DT_VUT_REF", "RECO_DT_VUT_REF")]
+  } else {
+    df <- a_YY_good[, c("TIMESTAMP", "NEE_VUT_REF", "GPP_NT_VUT_REF", "RECO_NT_VUT_REF")]
+  }
+  names(df)[3:4] <- c("GPP_VUT_REF", "RECO_VUT_REF")
+  # remove unreasonable GPP and RECO. 
+  df[df$GPP_VUT_REF < 10 | is.na(df$GPP_VUT_REF), 3:4] <- NA
   #
-  a_YY_all <- rbind(a_YY_all, data.frame(site_ID=site_ID, a_YY_good[, c("TIMESTAMP", "NEE_VUT_REF")]))
+  a_YY_all <- rbind(a_YY_all, data.frame(site_ID=site_ID, df))
 }
 #
-a_YY_all %>% filter(site_ID %in% c("BE-Vie", "CH-Dav", "DE-Tha", "FI-Hyy", "US-Ha1")) %>% 
+a_YY_all %>% # filter(site_ID %in% c("BE-Vie", "CH-Dav", "DE-Tha", "FI-Hyy", "US-Ha1")) %>% 
 ggplot(aes(x=TIMESTAMP, y=NEE_VUT_REF, color=site_ID)) +
   geom_point() +
   geom_line() +
   labs(x='Year', y='Net ecosystem exchange (g C/m2/year)') + 
+  theme(legend.position = "none")
+
+a_YY_all %>%  
+ggplot(aes(x=TIMESTAMP, y=GPP_VUT_REF, color=site_ID)) +
+  geom_point() +
+  geom_line() +
+  labs(x='Year', y='Annual gross primary production (g C/m2/year)') + 
+  theme(legend.position = "none")
+
+a_YY_all %>% 
+ggplot(aes(x=TIMESTAMP, y=RECO_VUT_REF, color=site_ID)) +
+  geom_point() +
+  geom_line() +
+  labs(x='Year', y='Annual ecosystem respiration (g C/m2/year)') + 
   theme(legend.position = "none")
 
 # get site_years; it will be good to see this. where are these data?
@@ -78,6 +93,9 @@ a_YY_all %>% group_by(TIMESTAMP) %>% summarise(nSites=n()) %>%
   geom_point() +
   labs(x='Year', y='Number of sites') +
   theme_bw()
+
+# check standard deviation of NEE time series:  %>% filter(site_ID %in% c("BE-Vie", "CH-Dav", "DE-Tha", "FI-Hyy", "US-Ha1"))
+a_YY_sd <- a_YY_all %>% group_by(site_ID) %>% summarise(NEE_sd = sd(NEE_VUT_REF))
 #
 ###############################################
 # make a plot for locations of these sites
@@ -114,7 +132,438 @@ tmp %>%  # filter(nYears > 26) %>%
   labs(x='Number of years', y='Number of sites') +
   theme_bw()
 
+write.csv(a_YY_all, file = file.path("data", "a_YY_all.csv"), row.names = F)
 
+```
+
+
+```{r moving window for decadal carbon flux trend analysis}
+library(librarian)
+shelf(lme4, ggplot2, tidyverse, lmerTest)
+# 
+if (!'category' %in% names(a_YY_all)) {
+  a_YY_all <- a_YY_all %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by = "site_ID")
+}
+
+
+# get trends using local regressions
+window_size = 15
+
+# using all sites or sites within certain category. 
+# filter(!IGBP %in% c('MF', 'ENF', 'EDF', 'EBF', 'DBF') & category == 'cold')
+data <- a_YY_all %>% filter(category == 'cold')
+year_start <- min(data$TIMESTAMP)
+year_end <- max(data$TIMESTAMP)
+
+# try these without intervals
+NEEtrend <- data.frame(year_mid=integer(), nsite = integer(),
+            Tlm=double(), plm=double(), Tlmlow=double(), Tlmup=double(), 
+            Tlmer=double(), plmer=double(), Tlmerlow=double(), Tlmerup=double())
+#
+for (iwindow in year_start:(year_end - window_size + 1)) {
+  print(iwindow)
+  subdata <- data %>% filter(between(TIMESTAMP, iwindow, iwindow + window_size - 1))   
+  # this part can be adjusted, the part about window_size
+  site_ID_selected <- subdata %>% group_by(site_ID) %>% 
+    summarise(nyear = max(TIMESTAMP) - min(TIMESTAMP) + 1) %>% 
+    filter(nyear >= min(window_size - 2, 10)) %>% pull(site_ID) 
+  
+  if (length(site_ID_selected) <= 5) {
+    next
+  }
+  subdata <- subdata %>% filter(site_ID %in% site_ID_selected)
+  mod_lm <- lm(data=subdata, NEE_VUT_REF ~ TIMESTAMP + site_ID)
+  # print(summary(mod_lm))
+  mod_lmer <- lmer(data=subdata, NEE_VUT_REF ~ TIMESTAMP + (1 | site_ID))
+  # print(summary(mod_lmer))
+  NEEtrend[iwindow-year_start, 1] <- iwindow + (window_size - 1) / 2
+  NEEtrend[iwindow-year_start, 2] <- length(site_ID_selected)
+  NEEtrend[iwindow-year_start, 3:4] <- summary(mod_lm)$coefficients[2,c(1,4)]
+  NEEtrend[iwindow-year_start, 5:6] <- confint(mod_lm)[2, 1:2]
+  NEEtrend[iwindow-year_start, 7:8] <- summary(mod_lmer)$coefficients[2,c(1,5)]
+  NEEtrend[iwindow-year_start, 9:10] <- confint(mod_lmer, parm = "beta_", method = "profile")[2,1:2]
+}
+
+# try these with intervals
+ggplot(data = NEEtrend, aes(x=year_mid, y = Tlm)) +
+  geom_line(col = 'red') +
+#  geom_line(aes(x=year_mid, y = Tlmer), col = 'green') +
+ geom_errorbar(aes(ymin=Tlmlow, ymax=Tlmup)) +
+  geom_hline(yintercept = 0) +
+  lims(x=c(2000, 2020)) +
+  theme_classic()
+
+#-----------
+ggplot(data = NEEtrend, aes(x=year_mid, y = Tlmer)) +
+  geom_line(col = 'green') +
+ geom_errorbar(aes(ymin=Tlmerlow, ymax=Tlmerup)) +
+  geom_hline(yintercept = 0) +
+  lims(x=c(2000, 2020)) +
+  theme_classic()
+
+# using dry sites
+
+# using wet sites
+
+# I need to compare this with atmospheric CO2 concentration. 
+
+
+```
+
+```{r GPP and ER trends}
+library(librarian)
+shelf(lme4, ggplot2, tidyverse, lmerTest)
+# 
+if (!'category' %in% names(a_YY_all)) {
+  a_YY_all <- a_YY_all %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by = "site_ID")
+}
+
+# get trends using local regressions
+window_size = 15
+
+# using all sites or sites within certain category. 
+data <- a_YY_all  %>% filter( category == 'cold') # filter(category == 'dry')
+
+# !IGBP %in% c('MF', 'ENF', 'EDF', 'EBF', 'DBF') &
+
+year_start <- min(data$TIMESTAMP)
+year_end <- max(data$TIMESTAMP)
+
+# try these without intervals
+GPPtrend <- data.frame(year_mid=integer(), nsite = integer(),
+            Tlm=double(), plm=double(), Tlmlow=double(), Tlmup=double(), 
+            Tlmer=double(), plmer=double(), Tlmerlow=double(), Tlmerup=double())
+#
+ERtrend <- data.frame(year_mid=integer(), nsite = integer(),
+            Tlm=double(), plm=double(), Tlmlow=double(), Tlmup=double(), 
+            Tlmer=double(), plmer=double(), Tlmerlow=double(), Tlmerup=double())
+#
+for (iwindow in year_start:(year_end - window_size + 1)) {
+  print(iwindow)
+  subdata <- data %>% filter(between(TIMESTAMP, iwindow, iwindow + window_size - 1))   
+  # this part can be adjusted, the part about window_size
+  site_ID_selected <- subdata %>% group_by(site_ID) %>% 
+    summarise(nyear = max(TIMESTAMP) - min(TIMESTAMP) + 1) %>% 
+    filter(nyear >= min(window_size - 2, 10)) %>% pull(site_ID) 
+  
+  if (length(site_ID_selected) <= 5 | iwindow < 1995) {
+    next
+  }
+  subdata <- subdata %>% filter(site_ID %in% site_ID_selected)
+  
+  #### GPP trends first
+  mod_lm <- lm(data=subdata, GPP_VUT_REF ~ TIMESTAMP + site_ID)
+  # print(summary(mod_lm))
+  mod_lmer <- lmer(data=subdata, GPP_VUT_REF ~ TIMESTAMP + (1 | site_ID))
+  # print(summary(mod_lmer))
+  GPPtrend[iwindow-year_start, 1] <- iwindow + (window_size - 1) / 2
+  GPPtrend[iwindow-year_start, 2] <- length(site_ID_selected)
+  GPPtrend[iwindow-year_start, 3:4] <- summary(mod_lm)$coefficients[2,c(1,4)]
+  GPPtrend[iwindow-year_start, 5:6] <- confint(mod_lm)[2, 1:2]
+  GPPtrend[iwindow-year_start, 7:8] <- summary(mod_lmer)$coefficients[2,c(1,5)]
+  GPPtrend[iwindow-year_start, 9:10] <- confint(mod_lmer, parm = "beta_", method = "profile")[2,1:2]
+  
+  #### ER trends second
+  mod_lm <- lm(data=subdata, RECO_VUT_REF ~ TIMESTAMP + site_ID)
+  # print(summary(mod_lm))
+  mod_lmer <- lmer(data=subdata, RECO_VUT_REF ~ TIMESTAMP + (1 | site_ID))
+  # print(summary(mod_lmer))
+  ERtrend[iwindow-year_start, 1] <- iwindow + (window_size - 1) / 2
+  ERtrend[iwindow-year_start, 2] <- length(site_ID_selected)
+  ERtrend[iwindow-year_start, 3:4] <- summary(mod_lm)$coefficients[2,c(1,4)]
+  ERtrend[iwindow-year_start, 5:6] <- confint(mod_lm)[2, 1:2]
+  ERtrend[iwindow-year_start, 7:8] <- summary(mod_lmer)$coefficients[2,c(1,5)]
+  ERtrend[iwindow-year_start, 9:10] <- confint(mod_lmer, parm = "beta_", method = "profile")[2,1:2]
+}
+
+# # try these with intervals
+# ggplot(data = GPPtrend, aes(x=year_mid, y = Tlm)) +
+#   geom_line(col = 'red') +
+# #  geom_line(aes(x=year_mid, y = Tlmer), col = 'green') +
+#  geom_errorbar(aes(ymin=Tlmlow, ymax=Tlmup)) +
+#   geom_hline(yintercept = 0) +
+#   lims(x=c(2000, 2020)) +
+#   theme_classic()
+
+#-----------
+ggplot(data = GPPtrend, aes(x=year_mid, y = Tlmer)) +
+  geom_line(col = 'green') +
+ geom_errorbar(aes(ymin=Tlmerlow, ymax=Tlmerup)) +
+  geom_hline(yintercept = 0) +
+  lims(x=c(2000, 2020), y=c(-20, 25)) +
+  labs(title = 'Local GPP trends', x = 'Mid-year of moving window', y = 'Trend') +
+  theme_classic()
+
+ggplot(data = ERtrend, aes(x=year_mid, y = Tlmer)) +
+  geom_line(col = 'green') +
+ geom_errorbar(aes(ymin=Tlmerlow, ymax=Tlmerup)) +
+  geom_hline(yintercept = 0) +
+  lims(x=c(2000, 2020), y=c(-20, 25)) +
+  labs(title = 'Local ER trends', x = 'Mid-year of moving window', y = 'Trend') +
+  theme_classic()
+
+
+
+
+
+```
+
+
+```{r use nonlinear trend method}
+library(librarian)
+shelf(lme4, mgcv)
+
+data <- a_YY_all
+data$site_ID <- as.factor(data$site_ID)
+
+mod <- gam(
+  NEE_VUT_REF ~ s(TIMESTAMP, k = 10) +       # global smooth trend
+       s(TIMESTAMP, site_ID, bs = "fs", k = 3), # site-specific smooth deviations
+  data = data,
+  method = "REML"
+)
+
+gam.check(mod)
+# plot(mod, pages = 1, shade = TRUE)
+
+#######get overall trends
+tseq <- seq(min(data$TIMESTAMP), max(data$TIMESTAMP), length = 200)
+
+newdat <- data.frame(
+  TIMESTAMP = tseq,
+  site_ID = data$site_ID[1]   # dummy site
+)
+
+Xp <- predict(mod, newdat, type = "lpmatrix")
+
+# remove site-specific smooth contributions
+site_cols <- grepl("s\\(TIMESTAMP,site_ID", colnames(Xp))
+Xp[, site_cols] <- 0
+
+fit <- Xp %*% coef(mod)
+
+V <- vcov(mod)
+se <- sqrt(rowSums((Xp %*% V) * Xp))
+ci <- 1.96 * se
+
+df_NEE_nl <- data.frame(YEAR = tseq, NEE = fit, 
+                          NEE_low = fit - ci, NEE_up = fit + ci)
+ggplot(data = df_NEE_nl, aes(x=YEAR, y=NEE)) +
+  geom_line() +
+  geom_errorbar(aes(ymin = NEE_low, ymax = NEE_up))
+
+##############How to get the first derivative?#################################
+# Get derivatives and their confidence intervals
+dt <- diff(tseq)
+d_fit <- diff(fit) / dt
+
+# midpoints for plotting
+t_mid <- (tseq[-1] + tseq[-length(tseq)]) / 2
+
+# CI of derivatives
+V <- vcov(mod)
+
+# derivative linear predictor matrix (difference)
+Xp_deriv <- Xp
+Xp_deriv <- Xp_deriv[-1, ] - Xp_deriv[-nrow(Xp_deriv), ]
+Xp_deriv <- Xp_deriv / dt
+
+se_deriv <- sqrt(rowSums((Xp_deriv %*% V) * Xp_deriv))
+ci_deriv <- 1.96 * se_deriv
+
+df_trend_nl <- data.frame(YEAR = t_mid, trend = d_fit, 
+                    trend_low = d_fit - ci_deriv, trend_up = d_fit + ci_deriv)
+ggplot(data = df_trend_nl, aes(x=YEAR, y=trend)) +
+  geom_line() +
+  geom_errorbar(aes(ymin = trend_low, ymax = trend_up)) +
+  labs(title = 'Trends')
+
+
+
+```
+
+
+```{r site-level carbon trend results}
+library(librarian)
+shelf(lme4, ggplot2, tidyverse, lmerTest, trend, ggpubr)
+#
+# a function to calculate sens slope
+cal_sens_slope <- function(x) {
+  x <- x[!is.na(x)]
+  # x <- scale(x)
+  return(as.numeric(sens.slope(x)[c(1,3)]))
+}
+
+#
+if (!'category' %in% names(a_YY_all)) {
+  a_YY_all <- a_YY_all %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by = "site_ID")
+}
+
+# get trends using local regressions
+window_size = 15
+
+# using all sites or sites within certain category. 
+# subsites_long <- sites_long %>% filter(category == 'wet')
+
+CarbonTrend <- data.frame(site_ID = character(), year_mid=integer(), 
+                     NEE = double(), GPP = double(), ER = double(), 
+                     NEEtrend = double(), NEEtrendp = double(), 
+                     GPPtrend = double(), GPPtrendp = double(), 
+                     ERtrend = double(), ERtrendp = double())
+#
+id = 1
+for (i in 1:nrow(sites_long)) {
+  data <- a_YY_all %>% filter(site_ID == sites_long$site_ID[i])
+
+  nwindow = max(nrow(data) - window_size + 1, 1)
+  for (iwindow in 1:nwindow) {
+    a_YY_sub <- data[iwindow:(min(nrow(data), window_size) + iwindow - 1), ]
+    if (sum(!is.na(a_YY_sub$NEE_VUT_REF)) > 5) {
+      CarbonTrend[id, 1] <- sites_long$site_ID[i]
+      CarbonTrend[id, 2] <- round(mean(a_YY_sub$TIMESTAMP, na.rm=T))
+      CarbonTrend[id, 3] <- mean(a_YY_sub$NEE_VUT_REF, na.rm=T)
+      CarbonTrend[id, 4] <- mean(a_YY_sub$GPP_VUT_REF, na.rm=T)
+      CarbonTrend[id, 5] <- mean(a_YY_sub$RECO_VUT_REF, na.rm=T)
+      CarbonTrend[id, 6:7] <- cal_sens_slope(a_YY_sub$NEE_VUT_REF)
+      if (sum(!is.na(a_YY_sub$GPP_VUT_REF)) > 5) {
+        CarbonTrend[id, 8:9] <- cal_sens_slope(a_YY_sub$GPP_VUT_REF)
+      }
+      if (sum(!is.na(a_YY_sub$RECO_VUT_REF)) > 5) {
+        CarbonTrend[id, 10:11] <- cal_sens_slope(a_YY_sub$RECO_VUT_REF)
+      }      
+      #
+      id = id + 1      
+    }
+  }
+}
+
+if (!'category' %in% names(CarbonTrend)) {
+  CarbonTrend <- CarbonTrend %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by = "site_ID")
+}
+
+####site level results -- average trends, fractions are P-sig, N-sig, P-nonsig and N-nonsig
+
+df_trend_prop <- CarbonTrend %>% filter(category == 'cold') %>% 
+  filter(year_mid <= 2018 & year_mid >= 2002) %>% 
+  group_by(year_mid) %>% 
+  summarise(NEEtrend.mean = mean(NEEtrend, na.rm = T), 
+            GPPtrend.mean = mean(GPPtrend, na.rm = T), 
+            ERtrend.mean = mean(ERtrend, na.rm = T),
+            NEEtrend_pos_sig = sum(NEEtrend > 0 & NEEtrendp <= 0.05) / n(), 
+            NEEtrend_pos_nsig = sum(NEEtrend > 0 & NEEtrendp > 0.05) / n(), 
+            NEEtrend_neg_sig = sum(NEEtrend <= 0 & NEEtrendp <= 0.05) / n(), 
+            NEEtrend_neg_nsig = sum(NEEtrend <= 0 & NEEtrendp > 0.05) / n(),
+            GPPtrend_pos_sig = sum(GPPtrend > 0 & GPPtrendp <= 0.05) / n(), 
+            GPPtrend_pos_nsig = sum(GPPtrend > 0 & GPPtrendp > 0.05) / n(), 
+            GPPtrend_neg_sig = sum(GPPtrend <= 0 & GPPtrendp <= 0.05) / n(), 
+            GPPtrend_neg_nsig = sum(GPPtrend <= 0 & GPPtrendp > 0.05) / n(),
+            ERtrend_pos_sig = sum(ERtrend > 0 & ERtrendp <= 0.05) / n(), 
+            ERtrend_pos_nsig = sum(ERtrend > 0 & ERtrendp > 0.05) / n(), 
+            ERtrend_neg_sig = sum(ERtrend <= 0 & ERtrendp <= 0.05) / n(), 
+            ERtrend_neg_nsig = sum(ERtrend <= 0 & ERtrendp > 0.05) / n()
+            )  
+
+# plot for NEE
+nee_cols <- c(
+  "NEEtrend_neg_sig"  = "#2166ac",
+  "NEEtrend_neg_nsig" = "#67a9cf",
+  "NEEtrend_pos_nsig" = "#ef8a62",
+  "NEEtrend_pos_sig"  = "#b2182b"       
+)
+df_trend_prop %>% 
+    pivot_longer(
+    cols = starts_with("NEEtrend_"),
+    names_to = "trend_type",
+    values_to = "proportion"
+  ) %>% 
+  mutate(trend_type = factor(trend_type, 
+                             levels = c("NEEtrend_pos_sig", "NEEtrend_pos_nsig",
+                                        "NEEtrend_neg_nsig", "NEEtrend_neg_sig"))) %>%
+  ggplot(aes(x=year_mid, y= proportion, fill = trend_type)) +
+  geom_col() +
+  scale_y_continuous(labels = scales::percent) +
+  labs(
+    x = "Mid-year of moving window",
+    y = "Proportion",
+    fill = "NEE trend category"
+  ) + 
+  lims(x=c(2000, 2020)) +
+  scale_fill_manual(values = nee_cols) +
+  theme_classic()
+
+#---------------------------------  
+# plot for GPP
+gpp_cols <- c(
+  "GPPtrend_neg_sig"  = "#b2182b",
+  "GPPtrend_neg_nsig" = "#ef8a62",
+  "GPPtrend_pos_nsig" = "#67a9cf",
+  "GPPtrend_pos_sig"  = "#2166ac"        
+)
+df_trend_prop %>% 
+    pivot_longer(
+    cols = starts_with("GPPtrend_"),
+    names_to = "trend_type",
+    values_to = "proportion"
+  ) %>% 
+  mutate(trend_type = factor(trend_type, 
+                             levels = c("GPPtrend_neg_sig", "GPPtrend_neg_nsig", 
+                                        "GPPtrend_pos_nsig", "GPPtrend_pos_sig"))) %>%
+  ggplot(aes(x=year_mid, y= proportion, fill = trend_type)) +
+  geom_col() +
+  scale_y_continuous(labels = scales::percent) +
+  labs(
+    x = "Mid-year of moving window",
+    y = "Proportion",
+    fill = "GPP trend category"
+  ) +
+  lims(x=c(2000, 2020)) +
+  scale_fill_manual(values = gpp_cols) +
+  theme_classic()
+
+#---------------------------------  
+# plot for ER
+er_cols <- c(
+  "ERtrend_neg_sig"  = "#2166ac",
+  "ERtrend_neg_nsig" = "#67a9cf",
+  "ERtrend_pos_nsig" = "#ef8a62",
+  "ERtrend_pos_sig"  = "#b2182b"       
+)
+df_trend_prop %>% 
+    pivot_longer(
+    cols = starts_with("ERtrend_"),
+    names_to = "trend_type",
+    values_to = "proportion"
+  ) %>% 
+  mutate(trend_type = factor(trend_type, 
+                             levels = c("ERtrend_pos_sig", "ERtrend_pos_nsig",
+                                        "ERtrend_neg_nsig", "ERtrend_neg_sig"))) %>%  
+  ggplot(aes(x=year_mid, y= proportion, fill = trend_type)) +
+  geom_col() +
+  scale_y_continuous(labels = scales::percent) +
+  labs(
+    x = "Mid-year of moving window",
+    y = "Proportion",
+    fill = "ER trend category"
+  ) +
+  lims(x=c(2000, 2020)) +
+  scale_fill_manual(values = er_cols) +
+  theme_classic()
+
+#### site level results
+
+# CarbonTrend %>% filter(category == 'cold') %>% filter(year_mid >= 2014 & year_mid <= 2030) %>%       # filter(IGBP %in% c("WET")) %>%
+# ggplot(aes(x=GPPtrend, y=ERtrend)) +
+#   geom_point() +
+#   # stat_cor(color='green') +
+#   geom_smooth(method = 'lm') +
+#   stat_regline_equation(
+#     aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~"))
+#   ) +
+#   theme_classic()
+# indeed, the slope is increasing from 0.77, 0.81, 0.84; yes, it is.  
+
+  
+  
 ```
 
 
@@ -125,7 +574,7 @@ tmp %>%  # filter(nYears > 26) %>%
 # If a time series is less than 14 years, I do not need to cut it into two segments, because one segment will be too short to use. 
 # I only use the section with more than 7 years data
 threshold_nyear_ac <- 8
-sites_long <- read.csv('data/long_term_ec_sites.csv')
+sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
 #
 files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), full.names = T)
 files.unzip.Europ2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)

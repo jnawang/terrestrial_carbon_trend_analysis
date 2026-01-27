@@ -30,6 +30,8 @@ files_Ameri <- list.files(path =  file.path(dir_rawdata, "Ameriflux_FLUXNET"), p
 data_length <- unlist(lapply(files_Ameri, function(x) (-as.numeric(substring(x, 28, 31))) + as.numeric(substring(x, 33, 36)) + 1))
 sites_Ameri <- unlist(lapply(files_Ameri, function(x) substring(x, 5, 10)))
 sites_Ameri <- sites_Ameri[data_length >= data_length_thresh]
+# site: "CA-Cbo", AmeriFlux FLUXNET data has problems. use partitioned data by ReddyProc
+sites_Ameri <- sites_Ameri[-which(sites_Ameri == "CA-Cbo")]
 #
 # sites in FLUXNET2020 and also in ICOS FLUXNET
 files_FLUXNET2020_ICOS <- list.files(path =  file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), pattern = "_FLUXNET_HH_L2.csv$")
@@ -49,30 +51,44 @@ sites_FLUXNET2020 <- setdiff(sites_FLUXNET2020, sites_FLUXNET2020_ICOS)
 # sites in FLUXNET2015 only
 files_FLUXNET2015 <- list.files(path =  file.path(dir_rawdata, "FLUXNET2015_10yr_only"), pattern = "_FLUXNET2015_FULLSET_HH_")
 sites_FLUXNET2015 <- unlist(lapply(files_FLUXNET2015, function(x) substring(x, 5, 10)))
+# site: "AU-How" and "AU-Tum" belong to OzFlux and have recent data there
+sites_FLUXNET2015 <- sites_FLUXNET2015[-which(sites_FLUXNET2015 %in% c("AU-How", "AU-Tum"))]
 #
 # sites in Ameriflux BASE
 files_Ameri_BASE <- list.files(path =  file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), pattern = "\\_HH.csv$")
 sites_Ameri_BASE <- unlist(lapply(files_Ameri_BASE, function(x) substring(x, 5, 10)))
 sites_Ameri_BASE <- setdiff(sites_Ameri_BASE, sites_Ameri)
 #
+# sites in Japanflux2024
+files_JapanFlux2024 <- list.files(path = file.path(dir_rawdata, "JapanFlux2024", "unzip"), pattern = "JapanFLUX2024_ALLVARS_HH")
+sites_JapanFlux2024 <- unlist(lapply(files_JapanFlux2024, function(x) substring(x, 5, 10)))
+#
+# sites in OzFlux2025
+files_OzFlux2025 <- list.files(path = file.path(dir_rawdata, "OzFlux2025", "csv"), pattern = "PyFluxPro_FULLSET_HH")
+sites_OzFlux2025 <- unlist(lapply(files_OzFlux2025, function(x) substring(x, 8, 13)))
+#
 # characteristics of these sites: climate, vegetation, MAP, MAT, Elevation
 sites_long <- data.frame(site_ID = c(sites_Ameri, sites_Ameri_BASE, 
                                      sites_FLUXNET2020_ICOS, sites_FLUXNET2015_ICOS, 
-                                     sites_FLUXNET2020, sites_FLUXNET2015), 
+                                     sites_FLUXNET2020, sites_FLUXNET2015,
+                                     sites_JapanFlux2024, sites_OzFlux2025), 
                           source = c(rep("AmeriFlux_FLUXNET", length(sites_Ameri)), 
                                      rep("AmeriFlux_BASE", length(sites_Ameri_BASE)), 
                                      rep("FLUXNET2020_ICOS", length(sites_FLUXNET2020_ICOS)), 
                                      rep("FLUXNET2015_ICOS", length(sites_FLUXNET2015_ICOS)),
                                      rep("FLUXNET2020", length(sites_FLUXNET2020)), 
-                                     rep("FLUXNET2015", length(sites_FLUXNET2015)) ) )
+                                     rep("FLUXNET2015", length(sites_FLUXNET2015)),
+                                     rep("JapanFlux2024", length(sites_JapanFlux2024)),
+                                     rep("OzFlux2025", length(sites_OzFlux2025)) ) )
 #
 # get climate and vegetation information for these sites
 sites_info_Ameri <- read.csv(file.path('data', 'AmeriFlux-site-search-results-202512092232.csv'))
 #
 # rename some of these columns
-sites_info_Ameri <- sites_info_Ameri %>% rename("Lat"="Latitude..degrees.", "Long"="Longitude..degrees.",
+sites_info_Ameri <- sites_info_Ameri %>% rename("Lat"="Latitude..degrees.", 
+                                                "Long"="Longitude..degrees.",
                                                 "IGBP"="Vegetation.Abbreviation..IGBP.", 
-                                                "Climate.class"="Climate.Class.Abbreviation..Koeppen.",
+                                            "Climate.class"="Climate.Class.Abbreviation..Koeppen.",
                                                 "MAT"="Mean.Average.Temperature..degrees.C.",  
                                                 "MAP"="Mean.Average.Precipitation..mm.")
 #
@@ -82,12 +98,25 @@ sites_info_Europ <- sites_info_Europ %>% rename("Site.ID"="Site.Code", "Lat"="Si
                                                 "Long"="Site.Longitude", "IGBP"="IGBP.Code", 
                                                 "MAT" = "Mean.Annual.Temperature", 
                                                 "MAP" = "Mean.Annual.Precpitation")
+#
+sites_info_Japan <- read.csv(file.path("data", "JapanFlux2024_metadata.csv"))
+sites_info_Japan <- sites_info_Japan %>% rename("Site.ID"="Site.code..BADM.",
+                                                "Lat"="Latitude..degree.",
+                                                "Long"="Longitude..degree.",
+                                                "IGBP"="IGBP..land.use.", 
+                                                "Climate.class" = "Köppen.climate") 
+#
+sites_info_Oz <- read.csv(file.path("data", "OzFlux_metadata.csv"))
+sites_info_Oz <- sites_info_Oz %>% rename("Site.ID"="site_ID",
+                                          "Climate.class" = "Köppen_climate") 
+
 # get climate classes for these locations
-climate_koppen   <- terra::rast('data/koppen_geiger_0p00833333.tif')
+climate_koppen   <- terra::rast(file.path('data', 'koppen_geiger_0p00833333.tif'))
 # plot(climate_koppen)
 #
-# get climate for the European coordinates
-xy <- data.frame(x=sites_info_Europ$Long, y=sites_info_Europ$Lat)
+# get climate for the European and OZ fluxes based on coordinates
+xy <- data.frame(x=c(sites_info_Europ$Long, sites_info_Oz$Long), 
+                 y=c(sites_info_Europ$Lat, sites_info_Oz$Lat))
 #
 tmp <- terra::extract(climate_koppen, xy)
 #
@@ -133,11 +162,14 @@ tmp <- tmp %>% mutate(koppen = case_when(
   #
 ))
 #
-sites_info_Europ$Climate.class <- tmp$koppen
+sites_info_Europ$Climate.class <- tmp$koppen[1: nrow(sites_info_Europ)]
+sites_info_Oz$Climate.class <- tmp$koppen[(nrow(sites_info_Europ) + 1) : nrow(tmp)]
 #
 common_cols <- intersect(colnames(sites_info_Europ), colnames(sites_info_Ameri))
 #
 sites_all <- rbind(sites_info_Ameri[common_cols], sites_info_Europ[common_cols])
+sites_all <- dplyr::bind_rows(sites_all, sites_info_Japan[, c("Site.ID", "Lat", "Long", "IGBP", "Climate.class")])
+sites_all <- dplyr::bind_rows(sites_all, sites_info_Oz[, c("Site.ID", "Lat", "Long", "IGBP", "Climate.class")])
 #
 #####correct some climate classification
 sites_all$Climate.class[sites_all$Site.ID=='CA-LP1'] <- 'Dfb'
@@ -169,43 +201,30 @@ sites_long$Climate.class[sites_long$site_ID %in% c("US-Akn")] <- "Cfa"
 ## US-NR3 and US-NR4: long time series but large gaps. Alpine tundra sites. 
 ## IT-Lav and IT-TrF: nighttime NEEs have problems at the two sites. 
 ## the US-Akn measurements actually started from 2016; removed
-sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6', 'US-Myb', "CA-Ca2", "US-KLS", "US-NC1", "US-NC3", "US-Tw4", "US-SP2", "CL-SDP", "DE-Hzd", "US-Blo", "US-NR3", "US-NR4", "IT-Lav", "IT-TrF", "US-Akn"))
-##
+## ZM-Mon: too few years of good data
+sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6', 'US-Myb', "CA-Ca2", "US-KLS", "US-NC1", "US-NC3", "US-Tw4", "US-SP2", "CL-SDP", "DE-Hzd", "US-Blo", "US-NR3", "US-NR4", "IT-Lav", "IT-TrF", "US-Akn", "ZM-Mon"))
+#
+# add NEE partition method
+sites_long <- sites_long %>% mutate(NEEpartition = case_when( 
+site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae", "US-Oho", "DE-RuW", "US-Uaf", "US-Esm", "US-Elm", "US-MtB", "US-Prr", "CA-Cbo", "US-PFa") ~ 'NT',
+TRUE ~ 'DT'))
+#
 ```
 
 
 ```{r remove some years}
 ##this chunk generates the years we should remove; 
-# it takes about 1 hour.
+# it takes about 1-2 hour.
 data_length_thresh <- 10
 #
-files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), pattern =  "_FLUXNET_FULLSET_(HR|HH|DD|YY)", full.names = T)
-files.unzip.FLUXNET2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), pattern = "_FLUXNET2015_FULLSET_(HR|HH|DD|YY)", full.names = T)
-files.unzip.FLUXNET2015 <- list.files(file.path(dir_rawdata, "FLUXNET2015_10yr_only"), pattern = "", full.names = T)
-files.unzip.FLUXNET2020_ICOS <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), full.names = T)
-files.unzip.FLUXNET2015_ICOS <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2015"), full.names = T)
-files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
-#
-df_file_structure <- data.frame(sources = c("AmeriFlux_FLUXNET", "AmeriFlux_BASE", 
-                                           "FLUXNET2020_ICOS", "FLUXNET2015_ICOS", "FLUXNET2020", "FLUXNET2015"), 
-                               folders = I(list(list(files.unzip.Ameri), list(files.Ameri.ReddyProcGapFill), 
-                                           list(files.unzip.FLUXNET2020_ICOS), list(files.unzip.FLUXNET2015_ICOS),
-                                           list(files.unzip.FLUXNET2020), list(files.unzip.FLUXNET2015))), 
-                               HHfiles = c("_FLUXNET_FULLSET_(HR|HH)", "_EDDYPROC_FULLSET_HH",
-                                           "_FLUXNET_HH", "_FLUXNET_HH", 
-                                           "_FLUXNET2015_FULLSET_(HR|HH)", "_FLUXNET2015_FULLSET_(HR|HH)"), 
-                               DDfiles = c("_FLUXNET_FULLSET_DD", "_EDDYPROC_FULLSET_DD",
-                                           "_FLUXNET_DD", "_FLUXNET_DD", 
-                                           "_FLUXNET2015_FULLSET_YY", "_FLUXNET2015_FULLSET_YY"),
-                               YYfiles = c("_FLUXNET_FULLSET_YY", "_EDDYPROC_FULLSET_YY", 
-                                           "_FLUXNET_YY", "_FLUXNET_YY", 
-                                           "_FLUXNET2015_FULLSET_YY", "_FLUXNET2015_FULLSET_YY"))
+source(file.path("scripts", "00_functions.R"))
+df_file_structure <- get_rawflux_file_structure(dir_rawdata)
 #
 rm_years <- data.frame(site_ID=character(), years=list())
 rm_sites <- c()
 #
 for (i in 1:nrow(sites_long)) {
-  # i = 41
+  # i = 133
   print(i)
   site_ID <- sites_long$site_ID[i]
   print(site_ID)
@@ -261,7 +280,7 @@ for (i in 1:nrow(sites_long)) {
   #
   #### the six rule: there should be enough monthly variations
   #### this does not apply to tropical sites. 
-  if (!site_ID %in% c("BR-Sa1", "BR-Ma2", "GF-Guy", "ZM-Mon")) {
+  if (!site_ID %in% c("BR-Sa1", "BR-Ma2", "GF-Guy", "ZM-Mon", "ID-PaD", "ID-Pag")) {
     monthly_NEE_day <- a_HH %>% mutate(YEAR=year(TIMESTAMP), MONTH=month(TIMESTAMP)) %>%
       group_by(YEAR, MONTH) %>% summarise(NEE=mean(NEE_VUT_REF, na.rm=T))
     # remove incomplete years
@@ -277,20 +296,20 @@ for (i in 1:nrow(sites_long)) {
       tmp <- c(tmp, monthly_NEE_var$YEAR)
       print(paste0('remove no monthly variation: ', site_ID, monthly_NEE_var$YEAR))
     }
-  }
   #
   #### the seventh rule: monthly average NEE should be within a bound
-  monthly_NEE_range <- monthly_NEE_day %>% left_join(monthly_NEE_day_pattern[,c(1,5:6)], by="MONTH") %>% filter(NEE > uplimit | NEE < lowlimit) %>% group_by(YEAR) %>% summarise(n=n()) %>% filter(n>=3)
-  #### a year has >= 1 month outliers and an outlier year
-  year1 <- intersect(monthly_NEE_range$YEAR, a_YY$TIMESTAMP[which(outlier)])
-  if (length(year1) > 0) {
-    tmp <- c(tmp, year1)
-    print(paste0('remove monthly outliters: ', site_ID, year1))
+    monthly_NEE_range <- monthly_NEE_day %>% left_join(monthly_NEE_day_pattern[,c(1,5:6)], by="MONTH") %>% filter(NEE > uplimit | NEE < lowlimit) %>% group_by(YEAR) %>% summarise(n=n()) %>% filter(n>=3)
+    #### a year has >= 1 month outliers and an outlier year
+    year1 <- intersect(monthly_NEE_range$YEAR, a_YY$TIMESTAMP[which(outlier)])
+    if (length(year1) > 0) {
+      tmp <- c(tmp, year1)
+      print(paste0('remove monthly outliters: ', site_ID, year1))
+    }
   }
   #
   #### the eighth rule: monthly average NEE should be similar to average seasonal patterns ####
   #### only applies sites with seasonal pattern, not in tropical and subtropical
-  if (!site_ID %in% c("BR-Sa1", "BR-Ma2", "ZM-Mon", "US-LL3", "US-LL1", "US-LL2", "GF-Guy", "CL-SDF", "US-SP1", "US-SP3")) {
+  if (!site_ID %in% c("BR-Sa1", "BR-Ma2", "ZM-Mon", "US-LL3", "US-LL1", "US-LL2", "GF-Guy", "CL-SDF", "US-SP1", "US-SP3", "ID-PaD", "ID-Pag")) {
     monthly_NEE_var <- monthly_NEE_day %>% group_by(YEAR) %>% summarise(cor=cor(NEE, monthly_NEE_day_pattern$Q2)) 
     Q1 <- as.numeric(quantile(monthly_NEE_var$cor, 0.25, na.rm=T))
     Q3 <- as.numeric(quantile(monthly_NEE_var$cor, 0.75, na.rm=T))
@@ -312,12 +331,12 @@ for (i in 1:nrow(sites_long)) {
   if (site_ID %in% c("US-KL2", "US-KL3", "US-KM2", "US-KM3", "US-KM4")) {
     tmp <- c(tmp, 2009)
   }
-  if (site_ID == "US-Rws") {
+  if (site_ID %in% c("US-Rws", "US-Rms")) {
     # use the first year data at this site, because that year's data is consistent with overall trend, and we need sites in dry climate. 
     tmp <- c()
   }
   #
-  #########process the removed years, and put them into dataframe
+  #########process the removed years, and put them into data frame
   tmp <- unique(tmp)
   print(tmp)
   #
@@ -328,21 +347,29 @@ for (i in 1:nrow(sites_long)) {
   plot(a_YY_good$TIMESTAMP, a_YY_good$NEE_VUT_REF, main=site_ID)
   #
   # also check partitioned GPP data
-  if (!site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-Kon", "US-MOz", "CH-Lae", "US-NC4", "CA-Man", "US-LL1", "US-LL2", "US-PFa", "US-Uaf")) {
+  if (sites_long$NEEpartition[i] == 'DT') {
     plot(a_YY_good$TIMESTAMP, a_YY_good$GPP_DT_VUT_REF, main=site_ID)
   } else {
     plot(a_YY_good$TIMESTAMP, a_YY_good$GPP_NT_VUT_REF, main=site_ID)
   }
   # remove the sites without enough data
-  if (a_YY_good$TIMESTAMP[nrow(a_YY_good)] - a_YY_good$TIMESTAMP[1] < data_length_thresh) {
+  if (a_YY_good$TIMESTAMP[nrow(a_YY_good)] - a_YY_good$TIMESTAMP[1] + 1 < data_length_thresh | nrow(a_YY_good) + 1 < data_length_thresh) {
     rm_sites <- c(rm_sites, site_ID)
   }
+  #
+  if (is.na(sites_long$MAT[i])) {
+    sites_long$MAT[i] = mean(a_YY_good$TA_F_MDS, na.rm=T)
+  }
+  if (is.na(sites_long$MAP[i])) {
+    sites_long$MAP[i] = mean(a_YY_good$P_ERA, na.rm=T)
+  } 
 }
 ##
 sites_long <- sites_long %>% filter(!site_ID %in% rm_sites)
 write.csv(rm_years, file = file.path('data', 'years_to_remove.csv'), row.names = F)
 ##
 
+##a note: JP-Ta2 missed data after 2015. remove: "AU-Whr" "AU-Wom"?
 ```
 
 
@@ -362,33 +389,15 @@ data(constants)
 # 1 W = 1 J/s; daily data is the average of subhourly data
 # I need to get Tmin, Tmax, RHmin, RHmax, uz (ERA, the height wind speed is measured at 10m), u2, n or Cd, solar radiation;
 #
-files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), pattern =  "_FLUXNET_FULLSET_(HR|HH|DD|YY)", full.names = T)
-files.unzip.FLUXNET2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), pattern = "_FLUXNET2015_FULLSET_(HR|HH|DD|YY)", full.names = T)
-files.unzip.FLUXNET2015 <- list.files(file.path(dir_rawdata, "FLUXNET2015_10yr_only"), pattern = "", full.names = T)
-files.unzip.FLUXNET2020_ICOS <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), full.names = T)
-files.unzip.FLUXNET2015_ICOS <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2015"), full.names = T)
-files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
-#
-df_file_structure <- data.frame(sources = c("AmeriFlux_FLUXNET", "AmeriFlux_BASE", 
-                                           "FLUXNET2020_ICOS", "FLUXNET2015_ICOS", "FLUXNET2020", "FLUXNET2015"), 
-                               folders = I(list(list(files.unzip.Ameri), list(files.Ameri.ReddyProcGapFill), 
-                                           list(files.unzip.FLUXNET2020_ICOS), list(files.unzip.FLUXNET2015_ICOS),
-                                           list(files.unzip.FLUXNET2020), list(files.unzip.FLUXNET2015))), 
-                               HHfiles = c("_FLUXNET_FULLSET_(HR|HH)", "_EDDYPROC_FULLSET_HH",
-                                           "_FLUXNET_HH", "_FLUXNET_HH", 
-                                           "_FLUXNET2015_FULLSET_(HR|HH)", "_FLUXNET2015_FULLSET_(HR|HH)"), 
-                               DDfiles = c("_FLUXNET_FULLSET_DD", "_EDDYPROC_FULLSET_DD",
-                                           "_FLUXNET_DD", "_FLUXNET_DD", 
-                                           "_FLUXNET2015_FULLSET_YY", "_FLUXNET2015_FULLSET_YY"),
-                               YYfiles = c("_FLUXNET_FULLSET_YY", "_EDDYPROC_FULLSET_YY", 
-                                           "_FLUXNET_YY", "_FLUXNET_YY", 
-                                           "_FLUXNET2015_FULLSET_YY", "_FLUXNET2015_FULLSET_YY"))
+source(file.path("scripts", "00_functions.R"))
+df_file_structure <- get_rawflux_file_structure(dir_rawdata)
 
+#
 files.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_BASE"), pattern=".zip$", full.names=T)
 #
 # water characteristics
 water_flux <- data.frame(site_ID=character(), PET=double(), AET=double(), AI=double())
-#1:nrow(sites_long)
+#
 for (i in 1:nrow(sites_long)) {
 #  i = 9
 #  if (i %in% c(15, 16, 35)) {next}  # 16, 35, 
@@ -401,7 +410,7 @@ for (i in 1:nrow(sites_long)) {
   YYfile <- df_file_structure$YYfiles[df_file_structure$sources == sites_long$source[i]]
   a_HH <- read.csv(folder[grepl(pattern=paste0(site_ID, HHfile), folder)])
   a_YY <- read.csv(folder[grepl(pattern=paste0(site_ID, YYfile), folder)])
-  # get wind spead, RH, and solar radiation in the Ameriflux base data
+  # get wind speed, RH, and solar radiation in the Ameriflux base data
   if (sites_long$source[i] == "AmeriFlux_BASE") {
     a_BASE <- amf_read_base(files.Ameri[grepl(site_ID, files.Ameri)], parse_timestamp=TRUE, unzip = T)
     a_BASE[a_BASE<=-9999] <- NA
@@ -419,7 +428,12 @@ for (i in 1:nrow(sites_long)) {
     }
     # in this data set SW_IN represent PPFD_IN, so convert PPFD_IN to SW_IN to be consistent with FLUXNET
     a_HH$SW_IN_F_MDS <- a_HH$SW_IN_F_MDS / 2.3 
+  } else if (sites_long$source[i] == "JapanFlux2024") {
+    a_HH$RH <- a_HH$RH_F
+  } else if (sites_long$source[i] == "OzFlux2025") {
+    a_HH$RH <- a_HH$RH_F_MDS
   }
+  
   a_HH[a_HH==-9999] <- NA
   a_YY[a_YY==-9999] <- NA
   #
@@ -441,7 +455,11 @@ for (i in 1:nrow(sites_long)) {
       RH = mean(RH, na.rm = T),
       uz = mean(WS_F, na.rm = T)
     ) %>% mutate(Year=2000)
-
+  # interpolate missing RH. 
+  if (any(is.na(climate_hourly$RH))) {
+    idx <- seq_along(climate_hourly$RH)
+    climate_hourly$RH <- approx(idx, climate_hourly$RH, idx)$y
+  }
   ####
   # climate_hourly <- data.frame(Year=year(a_HH$TIMESTAMP), Month=month(a_HH$TIMESTAMP), Day=day(a_HH$TIMESTAMP), Hour=hour(a_HH$TIMESTAMP), Minute=minute(a_HH$TIMESTAMP)/60, Temp=a_HH$TA_F_MDS, Rs = a_HH$SW_IN_F_MDS*0.0864, RH=a_HH$RH, uz=a_HH$WS_F)
   # climate_hourly <- climate_hourly %>% group_by(Year, Month, Day, Hour) %>% summarise(Temp=mean(Temp,na.rm=T), Rs=mean(Rs,na.rm=T), RH=mean(RH,na.rm=T), uz=mean(uz,na.rm=T))
@@ -491,12 +509,13 @@ water_flux <- read.csv(file.path('data', 'water_flux_AI.csv'))
 if (!"AI" %in% names(sites_long)) {
   sites_long <- sites_long %>% left_join(water_flux, by='site_ID')
 }
+
 #
 sites_long <- sites_long %>% 
-  mutate(category=case_when(Climate.class %in% c("Csa", "Csb", "Bsh", "Bsk", "BWh", "Bwk") & AI < 0.5 ~ 'dry',
-                            Climate.class %in% c("Csa", "Csb", "Bsh", "Bsk", "BWh", "Bwk") & AI >= 0.5 ~ 'wet', 
+  mutate(category=case_when(Climate.class %in% c("Csa", "Csb", "Bsh", "Bsk", "BSh", "BWh", "Bwk", "Aw", "BWk", "BSk") & AI < 0.5 ~ 'dry', 
+                            Climate.class %in% c("Csa", "Csb", "Bsh", "Bsk", "BSh", "BWh", "Bwk", "Aw", "BWk", "BSk") & AI >= 0.5 ~ 'wet', 
                             Climate.class %in% c("Am", "Cwa", "Af") ~ "wet", 
-                            Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "ET", "Dwc") ~ "cold",
+                            Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "Dsb", "ET", "Dwc") ~ "cold",
                             Climate.class %in% c("Cfa") ~ "wet",
                             Climate.class %in% c("Cfb") ~ "cold"         # those sites has winters and in high latitudes
                             ))
@@ -510,14 +529,12 @@ sites_long <- sites_long %>%
 # sites_long$category[is.na(sites_long$category) & sites_long$Climate.class %in% c('Csa')] <- 'dry'
 #
 
-sites_long$category[sites_long$site_ID %in% c("US-Rls", "US-Rms", "US-Rwf", "US-Rws")] = 'dry'
-
 sum(sites_long$category=='dry', na.rm = T)
-# we have 20 dry sites.
+# we have 28 dry sites.
 sum(sites_long$category=='wet', na.rm = T)
-# we have 24 wet sites.
+# we have 36 wet sites.
 sum(sites_long$category=='cold', na.rm = T)
-# we have 77 cold sites. 
-write.csv(sites_long, file = 'data/long_term_ec_sites.csv', row.names = F)
+# we have 94 cold sites. 
+write.csv(sites_long, file = file.path('data', 'long_term_ec_sites.csv'), row.names = F)
 
 ```
