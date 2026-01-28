@@ -1218,7 +1218,7 @@ plot(data$GPPtrend_lm, data$ERtrend_lm)
 ```
 
 
-```{r analyzing trends in two different periods, fig.width=5, fig.height=3}
+```{r analyzing NEE trends in two different periods, fig.width=5, fig.height=5}
 #
 # add periods to sub time series; use 2011 as a threshold. 
 sub_time_series_2period <- data.frame()
@@ -1227,10 +1227,10 @@ for (i in 1:nrow(sub_time_series)) {
   #
   if (sub_time_series$year_end[i] <= threshold_split_year+3) {
     sub_time_series_2period <- rbind(sub_time_series_2period, 
-                                     data.frame(sub_time_series[i,c(1:3,5)], period="before_2011"))
+                                     data.frame(sub_time_series[i,c(1:3,13)], period="before_2011"))
   } else if (sub_time_series$year_start[i] >= threshold_split_year-3) {
     sub_time_series_2period <- rbind(sub_time_series_2period, 
-                                     data.frame(sub_time_series[i,c(1:3,5)], period="after_2011"))
+                                     data.frame(sub_time_series[i,c(1:3,13)], period="after_2011"))
   } else {
     # if time series sit between, adding to two rows
     # sub_time_series_2period <- rbind(sub_time_series_2period, 
@@ -1240,27 +1240,27 @@ for (i in 1:nrow(sub_time_series)) {
     # based on middle year
     if (sub_time_series$year_end[i] + sub_time_series$year_start[i] < threshold_split_year * 2) {
       sub_time_series_2period <- rbind(sub_time_series_2period, 
-                                     data.frame(sub_time_series[i,c(1:3,5)], period="before_2011"))
+                                     data.frame(sub_time_series[i,c(1:3,13)], period="before_2011"))
     } else {
       sub_time_series_2period <- rbind(sub_time_series_2period, 
-                                     data.frame(sub_time_series[i,c(1:3,5)], period="after_2011"))
+                                     data.frame(sub_time_series[i,c(1:3,13)], period="after_2011"))
     }
   }
 }
 #
 sub_time_series_2period$period <- factor(sub_time_series_2period$period, levels=c("before_2011", "after_2011"))
-ggplot(sub_time_series_2period, aes(x=period, y=NEEtrend_lm)) +
+ggplot(sub_time_series_2period, aes(x=period, y=NEEtrend_unit)) +
   geom_jitter() +
   geom_boxplot() +
   labs(y='NEE trend')
-summary(aov(data=sub_time_series_2period, NEEtrend_lm ~ period))
-# p = 0.989
+summary(aov(data=sub_time_series_2period, NEEtrend_unit ~ period))
+# p = 0.0249
 
 # for long-term sites with abrupt changes
 sub_time_series_2period_paired <- sub_time_series_2period %>% filter(site_ID %in% unique(abrupt_change$site_ID))
 #
 
-sub_time_series_2period_paired_pivot <- sub_time_series_2period_paired %>% dplyr::select(c(-year_start, -year_end)) %>% pivot_wider(names_from = period, values_from = NEEtrend_lm) %>% filter(!is.na(before_2011) & !is.na(after_2011)) %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class")], by="site_ID")
+sub_time_series_2period_paired_pivot <- sub_time_series_2period_paired %>% dplyr::select(c(-year_start, -year_end)) %>% pivot_wider(names_from = period, values_from = NEEtrend_unit) %>% filter(!is.na(before_2011) & !is.na(after_2011)) %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by="site_ID")
 ###
 #
 t.test(sub_time_series_2period_paired_pivot$before_2011, sub_time_series_2period_paired_pivot$after_2011, paired=T)
@@ -1268,16 +1268,10 @@ t.test(sub_time_series_2period_paired_pivot$before_2011, sub_time_series_2period
 boxplot(sub_time_series_2period_paired_pivot$before_2011, sub_time_series_2period_paired_pivot$after_2011, xlab='before 2011, after 2011', ylab='NEE trend')
 
 ### focusing on cold climate, NEE trend increased a lot (carbon sequestration reduced). 
-sub_time_series_2period_paired_pivot_climate <- sub_time_series_2period_paired_pivot %>% filter(Climate.class %in% c("Dfb", "Dfc", "Dwc", "Dfa", "Cfb"))
+sub_time_series_2period_paired_pivot_climate <- sub_time_series_2period_paired_pivot %>% filter(category %in% c("dry"))
 t.test(sub_time_series_2period_paired_pivot_climate$before_2011, sub_time_series_2period_paired_pivot_climate$after_2011, paired=T)
-# t = -2.359, df = 17, p-value = 0.03055
-# mean difference 
-#       -0.08680022
+boxplot(sub_time_series_2period_paired_pivot_climate$before_2011, sub_time_series_2period_paired_pivot_climate$after_2011, xlab='before trend change, after trend change', ylab='NEE trend')
 
-# focus on forests, trend is not clear. 
-sub_time_series_2period_paired_pivot_veg <- sub_time_series_2period_paired_pivot %>% filter(IGBP %in% c("DBF", "ENF", "MF"))
-t.test(sub_time_series_2period_paired_pivot_veg$before_2011, sub_time_series_2period_paired_pivot_veg$after_2011, paired=T)
-# p-value = 0.0702
 
 ### all sites with abrupt changes
 sub_time_series_2period_paired %>% ggplot(aes(x=period, y=NEEtrend_lm)) +
@@ -1318,23 +1312,65 @@ ggplot(data=sub_time_series_anova, aes(x=vegetation, y=NEEtrend_lm)) +
   geom_boxplot() +
   geom_jitter()
 #
-# Grasslands have positive trends. 
+```
+
+```{r analyzing GPP/ER trends in two different periods, fig.width=5, fig.height=5}
 #
-# Next step is to calculate overall trend, considering spatial structure and vegetation class [try the new package or Rstan]. 
-# I need to spend some time on this. 
-# Bayesian method to calcualte this value. 
+icol <- 11      # 8: GPP; 11: ER; 13: NEE.
+# add periods to sub time series; use 2011 as a threshold. 
+sub_time_series_2period <- data.frame()
+threshold_split_year <- 2011
+for (i in 1:nrow(sub_time_series)) {
+  #
+  if (sub_time_series$year_end[i] <= threshold_split_year+3) {
+    sub_time_series_2period <- rbind(sub_time_series_2period, 
+                                     data.frame(sub_time_series[i,c(1:3, icol)], period="before_2011"))
+  } else if (sub_time_series$year_start[i] >= threshold_split_year-3) {
+    sub_time_series_2period <- rbind(sub_time_series_2period, 
+                                     data.frame(sub_time_series[i,c(1:3, icol)], period="after_2011"))
+  } else {
+    if (sub_time_series$year_end[i] + sub_time_series$year_start[i] < threshold_split_year * 2) {
+      sub_time_series_2period <- rbind(sub_time_series_2period, 
+                                     data.frame(sub_time_series[i,c(1:3, icol)], period="before_2011"))
+    } else {
+      sub_time_series_2period <- rbind(sub_time_series_2period, 
+                                     data.frame(sub_time_series[i,c(1:3, icol)], period="after_2011"))
+    }
+  }
+}
+#
+sub_time_series_2period$period <- factor(sub_time_series_2period$period, levels=c("before_2011", "after_2011"))
+ggplot(sub_time_series_2period, aes(x=period, y=ERtrend_lm)) +
+  geom_jitter() +
+  geom_boxplot() +
+  labs(y= 'ER trend')
+summary(aov(data=sub_time_series_2period, ERtrend_lm ~ period))
 
-# US-KS2 was removed because of shorter time series after removing some years. 
 
+# for long-term sites with abrupt changes
+sub_time_series_2period_paired <- sub_time_series_2period %>% filter(site_ID %in% unique(abrupt_change$site_ID))
+#
 
-# what if the site with detected trend change?
+sub_time_series_2period_paired_pivot <- sub_time_series_2period_paired %>% dplyr::select(c(-year_start, -year_end)) %>% pivot_wider(names_from = period, values_from = ERtrend_lm) %>% filter(!is.na(before_2011) & !is.na(after_2011)) %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by="site_ID")
+###
+#
+t.test(sub_time_series_2period_paired_pivot$before_2011, sub_time_series_2period_paired_pivot$after_2011, paired=T)
+# t = -0.86292, df = 22, p-value = 0.3975; mean difference: -0.04098383; 
+boxplot(sub_time_series_2period_paired_pivot$before_2011, sub_time_series_2period_paired_pivot$after_2011, xlab='before 2011, after 2011', ylab='GPP trend')
 
-# It is better to compare NEE trends with GPP and ER trends
-
-# How about comparing this with fertilization effects from manipulative experiments?
-
+### focusing on cold climate, NEE trend increased a lot (carbon sequestration reduced). 
+sub_time_series_2period_paired_pivot_climate <- sub_time_series_2period_paired_pivot %>% filter(category %in% c("wet"))
+t.test(sub_time_series_2period_paired_pivot_climate$before_2011, sub_time_series_2period_paired_pivot_climate$after_2011, paired=T)
+boxplot(sub_time_series_2period_paired_pivot_climate$before_2011, sub_time_series_2period_paired_pivot_climate$after_2011, xlab='before trend change, after trend change', ylab='ER trend')
 
 ```
+
+
+
+
+
+
+
 
 
 ```{r normalize values}
