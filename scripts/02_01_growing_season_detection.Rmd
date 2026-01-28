@@ -234,7 +234,7 @@ for (i in 1:nrow(sites_long)) {
   #
   #
   ####read in daily data
-  a_DD$TIMESTAMP <- as.Date(as.character(a_DD$TIMESTAMP), format = "%Y%m%d")
+  a_DD$TIMESTAMP <- ymd(a_DD$TIMESTAMP)
   # remove bad years
   if (!site_ID %in% c('ZA-Kru')) {
     # do not remove years if the site is CL-SDF because southern hemisphere sites have growing seasons cross years

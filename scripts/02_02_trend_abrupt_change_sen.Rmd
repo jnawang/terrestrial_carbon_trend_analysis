@@ -123,7 +123,14 @@ p1 <- ggplot() +
 # number of sites for each climate category
 sites_long %>% group_by(category) %>% summarise(nSites=n())
 # 
-tmp <- a_YY_all %>% group_by(site_ID) %>% summarise(nYears=n()) 
+tmp <- a_YY_all %>% group_by(site_ID) %>% 
+  summarise(nYears=n(), yearStart=min(TIMESTAMP, na.rm=T), yearEnd=max(TIMESTAMP, na.rm=T))
+tmp <- tmp %>% mutate(nspan = yearEnd - yearStart + 1) %>% 
+  left_join(sites_long[, c("site_ID", "category", "IGBP")], by = 'site_ID') 
+
+
+# 94/158 = 60% sites have been measured for >= 15 years
+# 48 / 158 = 30% sites have been measured for >= 20 years: 32 in cold climate, 7 in dry climate, and 9 in wet climate
 
 # only 25 sites with > 18 year data; only 21 sites with > 19 year data. 
 tmp %>%  # filter(nYears > 26) %>%
@@ -251,9 +258,8 @@ for (iwindow in year_start:(year_end - window_size + 1)) {
     summarise(nyear = max(TIMESTAMP) - min(TIMESTAMP) + 1) %>% 
     filter(nyear >= min(window_size - 2, 10)) %>% pull(site_ID) 
   
-  if (length(site_ID_selected) <= 5 | iwindow < 1995) {
-    next
-  }
+  if (length(site_ID_selected) <= 5 | iwindow < 1995) next
+  
   subdata <- subdata %>% filter(site_ID %in% site_ID_selected)
   
   #### GPP trends first
@@ -573,15 +579,11 @@ ggplot(aes(x=GPPtrend, y=ERtrend)) +
   theme_classic()
 
 # For the cold climate: indeed, the slope is increasing from 0.77, 0.81, 0.84; yes, it is.
-
-
-
-  
   
 ```
 
 
-```{r calculate abrupt changes of NEE, fig.width=15, fig.height=10}
+```{r calculate abrupt changes of NEE, fig.width=9, fig.height=6}
 # it takes 10-15 mins! 
 # Note that, different running may have different results about whether selecting DE-Hai. because this is a Bayesian method. 
 # How many abrupt changes do we have in NEE time series?
@@ -609,8 +611,12 @@ for (i in 1:nrow(sites_long)) {
   a_DD[a_DD==-9999] <- NA
   a_YY[a_YY==-9999] <- NA
   #
-  a_DD$TIMESTAMP <- as.Date(as.character(a_DD$TIMESTAMP), "%Y%m%d")
-  if (nrow(a_YY) < 15) next
+  # a_DD$TIMESTAMP <- as.Date(as.character(a_DD$TIMESTAMP), "%Y%m%d")
+  a_DD$TIMESTAMP <- ymd(a_DD$TIMESTAMP)
+  if (sum(!is.na(a_YY$NEE_VUT_REF)) < 15) {
+    trend_result$cpPr[[i]] <- NA
+    next
+  }  
   #
   # do I need to remove some years for this site
   # if (Site.ID %in% rm_years$Site.ID) {
@@ -683,6 +689,14 @@ for (id in index0) {
   #
 }
 
+if (!"category" %in% names(abrupt_change)) {
+  abrupt_change <- abrupt_change %>% left_join(tmp[, -c(2:4)], by = "site_ID")
+}
+
+hist(abrupt_change$cpAbruptChange[abrupt_change$category == 'cold'])
+hist(abrupt_change$cpAbruptChange[abrupt_change$category == 'wet'])
+hist(abrupt_change$cpAbruptChange[abrupt_change$category == 'dry'])
+
 # # sometimes "US-Cbo" is broken up ~2013 which is too close to end year; use another break point 2008, close to midpoint 
 # abrupt_change$cpAbruptChange[abrupt_change$site_ID == "CA-Cbo"] <- 2008
 # 
@@ -727,7 +741,6 @@ for (id in index0) {
 #
 write.csv(abrupt_change, file.path('data', 'abrupt_change_years.csv'), row.names = F)
 
-hist(abrupt_change$cpAbruptChange)
 
 ```
 
