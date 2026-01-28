@@ -149,7 +149,6 @@ library(librarian)
 shelf(lme4, ggplot2, tidyverse, lmerTest)
 
 # read files
-getwd()
 sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
 a_YY_all <- read.csv(file.path("data", "a_YY_all.csv"))
 #
