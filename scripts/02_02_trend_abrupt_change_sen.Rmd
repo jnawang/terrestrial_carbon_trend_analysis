@@ -746,6 +746,8 @@ write.csv(abrupt_change, file.path('data', 'abrupt_change_years.csv'), row.names
 
 
 ```{r reorganize the time series, fig.width==8, fig.height=4}
+# It takes 1-2 min to finish the running.
+
 # a function to calculate sens slope
 cal_sens_slope <- function(x) {
   x <- x[!is.na(x)]
@@ -756,23 +758,21 @@ cal_sens_slope <- function(x) {
 # In this chunk, I want to get: all the sub-time series, start year, end year, and simple linear trend of each sub-time series
 threshold_nyear <- 7
 #
-abrupt_change <- read.csv('data/abrupt_change_years.csv')
-sites_long    <- read.csv('data/long_term_ec_sites.csv')
+abrupt_change <- read.csv(file.path('data', 'abrupt_change_years.csv'))
+sites_long    <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
 # How many sub time series do we have?
-rm_years   <- read.csv('data/years_to_remove.csv')
+rm_years   <- read.csv(file.path('data', 'years_to_remove.csv'))
 #
 # a data frame about sub time series
 sub_time_series <- data.frame(site_ID=character(), year_start=integer(), year_end=integer(), 
                               NEE=double(), NEEtrend_lm=double(), NEEp=double(), 
                               GPP=double(), GPPtrend_lm=double(), GPPp=double(), 
-                              ER=double(), ERtrend_lm=double(), ERp=double(), NEEtrend_unit=double())   # NEEtrend_unit is not normalized. 
+                              ER=double(), ERtrend_lm=double(), ERp=double(), NEEtrend_unit=double())   # NEEtrend_unit, GPPtrend_lm and ERtrend_lm are not normalized. 
 #
 data_NEE_trend <- data.frame(NEE=double(), year=integer(), site_ID=character(), IGBP=character(), subts_ID=integer())
 #
-files.unzip.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_FLUXNET", "unzip"), full.names = T)
-files.unzip.Europ2020 <- list.files(file.path(dir_rawdata, "FLUXNET2020", "unzip"), full.names = T)
-files.unzip.Europ2023 <- list.files(file.path(dir_rawdata, "ICOS_FLUXNET", "unzip_connect2020"), full.names = T)
-files.Ameri.ReddyProcGapFill <- list.files(file.path(dir_rawdata, "Ameriflux_BASE", "ReddyProcGapFill"), full.names=T)
+source(file.path("scripts", "00_functions.R"))
+df_file_structure <- get_rawflux_file_structure(dir_rawdata)
 #
 # set NA option for linear regression
 options(na.action = na.omit)
@@ -783,15 +783,9 @@ for (i in 1:nrow(sites_long)) {
   print(i)
   site_ID <- sites_long$site_ID[i]
   print(site_ID)
-  if (sites_long$source[i] == "AmeriFlux_FLUXNET") {
-    a_YY <- read.csv(files.unzip.Ameri[grepl(pattern=paste0(site_ID, "_FLUXNET_FULLSET_YY"), files.unzip.Ameri)])
-  } else if (sites_long$source[i] == "EuropFlux_FLUXNET2020") {
-    a_YY <- read.csv(files.unzip.Europ2020[grepl(pattern=paste0(site_ID, "_FLUXNET2015_FULLSET_YY"), files.unzip.Europ2020)])
-  } else if (sites_long$source[i] == "EuropFlux_FLUXNET2023") {
-    a_YY <- read.csv(files.unzip.Europ2023[grepl(pattern=paste0(site_ID, "_FLUXNET_YY"), files.unzip.Europ2023)])
-  } else if (sites_long$source[i] == "AmeriFlux_BASE") {
-    a_YY <- read.csv(files.Ameri.ReddyProcGapFill[grepl(pattern=paste0(site_ID, "_EDDYPROC_FULLSET_YY"), files.Ameri.ReddyProcGapFill)])
-  }
+  folder <- unlist(df_file_structure$folders[df_file_structure$sources == sites_long$source[i]])
+  YYfile <- df_file_structure$YYfiles[df_file_structure$sources == sites_long$source[i]]
+  a_YY <- read.csv(folder[grepl(pattern=paste0(site_ID, YYfile), folder)])
   a_YY[a_YY==-9999] <- NA
   #
   a_YY_good <- a_YY %>% filter(!TIMESTAMP %in% rm_years$years[rm_years$site_ID==site_ID])
@@ -822,7 +816,7 @@ for (i in 1:nrow(sites_long)) {
         #
         # use daytime GPP and ER when it is available, otherwise use other time series
         # remove GPP and ER outliers; 
-        if (sum(!is.na(a_YY_sub$GPP_DT_VUT_REF)) >= 5 & !site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae", "US-Oho", "DE-RuW", "US-Uaf")) {
+        if (sum(!is.na(a_YY_sub$GPP_DT_VUT_REF)) >= 5 & sites_long$NEEpartition[i]=='DT') {
           a_YY_sub$GPP_DT_VUT_REF[a_YY_sub$GPP_DT_VUT_REF < 0] <- NA
           a_YY_sub$RECO_DT_VUT_REF[a_YY_sub$RECO_DT_VUT_REF < 0] <- NA
           sub_time_series[isub_ts, "GPP"] <- mean(a_YY_sub$GPP_DT_VUT_REF, na.rm=T)
@@ -833,8 +827,8 @@ for (i in 1:nrow(sites_long)) {
             # summary(lm(data=a_YY_sub, scale(RECO_DT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
           
           # # Correct GPP and ER slope to use the same standarization with NEE, in order to compare with NEE slope on 7/5/2025
-          sub_time_series[isub_ts, "GPPtrend_lm"] <- sub_time_series[isub_ts, "GPPtrend_lm"] * sd(a_YY_sub$GPP_DT_VUT_REF, na.rm=T) #/ sd(a_YY_sub$NEE_VUT_REF, na.rm=T)
-          sub_time_series[isub_ts, "ERtrend_lm"] <- sub_time_series[isub_ts, "ERtrend_lm"] * sd(a_YY_sub$RECO_DT_VUT_REF, na.rm=T) #/ sd(a_YY_sub$NEE_VUT_REF, na.rm=T)
+          sub_time_series[isub_ts, "GPPtrend_lm"] <- sub_time_series[isub_ts, "GPPtrend_lm"] * sd(a_YY_sub$GPP_DT_VUT_REF, na.rm=T) 
+          sub_time_series[isub_ts, "ERtrend_lm"] <- sub_time_series[isub_ts, "ERtrend_lm"] * sd(a_YY_sub$RECO_DT_VUT_REF, na.rm=T) 
           
           #
           # check trend outliers
@@ -856,8 +850,8 @@ for (i in 1:nrow(sites_long)) {
               # summary(lm(data=a_YY_sub, scale(RECO_NT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
             
             # Correct GPP and ER slope to use the same standarization with NEE, in order to compare with NEE slope on 7/5/2025
-            sub_time_series[isub_ts, "GPPtrend_lm"] <- sub_time_series[isub_ts, "GPPtrend_lm"] * sd(a_YY_sub$GPP_NT_VUT_REF, na.rm=T) #/ sd(a_YY_sub$NEE_VUT_REF, na.rm=T)
-            sub_time_series[isub_ts, "ERtrend_lm"] <- sub_time_series[isub_ts, "ERtrend_lm"] * sd(a_YY_sub$RECO_NT_VUT_REF, na.rm=T) #/ sd(a_YY_sub$NEE_VUT_REF, na.rm=T)
+            sub_time_series[isub_ts, "GPPtrend_lm"] <- sub_time_series[isub_ts, "GPPtrend_lm"] * sd(a_YY_sub$GPP_NT_VUT_REF, na.rm=T) 
+            sub_time_series[isub_ts, "ERtrend_lm"] <- sub_time_series[isub_ts, "ERtrend_lm"] * sd(a_YY_sub$RECO_NT_VUT_REF, na.rm=T) 
 
             #
             if (abs(sub_time_series[isub_ts, "GPPtrend_lm"]) > 0.25 | abs(sub_time_series[isub_ts, "ERtrend_lm"]) > 0.25) {
@@ -892,7 +886,7 @@ for (i in 1:nrow(sites_long)) {
     sub_time_series[isub_ts, "NEEtrend_unit"] <- sub_time_series[isub_ts, "NEEtrend_lm"] * sd(a_YY_sub$NEE_VUT_REF, na.rm=T)
     #
     # use daytime GPP and ER when it is available, otherwise use other time series
-    if (sum(!is.na(a_YY_sub$GPP_DT_VUT_REF)) >= 5 & !site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-Kon", "US-MOz", "CH-Lae", "US-NC4")) {
+    if (sum(!is.na(a_YY_sub$GPP_DT_VUT_REF)) >= 5 & sites_long$NEEpartition[i]=='DT') {
       a_YY_sub$GPP_DT_VUT_REF[a_YY_sub$GPP_DT_VUT_REF < 0] <- NA
       a_YY_sub$RECO_DT_VUT_REF[a_YY_sub$RECO_DT_VUT_REF < 0] <- NA 
       sub_time_series[isub_ts, "GPP"] <- mean(a_YY_sub$GPP_DT_VUT_REF, na.rm=T)
@@ -924,8 +918,8 @@ for (i in 1:nrow(sites_long)) {
           # summary(lm(data=a_YY_sub, scale(RECO_NT_VUT_REF) ~ year_center))$coefficients[2, c(1,4)]
         
         # # Correct GPP and ER slope to use the same standarization with NEE, in order to compare with NEE slope on 7/5/2025
-        sub_time_series[isub_ts, "GPPtrend_lm"] <- sub_time_series[isub_ts, "GPPtrend_lm"] * sd(a_YY_sub$GPP_NT_VUT_REF, na.rm=T) #/ sd(a_YY_sub$NEE_VUT_REF, na.rm=T)
-        sub_time_series[isub_ts, "ERtrend_lm"] <- sub_time_series[isub_ts, "ERtrend_lm"] * sd(a_YY_sub$RECO_NT_VUT_REF, na.rm=T) #/ sd(a_YY_sub$NEE_VUT_REF, na.rm=T)
+        sub_time_series[isub_ts, "GPPtrend_lm"] <- sub_time_series[isub_ts, "GPPtrend_lm"] * sd(a_YY_sub$GPP_NT_VUT_REF, na.rm=T) 
+        sub_time_series[isub_ts, "ERtrend_lm"] <- sub_time_series[isub_ts, "ERtrend_lm"] * sd(a_YY_sub$RECO_NT_VUT_REF, na.rm=T) 
           
         #
         if (abs(sub_time_series[isub_ts, "GPPtrend_lm"]) > 0.25 | abs(sub_time_series[isub_ts, "ERtrend_lm"]) > 0.25) {
