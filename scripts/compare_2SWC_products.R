@@ -6,6 +6,7 @@ rm(list=ls())
 # change this location where the raw data will be saved accordingly
 # dir_rawdata <- '/Users/jw2946/Documents/stability_project/SiteData/'
 dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
+
 #
 library(librarian)
 shelf(tidyverse, cowplot, ggpubr, trend)
@@ -42,7 +43,13 @@ source(file.path("scripts", "00_functions.R"))
 df_file_structure <- get_rawflux_file_structure(dir_rawdata)
 
 # read analyzed SWC
-SWC_ERA5 <- read.csv(file.path('/Volumes/MaloneLab/Research/Stability_Project', 'Thermal_Acclimation', "ERA5_daily_swc_1990_2024_allsites.csv"))
+# SWC_ERA5 <- read.csv(file.path('/Volumes/MaloneLab/Research/Stability_Project', 'Thermal_Acclimation', "ERA5_daily_swc_1990_2024_allsites.csv"))
+
+# terra soil water data
+SWC_ERA5 <- read.csv(file.path('/Volumes/MaloneLab/Research/Stability_Project', 'SiteData', "terra_SWC_allsites.csv"))
+names(SWC_ERA5) <- c("date", "SWC", "name")
+
+#
 SWC_ERA5$date <- ymd(SWC_ERA5$date)
 SWC_ERA5$year <- year(SWC_ERA5$date) 
 sites_SWC_ERA5 <- unique(SWC_ERA5$name)
