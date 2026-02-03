@@ -169,7 +169,7 @@ SWC_trend %>%
   theme_classic() #
 
 #  we have 95 site or this comparison
-# some sites, their modeled SWC IS missing. 
+# one site IT-Noe, their modeled SWC IS missing, we will use measured data. 
 SWC <- SWC_ERA5 %>% group_by(name)  %>% summarise(SWC = mean(SWC, na.rm = T))
  
 

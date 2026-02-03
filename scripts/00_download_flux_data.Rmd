@@ -80,16 +80,17 @@ for (i in 1:length(files)) {
 
 
 ```{r check data quality of FLUXNET dataset}
-# This chunk is used to check data quality of all the data sets by plotting key variables.
+# This chunk is used to check data quality of all data sets by plotting key variables.
 # 
 source(file.path("scripts", "00_functions.R"))
 df_file_structure <- get_rawflux_file_structure(dir_rawdata)
 #
-sites_long <- read.csv('data/long_term_ec_sites.csv')
+sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
 
 rm_years   <- read.csv(file.path('data', 'years_to_remove.csv'))
 #
-for (i in 1:nrow(sites_long)) {
+# for (i in 1:nrow(sites_long)) {
+for (i in 1:10) {
   # i = 103
   site_ID <- sites_long$site_ID[i]
   print(site_ID)
@@ -106,15 +107,15 @@ for (i in 1:nrow(sites_long)) {
   a_DD[a_DD==-9999] <- NA
   a_YY[a_YY==-9999] <- NA
   #
-  a_DD$TIMESTAMP <- as.Date(as.character(a_DD$TIMESTAMP), "%Y%m%d")
+  a_DD$TIMESTAMP <- ymd(a_DD$TIMESTAMP)
   a_DD$DOY       <- yday(a_DD$TIMESTAMP)
+  a_DD$YEAR      <- year(a_DD$TIMESTAMP)
   a_HH$TIMESTAMP <- ymd_hm(a_HH$TIMESTAMP_START) + (ymd_hm(a_HH$TIMESTAMP_END) - ymd_hm(a_HH$TIMESTAMP_START)) / 2.0
   # "NEE_VUT_REF": CONVERT -9999 to NA values
   #
   # remove bad years
   a_YY <- a_YY %>% filter(!TIMESTAMP %in% rm_years$years[rm_years$site_ID==site_ID])
-  
-  
+  a_DD <- a_DD %>% filter(!YEAR %in% rm_years$years[rm_years$site_ID==site_ID])
   #
   par(mfrow = c(2, 4))
 #  par(mar=c(3, 3, 3, 3))
