@@ -1,5 +1,7 @@
 # A function to compare two SWC products (measured vs modelled)
 # 1/28/2026, Junna Wang
+
+# important: SWC_ERA5 does not include data from IT-Noe. 
 rm(list=ls())
 
 # change this location where the raw data will be saved accordingly
@@ -59,7 +61,7 @@ sites_SWC_ERA5 <- unique(SWC_ERA5$name)
 sites_SWC_remove <- c("RU-Fyo", "DE-Obe", "CZ-Stn", "SE-Htm", "SE-Deg", "FR-Bil", "DK-Sor",
                       "CZ-wet", "CZ-BK1", "CH-Dav", "BE-Vie", "BE-Dor", "US-Wkg", "BE-Bra", 
                       "US-Syv", "US-Ro4", "US-Ho1", "US-Esm", "US-EML", "US-BZS", "FR-FBn",
-                      "IL-Yat", "IT-Ren", "FR-Fon", "IT-SRo", "IT-Ro2")
+                      "IL-Yat", "IT-Ren", "FR-Fon", "IT-SRo", "IT-Ro2", "IT-Noe", "NL-Loo")
 txt <- "
 site_ID, goodyear_start, goodyear_end
 ES_LJu, 2007, 2025
@@ -79,11 +81,10 @@ AU-Stp, 2009, 2016
 AU-Cow, 2012, 2025
 JP-Tef, 2006, 2021
 JP-Ta2, 2007, 2016
-
 "
 sites_SWC_trunck <- read.csv(text = txt)
 
-for (i in 1:nrow(sites_long)) {
+for (i in nrow(sites_long)) {
   # if (! sites_long$source[i] %in% c('FLUXNET2020', 'AmeriFlux_FLUXNET', 'FLUXNET2020_ICOS')) next
   # i = 15
   site_ID <- sites_long$site_ID[i]
@@ -115,9 +116,9 @@ for (i in 1:nrow(sites_long)) {
   
   if ("SWC_F_MDS_1" %in% names(a_DD_good) & sum(!is.na(a_YY_good$SWC_F_MDS_1)) > 5) {
     # the unit of SWC is inconsistent; make them consistent
-    if (mean(a_YY$SWC_F_MDS_1, na.rm=T) < 1) {
-      a_DD$SWC_F_MDS_1 <- a_DD$SWC_F_MDS_1 * 100
-      a_YY$SWC_F_MDS_1 <- a_YY$SWC_F_MDS_1* 100   
+    if (mean(a_YY_good$SWC_F_MDS_1, na.rm=T) < 1) {
+      a_DD_good$SWC_F_MDS_1 <- a_DD_good$SWC_F_MDS_1 * 100
+      a_YY_good$SWC_F_MDS_1 <- a_YY_good$SWC_F_MDS_1* 100   
     }
     #
     print("SWC_F_MDS_1")
@@ -154,18 +155,25 @@ for (i in 1:nrow(sites_long)) {
 
 # the last thing is to ask models to obtain more results. 
 SWC_trend %>% 
-  # filter(abs(trend_obsv) < 0.004) %>%
-  ggplot(aes(x=trend_obsv, y=trend_mold)) + 
-  # ggplot(aes(x=trend_obsv_Y, y=trend_mold_Y)) + 
-  # ggplot(aes(x=trend_obsv_Y_scale, y=trend_mold_Y_scale)) +   
-  # ggplot(aes(x=trend_obsv_scale, y=trend_mold_scale)) +  # trend_mold
+  filter(abs(trend_obsv) < 0.005) %>%
+  # ggplot(aes(x=trend_obsv, y=trend_mold)) +
+  # ggplot(aes(x=trend_obsv_Y, y=trend_mold_Y)) +
+  # ggplot(aes(x=trend_obsv_Y_scale, y=trend_mold_Y_scale)) +
+  ggplot(aes(x=trend_obsv_scale, y=trend_mold_scale)) +  # trend_mold
   geom_point() +
   geom_smooth(method = 'lm') +
   stat_cor() +
   # stat_regline_equation(
   #   aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~"))
   # ) +
-  theme_classic()
+  theme_classic() #
+
+#  we have 95 site or this comparison
+# some sites, their modeled SWC IS missing. 
+SWC <- SWC_ERA5 %>% group_by(name)  %>% summarise(SWC = mean(SWC, na.rm = T))
+ 
+
+
 
 
 
