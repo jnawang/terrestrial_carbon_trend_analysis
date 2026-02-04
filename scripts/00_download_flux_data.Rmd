@@ -81,7 +81,10 @@ for (i in 1:length(files)) {
 
 ```{r check data quality of FLUXNET dataset}
 # This chunk is used to check data quality of all data sets by plotting key variables.
-# 
+#
+library(librarian)
+shelf(ggplot2, dplyr, tidyr, data.table, lubridate)
+#
 source(file.path("scripts", "00_functions.R"))
 df_file_structure <- get_rawflux_file_structure(dir_rawdata)
 #
@@ -90,7 +93,7 @@ sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
 rm_years   <- read.csv(file.path('data', 'years_to_remove.csv'))
 #
 # for (i in 1:nrow(sites_long)) {
-for (i in 1:10) {
+for (i in 140:158) {
   # i = 103
   site_ID <- sites_long$site_ID[i]
   print(site_ID)
@@ -121,28 +124,33 @@ for (i in 1:10) {
 #  par(mar=c(3, 3, 3, 3))
   plot(a_YY$TIMESTAMP, a_YY$NEE_VUT_REF)
   #
-  plot(a_YY$TIMESTAMP, a_YY$GPP_DT_VUT_REF)
-  plot(a_YY$TIMESTAMP, a_YY$GPP_NT_VUT_REF)
-  #
-  plot(a_YY$TIMESTAMP, a_YY$RECO_DT_VUT_REF)
-  plot(a_YY$TIMESTAMP, a_YY$RECO_NT_VUT_REF)
+  if (sites_long$NEEpartition[i] == 'DT') {
+    plot(a_YY$TIMESTAMP, a_YY$GPP_DT_VUT_REF)
+    plot(a_YY$TIMESTAMP, a_YY$RECO_DT_VUT_REF)
+  } else {
+    plot(a_YY$TIMESTAMP, a_YY$GPP_NT_VUT_REF)
+    plot(a_YY$TIMESTAMP, a_YY$RECO_NT_VUT_REF)
+  }
   #
   plot(a_YY$TIMESTAMP, a_YY$TA_F_MDS)
   plot(a_YY$TIMESTAMP, a_YY$VPD_F_MDS)
-  # plot(a_YY$TIMESTAMP, a_YY$P_F)
-  plot(a_YY$TIMESTAMP, a_YY$CO2_F_MDS)
+  plot(a_YY$TIMESTAMP, a_YY$SW_IN_F_MDS)
+  plot(a_YY$TIMESTAMP, a_YY$P_F)
+  plot(a_YY$TIMESTAMP, a_YY$CO2_F_MDS, main = site_ID)
   #
   par(mfrow = c(2, 1))
   if (sites_long$NEEpartition[i] == 'DT') {
-    plot(a_DD$TIMESTAMP, a_DD$GPP_DT_VUT_REF, ylab='GPP_DT')
+    plot(a_DD$TIMESTAMP, a_DD$GPP_DT_VUT_REF, ylab='GPP_DT', main = site_ID)
   } else {
-    plot(a_DD$TIMESTAMP, a_DD$GPP_NT_VUT_REF, ylab='GPP_NT')
+    plot(a_DD$TIMESTAMP, a_DD$GPP_NT_VUT_REF, ylab='GPP_NT', main = site_ID)
   }
   #
-  plot(a_DD$TIMESTAMP, a_DD$NEE_VUT_REF, ylab='NEE')
-  plot(a_DD$TIMESTAMP, a_DD$CO2_F_MDS, ylab='NEE')
+  plot(a_DD$TIMESTAMP, a_DD$NEE_VUT_REF, ylab='NEE', main = site_ID)
+  
+  par(mfrow = c(1, 1))
+  plot(a_DD$TIMESTAMP, a_DD$CO2_F_MDS, ylab='CO2 (ppm)', main = site_ID)
   # 
-  plot(ymd_hm(a_HH$TIMESTAMP_START[a_HH$NEE_VUT_REF_QC==0]), a_HH$NEE_CUT_REF[a_HH$NEE_VUT_REF_QC==0], ylab='NEE_obsv')
+  # plot(ymd_hm(a_HH$TIMESTAMP_START[a_HH$NEE_VUT_REF_QC==0]), a_HH$NEE_CUT_REF[a_HH$NEE_VUT_REF_QC==0], ylab='NEE_obsv')
   #
   #### Seasonal patterns; I think I will have one growing season, each year;
   # data.season <- a_DD %>% group_by(DOY) %>% summarise(NEE=mean(NEE_VUT_REF, na.rm=T), NEE_DT=mean(NEE_VUT_REF_DAY, na.rm=T), NEE_NT=mean(NEE_CUT_REF_NIGHT, na.rm=T),
@@ -155,22 +163,22 @@ for (i in 1:10) {
   # }
   #
   #### the length of growing season: 20% of 0.975 of GPP.
-  quantile(a_DD$GPP_NT_VUT_REF, c(0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.975), na.rm=T)
-  quantile(a_DD$GPP_DT_VUT_REF, c(0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.975), na.rm=T)
+  # quantile(a_DD$GPP_NT_VUT_REF, c(0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.975), na.rm=T)
+  # quantile(a_DD$GPP_DT_VUT_REF, c(0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.975), na.rm=T)
   #
   #### for each year, the percentage of time when data is interpolated. 
   f.data.measured <- a_HH %>% group_by(year(TIMESTAMP)) %>% summarise(f=sum(NEE_VUT_REF_QC==0) / n(), name=site_ID)
   print(f.data.measured)
   #
-  tmp <- f.data.measured %>% filter(f > 0.1 & !is.na(f))
-  minf <- mean(tmp$f) * 0.45
+  # tmp <- f.data.measured %>% filter(f > 0.1 & !is.na(f))
+  # minf <- mean(tmp$f) * 0.45
   # a year should have at least > 45 % of mean observed data; 
-  tmp <- f.data.measured$`year(TIMESTAMP)`[is.na(f.data.measured$f) | f.data.measured$f < minf]
-  print(tmp)
-  #
-  if (length(tmp) > 0) {
-    rm_years <- rbind(rm_years, data.frame(Site.ID=site_ID, years=tmp))
-  }
+  # tmp <- f.data.measured$`year(TIMESTAMP)`[is.na(f.data.measured$f) | f.data.measured$f < minf]
+  # print(tmp)
+  # #
+  # if (length(tmp) > 0) {
+  #   rm_years <- rbind(rm_years, data.frame(Site.ID=site_ID, years=tmp))
+  # }
 }
 
 ```
