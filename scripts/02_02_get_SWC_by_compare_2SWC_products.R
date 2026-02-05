@@ -47,8 +47,8 @@ source(file.path("scripts", "00_functions.R"))
 df_file_structure <- get_rawflux_file_structure(dir_rawdata)
 
 # read analyzed SWC
-# SWC_ERA5 <- read.csv(file.path(dir_rawdata, "ERA5L_daily_SWC_trend_sites_1990_2025.csv"))
-SWC_ERA5 <- read.csv(file.path("/Users/junnawang/Downloads", "ERA5L_daily_SWC_trend_sites_1990_2025.csv"))
+SWC_ERA5 <- read.csv(file.path(dir_rawdata, "ERA5L_daily_SWC_trend_sites_1990_2025.csv"))
+# SWC_ERA5 <- read.csv(file.path("/Users/junnawang/Downloads", "ERA5L_daily_SWC_trend_sites_1990_2025.csv"))
 names(SWC_ERA5)[3] <- 'SWC'
 
 # terra soil water data
@@ -88,7 +88,7 @@ sites_SWC_trunck <- read.csv(text = txt)
 
 for (i in nrow(sites_long)) {
   # if (! sites_long$source[i] %in% c('FLUXNET2020', 'AmeriFlux_FLUXNET', 'FLUXNET2020_ICOS')) next
-  # i = 15
+  i = 114
   site_ID <- sites_long$site_ID[i]
   if (!site_ID %in% sites_SWC_ERA5) next
   
@@ -107,7 +107,6 @@ for (i in nrow(sites_long)) {
     a_DD$SWC_F_MDS_1 <- a_DD$SWC_F_MDS
     a_YY$SWC_F_MDS_1 <- a_YY$SWC_F_MDS
   }
-
   #
   a_DD <- a_DD %>% mutate(TIMESTAMP = ymd(a_DD$TIMESTAMP), YEAR = year(TIMESTAMP))
   a_DD_good <- a_DD %>% filter(!YEAR %in% rm_years$years[rm_years$site_ID==site_ID])
@@ -126,6 +125,9 @@ for (i in nrow(sites_long)) {
     #
     print("SWC_F_MDS_1")
     plot(a_DD_good$TIMESTAMP, a_DD_good$SWC_F_MDS_1, main = site_ID)
+    if (site_ID == "IT-Noe") {
+      df = data.frame(name = site_ID, date = a_DD_good$TIMESTAMP, SWC = a_DD_good$SWC_F_MDS_1)
+    }
     #
     if (site_ID %in% sites_SWC_remove) {
       measured_SWC_availabe <- FALSE
@@ -157,9 +159,6 @@ for (i in nrow(sites_long)) {
   SWC_trend[i, 16:17] <- cal_sens_slope(SWC_ERA5_site_Y$SWC * 100)
   SWC_trend[i, 18:19] <- cal_sens_slope_scale(SWC_ERA5_site_Y$SWC * 100)
   
-  if (site_ID == "IT-Noe") {
-    df = data.frame(name = site_ID, date = a_DD_good$TIMESTAMP, SWC = a_DD_good$SWC_F_MDS_1)
-  }
 }
 
 # the last thing is to ask models to obtain more results. 
