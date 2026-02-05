@@ -315,6 +315,10 @@ ggplot(data = ERtrend, aes(x=year_mid, y = Tlmer)) +
   theme_classic()
 
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 1f3951a (check autocorrelation)
 ```
 
 

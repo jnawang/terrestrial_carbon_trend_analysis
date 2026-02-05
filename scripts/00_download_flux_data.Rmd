@@ -94,7 +94,7 @@ rm_years   <- read.csv(file.path('data', 'years_to_remove.csv'))
 #
 # for (i in 1:nrow(sites_long)) {
 for (i in 140:158) {
-  # i = 103
+  i = 81
   site_ID <- sites_long$site_ID[i]
   print(site_ID)
   # AmeriFlux and European flux; Do I need to differentiate them? Hopefully they use the same notation

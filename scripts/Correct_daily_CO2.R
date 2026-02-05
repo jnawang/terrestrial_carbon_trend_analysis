@@ -10,7 +10,8 @@ dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 
 #
 library(librarian)
-shelf(ggplot2, dplyr, tidyr, cowplot, ggpubr, trend, amerifluxr)
+
+shelf(ggplot2, dplyr, tidyr, cowplot, ggpubr, trend, amerifluxr, lme4)
 
 ######-------------------------------------------------------------------------------
 # Look at globally CO2 dataset first. 
@@ -59,16 +60,20 @@ if (!'category' %in% names(a_YY_all)) {
   a_YY_all <- a_YY_all %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by = "site_ID")
 }
 
+a_YY_all_decade <- a_YY_all %>% filter(between(TIMESTAMP,1990, 2000))
+summary(lmer(data = a_YY_all_decade, CO2_F_MDS ~ TIMESTAMP + (1 | site_ID)))
+
 a_YY_all %>% # filter(site_ID %in% c("BE-Vie", "CH-Dav", "DE-Tha", "FI-Hyy", "US-Ha1")) %>% 
   ggplot(aes(x=TIMESTAMP, y=CO2_F_MDS, color=site_ID)) +
   geom_point() +
   geom_line() +
   labs(x='Year', y='CO2 concentration (ppm)') + 
+  theme_classic() + 
   theme(legend.position = "none")
 
 
 a_YY_all %>% # filter(site_ID %in% c("BE-Vie", "CH-Dav", "DE-Tha", "FI-Hyy", "US-Ha1")) %>% 
-  ggplot(aes(x=TIMESTAMP, y=CO2_F_MDS, color=category)) +
+  ggplot(aes(x=TIMESTAMP, y=CO2_F_MDS)) +
   geom_point() +
   geom_line() +
   labs(x='Year', y='CO2 concentration (ppm)') + 
