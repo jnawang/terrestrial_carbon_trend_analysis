@@ -147,8 +147,22 @@ for (i in 140:158) {
   #
   plot(a_DD$TIMESTAMP, a_DD$NEE_VUT_REF, ylab='NEE', main = site_ID)
   
-  par(mfrow = c(1, 1))
-  plot(a_DD$TIMESTAMP, a_DD$CO2_F_MDS, ylab='CO2 (ppm)', main = site_ID)
+  # par(mfrow = c(1, 1))
+  # plot(a_DD$TIMESTAMP, a_DD$CO2_F_MDS, ylab='CO2 (ppm)', main = site_ID)
+  # use ggplot to save CO2 data at all sites
+  p1 <- ggplot(data = a_DD, aes(x = TIMESTAMP, y = CO2_F_MDS)) +
+    geom_points() + 
+    labs(x = 'Time', y = 'CO2 (ppm)', title = site_ID) +
+    theme_classic()
+  p2 <- ggplot(data = a_YY, aes(x = TIMESTAMP, y = CO2_F_MDS)) +
+    geom_point() + 
+    geom_line() + 
+    labs(x = 'YEAR', y = 'CO2 (ppm)', title = site_ID) + 
+    theme_classic()  
+  plot_grid(p1, p2, nrow=1, ncol=2, align='h', rel_heights = c(0.7, 0.3))
+  ggsave(file.path("graphs", paste0('CO2-', site_ID, '.png')))
+  
+  ######
   # 
   # plot(ymd_hm(a_HH$TIMESTAMP_START[a_HH$NEE_VUT_REF_QC==0]), a_HH$NEE_CUT_REF[a_HH$NEE_VUT_REF_QC==0], ylab='NEE_obsv')
   #
