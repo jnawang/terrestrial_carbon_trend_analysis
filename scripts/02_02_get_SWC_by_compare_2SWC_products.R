@@ -86,9 +86,9 @@ JP-Ta2, 2007, 2016
 "
 sites_SWC_trunck <- read.csv(text = txt)
 
-for (i in nrow(sites_long)) {
+for (i in 1:nrow(sites_long)) {
   # if (! sites_long$source[i] %in% c('FLUXNET2020', 'AmeriFlux_FLUXNET', 'FLUXNET2020_ICOS')) next
-  i = 114
+  # i = 114
   site_ID <- sites_long$site_ID[i]
   if (!site_ID %in% sites_SWC_ERA5) next
   
@@ -120,7 +120,7 @@ for (i in nrow(sites_long)) {
     # the unit of SWC is inconsistent; make them consistent
     if (mean(a_YY_good$SWC_F_MDS_1, na.rm=T) < 1) {
       a_DD_good$SWC_F_MDS_1 <- a_DD_good$SWC_F_MDS_1 * 100
-      a_YY_good$SWC_F_MDS_1 <- a_YY_good$SWC_F_MDS_1* 100   
+      a_YY_good$SWC_F_MDS_1 <- a_YY_good$SWC_F_MDS_1 * 100
     }
     #
     print("SWC_F_MDS_1")
@@ -152,13 +152,14 @@ for (i in nrow(sites_long)) {
     SWC_trend[i, 10:11] <- cal_sens_slope_scale(a_YY_good$SWC_F_MDS_1)
   }
   # compare these sites with climate reanalysis products
-  SWC_ERA5_site <- SWC_ERA5 %>% filter(name == site_ID) %>% filter(between(year, year_start, year_end))
-  SWC_trend[i, 12:13] <- cal_sens_slope(SWC_ERA5_site$SWC * 100)
-  SWC_trend[i, 14:15] <- cal_sens_slope_scale(SWC_ERA5_site$SWC * 100)
-  SWC_ERA5_site_Y <- SWC_ERA5_site %>% group_by(year) %>% summarise(SWC = mean(SWC)) 
-  SWC_trend[i, 16:17] <- cal_sens_slope(SWC_ERA5_site_Y$SWC * 100)
-  SWC_trend[i, 18:19] <- cal_sens_slope_scale(SWC_ERA5_site_Y$SWC * 100)
-  
+  if (site_ID != 'IT-Noe') {
+    SWC_ERA5_site <- SWC_ERA5 %>% filter(name == site_ID) %>% filter(between(year, year_start, year_end))
+    SWC_trend[i, 12:13] <- cal_sens_slope(SWC_ERA5_site$SWC * 100)
+    SWC_trend[i, 14:15] <- cal_sens_slope_scale(SWC_ERA5_site$SWC * 100)
+    SWC_ERA5_site_Y <- SWC_ERA5_site %>% group_by(year) %>% summarise(SWC = mean(SWC)) 
+    SWC_trend[i, 16:17] <- cal_sens_slope(SWC_ERA5_site_Y$SWC * 100)
+    SWC_trend[i, 18:19] <- cal_sens_slope_scale(SWC_ERA5_site_Y$SWC * 100)    
+  }
 }
 
 # the last thing is to ask models to obtain more results. 
@@ -178,7 +179,7 @@ SWC_trend %>%
 
 # We have 95 sites or this comparison. 
 # One site IT-Noe, their modeled SWC is missing, we will use measured data. 
-SWC_ERA5 %>% filter(!name == "IT-Noe") %>% 
+SWC_ERA5 <- SWC_ERA5 %>% filter(!name == "IT-Noe") %>% 
   bind_rows(df)
 
 write.csv(SWC_ERA5, file.path(dir_rawdata, "ERA5L_daily_SWC_trend_sites_1990_2025_correct.csv"))
