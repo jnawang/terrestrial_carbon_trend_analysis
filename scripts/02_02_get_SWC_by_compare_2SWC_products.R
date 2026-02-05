@@ -1,4 +1,5 @@
-# A function to compare two SWC products (measured vs modelled)
+# An Rscript to compare two SWC products: field-measured vs modelled (ERA5)
+# Generate a new dataset that including data for every site
 # 1/28/2026, Junna Wang
 
 # important: SWC_ERA5 does not include data from IT-Noe. 
@@ -151,6 +152,10 @@ for (i in nrow(sites_long)) {
   SWC_ERA5_site_Y <- SWC_ERA5_site %>% group_by(year) %>% summarise(SWC = mean(SWC)) 
   SWC_trend[i, 16:17] <- cal_sens_slope(SWC_ERA5_site_Y$SWC * 100)
   SWC_trend[i, 18:19] <- cal_sens_slope_scale(SWC_ERA5_site_Y$SWC * 100)
+  
+  if (site_ID == "IT-Noe") {
+    df = data.frame(name = site_ID, date = a_DD_good$TIMESTAMP, SWC = a_DD_good$SWC_F_MDS_1)
+  }
 }
 
 # the last thing is to ask models to obtain more results. 
@@ -168,13 +173,13 @@ SWC_trend %>%
   # ) +
   theme_classic() #
 
-#  we have 95 site or this comparison
-# one site IT-Noe, their modeled SWC IS missing, we will use measured data. 
-SWC <- SWC_ERA5 %>% group_by(name)  %>% summarise(SWC = mean(SWC, na.rm = T))
- 
+# We have 95 sites or this comparison. 
+# One site IT-Noe, their modeled SWC is missing, we will use measured data. 
+SWC <- SWC_ERA5 %>% group_by(name)  %>% summarise(SWC = mean(SWC, na.rm = T), SWC_trend = cal_sens_slope(SWC))
 
 
+SWC_ERA5 %>% filter(!name == "IT-Noe") %>% 
+  bind_rows(df)
 
-
-
+write.csv(SWC_ERA5, file.path(dir_rawdata, "ERA5L_daily_SWC_trend_sites_1990_2025_correct.csv"))
 

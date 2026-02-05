@@ -315,9 +315,6 @@ ggplot(data = ERtrend, aes(x=year_mid, y = Tlmer)) +
   theme_classic()
 
 
-
-
-
 ```
 
 
@@ -579,6 +576,55 @@ ggplot(aes(x=GPPtrend, y=ERtrend)) +
 
 # For the cold climate: indeed, the slope is increasing from 0.77, 0.81, 0.84; yes, it is.
   
+```
+
+
+```{r check autocorrelation in carbon trend}
+
+# "BE-Vie", "CH-Dav", "DE-Tha", "FI-Hyy", "US-Ha1"
+CarbonTrendSite <- CarbonTrend %>% filter(site_ID == "US-Ha1") %>% arrange(year_mid)
+acf(CarbonTrendSite$NEEtrend)  # 1-2 orders of autocorrelation
+acf(CarbonTrendSite$GPPtrend)
+acf(CarbonTrendSite$ERtrend)
+
+CarbonTrendSite$NEEtrend_prev <- lag(CarbonTrendSite$NEEtrend, 1)
+CarbonTrendSite$NEEtrend_prev2 <- lag(CarbonTrendSite$NEEtrend, 2)
+CarbonTrendSite$GPPtrend_prev <- lag(CarbonTrendSite$GPPtrend, 1)
+CarbonTrendSite$ERtrend_prev <- lag(CarbonTrendSite$ERtrend, 1)
+
+summary(lm(data = CarbonTrendSite, NEEtrend ~ NEEtrend_prev))
+mod_prev <- lm(data = CarbonTrendSite, NEEtrend ~ GPPtrend + ERtrend + NEEtrend_prev )
+acf(residuals(mod_prev))
+summary(mod_prev)
+
+# summary(lm(data = CarbonTrendSite, NEEtrend ~ GPPtrend + ERtrend + NEEtrend_prev +  GPPtrend_prev + ERtrend_prev))  
+library(nlme)
+
+mod_gls <- gls(NEEtrend ~ GPPtrend + ERtrend,
+    correlation = corAR1(form = ~ year_mid), data = CarbonTrendSite)
+acf(residuals(mod_gls))
+summary(mod_gls)
+coef(mod_gls)
+
+#               Estimate Std. Error t value Pr(>|t|)    
+# (Intercept)    16.4453     6.4946   2.532   0.0298 *  
+# GPPtrend       -0.7850     0.3145  -2.496   0.0317 *  
+# ERtrend         1.4798     0.4942   2.994   0.0135 *  
+# NEEtrend_prev   1.0077     0.1591   6.335 8.51e-05 ***
+
+CarbonTrendSite$NEEtrend_d <- CarbonTrendSite$NEEtrend - CarbonTrendSite$NEEtrend_prev
+CarbonTrendSite$GPPtrend_d <- CarbonTrendSite$GPPtrend - lag(CarbonTrendSite$GPPtrend, 1)
+CarbonTrendSite$ERtrend_d <- CarbonTrendSite$ERtrend - lag(CarbonTrendSite$ERtrend, 1)
+
+summary(lm(data = CarbonTrendSite, NEEtrend_d ~ GPPtrend + ERtrend))  # + NEEtrend_prev2
+mod_diff <- lm(data = CarbonTrendSite, NEEtrend_d ~ GPPtrend_d + ERtrend_d)
+summary(mod_diff)  
+acf(residuals(mod_diff))
+
+acf(CarbonTrendSite$NEEtrend_d[2:nrow(CarbonTrendSite)])   # if we do differences, the autocorrelation disappears! 
+
+# dynlm
+
 ```
 
 

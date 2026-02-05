@@ -10,7 +10,7 @@ dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 
 #
 library(librarian)
-shelf(ggplot2, dplyr, tidyr, cowplot, ggpubr, trend)
+shelf(ggplot2, dplyr, tidyr, cowplot, ggpubr, trend, amerifluxr)
 
 ######-------------------------------------------------------------------------------
 # Look at globally CO2 dataset first. 
@@ -73,3 +73,11 @@ a_YY_all %>% # filter(site_ID %in% c("BE-Vie", "CH-Dav", "DE-Tha", "FI-Hyy", "US
   geom_line() +
   labs(x='Year', y='CO2 concentration (ppm)') + 
   theme(legend.position = "none")
+
+# Read some AmeriFlux data
+# US-Cwt: we only have abnormal CO2 concentration; suggested range ~410 – 440 ppm on average; diurnal variation (~±5–10 ppm); 
+# US-SP3: no measured data for this site, but we can use US-SP1 (2000-2020), and US-SP2 (1999-2008). 
+name_site <-     
+data_BASE <- amf_read_base('/Users/junnawang/Downloads/drive-download-20260204T075928Z-3-001/AMF_US-SP3_BASE-BADM_3-1.zip', parse_timestamp=TRUE, unzip = T)
+plot(data_BASE$TIMESTAMP, data_BASE$CO2_2)
+
