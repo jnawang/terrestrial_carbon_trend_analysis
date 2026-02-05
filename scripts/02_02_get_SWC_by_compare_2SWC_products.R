@@ -47,7 +47,8 @@ source(file.path("scripts", "00_functions.R"))
 df_file_structure <- get_rawflux_file_structure(dir_rawdata)
 
 # read analyzed SWC
-SWC_ERA5 <- read.csv(file.path(dir_rawdata, "ERA5L_daily_SWC_trend_sites_1990_2025.csv"))
+# SWC_ERA5 <- read.csv(file.path(dir_rawdata, "ERA5L_daily_SWC_trend_sites_1990_2025.csv"))
+SWC_ERA5 <- read.csv(file.path("/Users/junnawang/Downloads", "ERA5L_daily_SWC_trend_sites_1990_2025.csv"))
 names(SWC_ERA5)[3] <- 'SWC'
 
 # terra soil water data
@@ -114,6 +115,7 @@ for (i in nrow(sites_long)) {
   #
   year_start <- min(a_YY_good$TIMESTAMP)
   year_end <- max(a_YY_good$TIMESTAMP)
+  measured_SWC_availabe <- TRUE
   
   if ("SWC_F_MDS_1" %in% names(a_DD_good) & sum(!is.na(a_YY_good$SWC_F_MDS_1)) > 5) {
     # the unit of SWC is inconsistent; make them consistent
@@ -132,7 +134,7 @@ for (i in nrow(sites_long)) {
       year_end <- sites_SWC_trunck$goodyear_end[sites_SWC_trunck$site_ID == site_ID]
     }
   } else {
-    next
+    measured_SWC_availabe <- FALSE
   }
   #
   a_DD_good <- a_DD_good %>% filter(between(YEAR, year_start, year_end))
@@ -141,10 +143,12 @@ for (i in nrow(sites_long)) {
   SWC_trend[i, 1] <- site_ID
   SWC_trend[i, 2] <- min(a_DD_good$YEAR, na.rm = T)
   SWC_trend[i, 3] <- max(a_DD_good$YEAR, na.rm = T)
-  SWC_trend[i, 4:5] <- cal_sens_slope(a_DD_good$SWC_F_MDS_1)
-  SWC_trend[i, 6:7] <- cal_sens_slope_scale(a_DD_good$SWC_F_MDS_1)
-  SWC_trend[i, 8:9] <- cal_sens_slope(a_YY_good$SWC_F_MDS_1)
-  SWC_trend[i, 10:11] <- cal_sens_slope_scale(a_YY_good$SWC_F_MDS_1)
+  if (measured_SWC_availabe) {
+    SWC_trend[i, 4:5] <- cal_sens_slope(a_DD_good$SWC_F_MDS_1)
+    SWC_trend[i, 6:7] <- cal_sens_slope_scale(a_DD_good$SWC_F_MDS_1)
+    SWC_trend[i, 8:9] <- cal_sens_slope(a_YY_good$SWC_F_MDS_1)
+    SWC_trend[i, 10:11] <- cal_sens_slope_scale(a_YY_good$SWC_F_MDS_1)
+  }
   # compare these sites with climate reanalysis products
   SWC_ERA5_site <- SWC_ERA5 %>% filter(name == site_ID) %>% filter(between(year, year_start, year_end))
   SWC_trend[i, 12:13] <- cal_sens_slope(SWC_ERA5_site$SWC * 100)
@@ -175,9 +179,6 @@ SWC_trend %>%
 
 # We have 95 sites or this comparison. 
 # One site IT-Noe, their modeled SWC is missing, we will use measured data. 
-SWC <- SWC_ERA5 %>% group_by(name)  %>% summarise(SWC = mean(SWC, na.rm = T), SWC_trend = cal_sens_slope(SWC))
-
-
 SWC_ERA5 %>% filter(!name == "IT-Noe") %>% 
   bind_rows(df)
 
