@@ -113,8 +113,8 @@ for (i in nrow(sites_long)) {
   a_DD_good <- a_DD %>% filter(!YEAR %in% rm_years$years[rm_years$site_ID==site_ID])
   a_YY_good <- a_YY %>% filter(!TIMESTAMP %in% rm_years$years[rm_years$site_ID==site_ID])
   #
-  year_start <- min(a_YY_good$TIMESTAMP)
-  year_end <- max(a_YY_good$TIMESTAMP)
+  year_start <- min(a_YY_good$TIMESTAMP, na.rm = T)
+  year_end <- max(a_YY_good$TIMESTAMP, na.rm = T)
   measured_SWC_availabe <- TRUE
   
   if ("SWC_F_MDS_1" %in% names(a_DD_good) & sum(!is.na(a_YY_good$SWC_F_MDS_1)) > 5) {
@@ -128,7 +128,7 @@ for (i in nrow(sites_long)) {
     plot(a_DD_good$TIMESTAMP, a_DD_good$SWC_F_MDS_1, main = site_ID)
     #
     if (site_ID %in% sites_SWC_remove) {
-      next
+      measured_SWC_availabe <- FALSE
     } else if (site_ID %in% sites_SWC_trunck$site_ID) {
       year_start <- sites_SWC_trunck$goodyear_start[sites_SWC_trunck$site_ID == site_ID]
       year_end <- sites_SWC_trunck$goodyear_end[sites_SWC_trunck$site_ID == site_ID]
@@ -141,8 +141,8 @@ for (i in nrow(sites_long)) {
   a_YY_good <- a_YY_good %>% filter(between(TIMESTAMP, year_start, year_end))
   # 
   SWC_trend[i, 1] <- site_ID
-  SWC_trend[i, 2] <- min(a_DD_good$YEAR, na.rm = T)
-  SWC_trend[i, 3] <- max(a_DD_good$YEAR, na.rm = T)
+  SWC_trend[i, 2] <- year_start
+  SWC_trend[i, 3] <- year_end
   if (measured_SWC_availabe) {
     SWC_trend[i, 4:5] <- cal_sens_slope(a_DD_good$SWC_F_MDS_1)
     SWC_trend[i, 6:7] <- cal_sens_slope_scale(a_DD_good$SWC_F_MDS_1)
