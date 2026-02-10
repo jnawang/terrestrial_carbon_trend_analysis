@@ -69,7 +69,7 @@ a_YY_all %>%
   theme_classic() + 
   theme(legend.position = "none")
 
-write.csv(a_YY_all[, 1:6], file = file.path(data, "a_YY_all.csv"), row.names = F)
+write.csv(a_YY_all[, 1:6], file = file.path("data", "a_YY_all.csv"), row.names = F)
 ######end of Step 1-------------------------------------------------------------------------------
 
 ######Step 2: pick up site-years with good CO2 measurements from our flux datasets---------------- 
