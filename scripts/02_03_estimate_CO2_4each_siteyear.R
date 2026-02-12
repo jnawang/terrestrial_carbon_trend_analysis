@@ -223,7 +223,8 @@ read_obspack_metadata <- function(file) {
   )
 }
 
-files <- list.files('/Users/junnawang/YaleLab/data_CO2/obspack_co2_1_GLOBALVIEWplus_v11.0_2026-01-12_daily/metadata', pattern = '.txt', full.names = T)
+files <- list.files(file.path(dir_rawdata, "obspack_co2", "metadata"), pattern = '.txt$', full.names = T)
+# files <- list.files('/Users/junnawang/YaleLab/data_CO2/obspack_co2_1_GLOBALVIEWplus_v11.0_2026-01-12_daily/metadata', pattern = '.txt', full.names = T)
 all_sites_info <- do.call(rbind, lapply(files, read_obspack_metadata))
 
 # ~ 300 stations have >10 years of data
@@ -244,7 +245,8 @@ all_sites_info_10yr_unique <- all_sites_info_10yr %>%
 # take a look at how CO2 concentration change over elevation; the magnitude of CO2 variation should decline with elevation
 # the magnitude of CO2 concentration can be so high during winter time. This is some information we can use. 
 df_obspack_co2_yearly <- data.frame(dataset_name = character(), year = integer(), co2 = double())
-dir <- "/Users/junnawang/YaleLab/data_CO2/obspack_co2_1_GLOBALVIEWplus_v11.0_2026-01-12_nc/data/nc/"
+# dir <- "/Users/junnawang/YaleLab/data_CO2/obspack_co2_1_GLOBALVIEWplus_v11.0_2026-01-12_nc/data/nc/"
+dir <- file.path(dir_rawdata, "obspack_co2", "obspack_co2_1_GLOBALVIEWplus_v11.0_2026-01-12", "data", "nc")
 
 for (dataset in all_sites_info_10yr_unique$dataset_name) {
   # the two sites co2 is higher than other sites. both are in Utah state. not sure why. 
