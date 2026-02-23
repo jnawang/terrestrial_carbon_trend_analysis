@@ -435,6 +435,7 @@ write.csv(data_grow_season, file.path('data', 'growing_season_yearly.csv'), row.
 ```{r look at the trends of growing season}
 ####
 data_grow_season <- read.csv(file.path('data','growing_season_yearly.csv'))
+sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
 #
 gw_trend <- data.frame()
 for (i in 1:length(unique(data_grow_season$site_ID))) {

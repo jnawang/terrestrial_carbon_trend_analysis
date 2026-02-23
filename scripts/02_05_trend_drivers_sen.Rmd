@@ -28,7 +28,7 @@ shelf(tidyverse, ggpubr, MuMIn, car, fBasics, olsrr, lme4, Hmisc, corrplot, tren
 ```{r get nitrogen deposition}
 # data is from 
 # Zhu (2025): Changing patterns of global nitrogen deposition driven by socio-economic development
-Nfiles <- list.files('data/Global_N_deposition_grid_dataset_2008_2020', pattern='^mean_totN_', full.names = T)
+Nfiles <- list.files(file.path('data', 'Global_N_deposition_grid_dataset_2008_2020'), pattern='^mean_totN_', full.names = T)
 
 TNdep2008_2020 <- terra::rast(Nfiles)
 
@@ -36,7 +36,7 @@ TNdep2008_2020 <- terra::rast(Nfiles)
 data_ll <- suppressWarnings(terra::project(TNdep2008_2020, "EPSG:4326"))
 
 # get total N values from these rasters at our study sites
-sites_long <- read.csv('data/long_term_ec_sites.csv')
+sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
 
 xy <- data.frame(x=sites_long$Long, y=sites_long$Lat)
 TNvalues <- terra::extract(data_ll, xy)
@@ -63,7 +63,7 @@ TNvalues$site_ID <- sites_long$site_ID
 
 ```{r get forest ages}
 
-forestAge <- read.csv('data/forest_ages.csv')
+forestAge <- read.csv(file.path('data', 'forest_ages.csv'))
 
 tmp <- separate(forestAge, Years, into = c("start_year", "end_year"), sep = "-")
 
@@ -75,12 +75,19 @@ forestAge$inyear[1:126] <- floor((as.numeric(tmp$end_year[1:126]) + as.numeric(t
 
 forestAge$Age_standard <- forestAge$Age - forestAge$inyear         # age compare to 0000 year
 
+# what are the forest sites we do not have forest age?
+forestSites <- sites_long$site_ID[sites_long$IGBP %in% c('ENF', 'DBF', 'MF', 'EBF', 'DNF')]
+forestSites[!forestSites %in% forestAge$Site[!is.na(forestAge$Age_standard)]]
+
+
+
+
 ```
 
 ```{r get canopy height}
 # plant height information
-canopyHeightLang <- read.csv('data/CanopyHeight_Lang.csv')
-canopyHeightChu <- read.csv('data/AMF-HEIGHTC-BADM_AND_PI_chu.csv')
+canopyHeightLang <- read.csv(file.path('data', 'CanopyHeight_Lang.csv'))
+canopyHeightChu <- read.csv(file.path('data', 'AMF-HEIGHTC-BADM_AND_PI_chu.csv'))
 #
 sub_time_series <- read.csv('data/sub_time_series_sen.csv')
 #
@@ -183,20 +190,96 @@ cal_sens_slope <- function(x) {
 ```
 
 
+```{r calculate environmental conditions of carbon trends during each period}
+library(librarian)
+shelf(lme4, ggplot2, tidyverse, lmerTest, trend, ggpubr)
+#
+sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
+a_YY_all <- read.csv(file.path("data", "a_YY_all.csv"))
+a_YY_co2 <- read.csv(file.path("data", "a_YY_co2_gap_filled.csv"))
+
+# we need to differentiate growing and non-growing season for SWC
+a_DD_SWC <- read.csv(file.path(dir_rawdata, "ERA5L_daily_SWC_trend_sites_1990_2025_correct.csv"))
+
+
+
+
+# rm_years <- read.csv(file.path('data', 'years_to_remove.csv'))
+#
+# if (!'category' %in% names(a_YY_all)) {
+#   a_YY_all <- a_YY_all %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by = "site_ID")
+# }
+
+
+
+
+# get trends using local regressions
+window_size = 15
+
+# using all sites or sites within certain category. 
+# subsites_long <- sites_long %>% filter(category == 'wet')
+
+CarbonTrend <- data.frame(site_ID = character(), year_mid=integer(), 
+                     NEE = double(), GPP = double(), ER = double(), 
+                     NEEtrend = double(), NEEtrendp = double(), 
+                     GPPtrend = double(), GPPtrendp = double(), 
+                     ERtrend = double(), ERtrendp = double())
+#
+id = 1
+for (i in 1:nrow(sites_long)) {
+  data <- a_YY_all %>% filter(site_ID == sites_long$site_ID[i])
+
+  nwindow = max(nrow(data) - window_size + 1, 1)
+  for (iwindow in 1:nwindow) {
+    a_YY_sub <- data[iwindow:(min(nrow(data), window_size) + iwindow - 1), ]
+    if (sum(!is.na(a_YY_sub$NEE_VUT_REF)) > 5) {
+      CarbonTrend[id, 1] <- sites_long$site_ID[i]
+      CarbonTrend[id, 2] <- round(mean(a_YY_sub$TIMESTAMP, na.rm=T))
+      CarbonTrend[id, 3] <- mean(a_YY_sub$NEE_VUT_REF, na.rm=T)
+      CarbonTrend[id, 4] <- mean(a_YY_sub$GPP_VUT_REF, na.rm=T)
+      CarbonTrend[id, 5] <- mean(a_YY_sub$RECO_VUT_REF, na.rm=T)
+      CarbonTrend[id, 6:7] <- cal_sens_slope(a_YY_sub$NEE_VUT_REF)
+      if (sum(!is.na(a_YY_sub$GPP_VUT_REF)) > 5) {
+        CarbonTrend[id, 8:9] <- cal_sens_slope(a_YY_sub$GPP_VUT_REF)
+      }
+      if (sum(!is.na(a_YY_sub$RECO_VUT_REF)) > 5) {
+        CarbonTrend[id, 10:11] <- cal_sens_slope(a_YY_sub$RECO_VUT_REF)
+      }      
+      #
+      id = id + 1      
+    }
+  }
+}
+
+if (!'category' %in% names(CarbonTrend)) {
+  CarbonTrend <- CarbonTrend %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by = "site_ID")
+}
+
+
+
+
+
+```
+
+
+
+
+
+
+
 ```{r trend of environmental conditions}
 # it takes 5 mins. 
-#### attention: run the three chunks/function above this chunk first ####
+#### Attention: run the three chunks/function above this chunk first ####
+#### Adding soil moisture and CO2 trend & concentration levels. 
 
 # read sub time series
-sub_time_series <- read.csv('data/sub_time_series_sen.csv')
+# sub_time_series <- read.csv(file.path('data', 'sub_time_series_sen.csv'))
 #
-data_grow_season <- read.csv('data/growing_season_yearly.csv')
+data_grow_season <- read.csv(file.path('data', 'growing_season_yearly.csv'))
 #
-sites_long <- read.csv('data/long_term_ec_sites.csv')
+sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
 #
-rm_years   <- read.csv('data/years_to_remove.csv')
-#
-rm_years_co2 <- read.csv('data/bad_co2_site_year.csv')
+rm_years   <- read.csv(file.path('data', 'years_to_remove.csv'))
 #
 # add data source to sub_time_series
 if (!"source" %in% colnames(sub_time_series)) {

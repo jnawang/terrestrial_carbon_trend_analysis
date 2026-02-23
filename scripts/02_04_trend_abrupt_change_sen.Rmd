@@ -314,11 +314,6 @@ ggplot(data = ERtrend, aes(x=year_mid, y = Tlmer)) +
   labs(title = 'Local ER trends', x = 'Mid-year of moving window', y = 'Trend') +
   theme_classic()
 
-
-<<<<<<< HEAD
-=======
-
->>>>>>> 1f3951a (check autocorrelation)
 ```
 
 
