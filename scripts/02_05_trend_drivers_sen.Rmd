@@ -194,21 +194,46 @@ cal_sens_slope <- function(x) {
 library(librarian)
 shelf(lme4, ggplot2, tidyverse, lmerTest, trend, ggpubr)
 #
+rm_years <- read.csv(file.path('data', 'years_to_remove.csv'))
 sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
 a_YY_all <- read.csv(file.path("data", "a_YY_all.csv"))
 a_YY_co2 <- read.csv(file.path("data", "a_YY_co2_gap_filled.csv"))
 
 # we need to differentiate growing and non-growing season for SWC
 a_DD_SWC <- read.csv(file.path(dir_rawdata, "ERA5L_daily_SWC_trend_sites_1990_2025_correct.csv"))
-
-
-
-
-# rm_years <- read.csv(file.path('data', 'years_to_remove.csv'))
 #
 # if (!'category' %in% names(a_YY_all)) {
 #   a_YY_all <- a_YY_all %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by = "site_ID")
 # }
+data_trend_driver <- data.frame(site_ID = character(), year_mid=integer(), 
+                     NEE = double(), GPP = double(), ER = double(), 
+                     NEE_t = double(), NEE_p = double(), GPP_t = double(), GPP_p = double(), 
+                     ER_t = double(), ER_p = double(),
+                     TA_t=double(), TA_p=double(), TA_gs_t=double(), TA_gs_p=double(), TA_ngs_t=double(), TA_ngs_p=double(),
+                     P_t=NA, P_p=NA, P_gs_t=NA, P_gs_p=NA, P_ngs_t=NA, P_ngs_p=NA,
+                     VPD_t=NA, VPD_p=NA, VPD_gs_t=NA, VPD_gs_p=NA, VPD_ngs_t=NA, VPD_ngs_p=NA,
+                     
+                     SW_t=NA, SW_p=NA, SW_gs_t=NA, SW_gs_p=NA, SW_ngs_t=NA, SW_ngs_p=NA,
+                     LE_t=NA, LE_p=NA, LE_gs_t=NA, LE_gs_p=NA, LE_ngs_t=NA, LE_ngs_p=NA,
+                     CO2_t=NA, CO2_p=NA, Lgs_t=NA, Lgs_p=NA, Lgs_piece_t=NA, Lgs_piece_p=NA,
+                     MAT=NA, MAP=NA, Height=NA
+                     
+                     
+                     )
+  
+  
+  
+  
+  
+  data.frame(TA_t=NA, TA_p=NA, TA_gs_t=NA, TA_gs_p=NA, TA_ngs_t=NA, TA_ngs_p=NA,
+                   P_t=NA, P_p=NA, P_gs_t=NA, P_gs_p=NA, P_ngs_t=NA, P_ngs_p=NA,
+                   VPD_t=NA, VPD_p=NA, VPD_gs_t=NA, VPD_gs_p=NA, VPD_ngs_t=NA, VPD_ngs_p=NA,
+                   SW_t=NA, SW_p=NA, SW_gs_t=NA, SW_gs_p=NA, SW_ngs_t=NA, SW_ngs_p=NA,
+                   LE_t=NA, LE_p=NA, LE_gs_t=NA, LE_gs_p=NA, LE_ngs_t=NA, LE_ngs_p=NA,
+                   CO2_t=NA, CO2_p=NA, Lgs_t=NA, Lgs_p=NA, Lgs_piece_t=NA, Lgs_piece_p=NA,
+                   MAT=NA, MAP=NA, Height=NA)
+
+
 
 
 
