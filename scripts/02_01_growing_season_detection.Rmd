@@ -4,7 +4,7 @@ output: pdf_document
 date: "2025-02-25"
 author: "Junna Wang"
 editor_options: 
-  chunk_output_type: inline
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -241,6 +241,19 @@ for (i in 1:nrow(sites_long)) {
     a_DD <- a_DD %>% filter(!year(TIMESTAMP) %in% rm_years$years[rm_years$site_ID==site_ID])
   }
   #
+  if (site_ID == 'AU-Dry') {
+    a_DD <- a_DD %>% filter(year(TIMESTAMP) > 2015)
+  }
+  if (site_ID == 'AU-Gin') {
+    a_DD <- a_DD %>% filter(year(TIMESTAMP) != 2015)
+  } 
+  if (site_ID == 'AU-How') {
+    a_DD <- a_DD %>% filter(year(TIMESTAMP) != 2022)
+  } 
+  if (site_ID == 'AU-DaS') {
+    a_DD <- a_DD %>% filter(year(TIMESTAMP) <= 2020)
+  }
+  #
   # using nighttime GPP for the following sites
   # have at least 5-year data and not in the bad daytime partitioned sites and GPP should be positive
   if (sum(!is.na(a_DD$GPP_DT_VUT_REF)) >= 5*365 & !site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae", "US-Oho", "DE-RuW", "US-Uaf")) {
@@ -290,6 +303,26 @@ for (i in 1:nrow(sites_long)) {
             MaxPeaksPerYear = 1,
             MaxTroughsPerYear = 2
         ))
+  } else if (site_ID %in% c("AU-Cow", "AU-Cpr", "AU-Cum", "AU-Gin", "AU-GWW", "AU-How", "AU-Rob", "AU-Stp", "AU-Tum", "AU-Ync")) {
+     brks <- season_mov(INPUT,
+        list(FUN = "smooth_wWHIT", wFUN = wFUN,
+            maxExtendMonth = 8,
+            wmin = 0.0, r_min = 0.02,
+            lambda = 8000,
+            iters = 5,
+            MaxPeaksPerYear = 1,
+            MaxTroughsPerYear =2
+        ))
+  } else if (site_ID %in% c("AU-Dry", "AU-ASM", "AU-DaS")) {
+     brks <- season_mov(INPUT,
+        list(FUN = "smooth_wWHIT", wFUN = wFUN,
+            maxExtendMonth = 8,
+            wmin = 0.0, r_min = 0.00,
+            lambda = 2000,
+            iters = 5,
+            MaxPeaksPerYear = 2,
+            MaxTroughsPerYear = 3
+        ))    
   } else {
     brks <- season_mov(INPUT,
         list(FUN = "smooth_wWHIT", wFUN = wFUN,

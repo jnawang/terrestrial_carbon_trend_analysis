@@ -67,11 +67,17 @@ sites_JapanFlux2024 <- unlist(lapply(files_JapanFlux2024, function(x) substring(
 files_OzFlux2025 <- list.files(path = file.path(dir_rawdata, "OzFlux2025", "csv"), pattern = "PyFluxPro_FULLSET_HH")
 sites_OzFlux2025 <- unlist(lapply(files_OzFlux2025, function(x) substring(x, 8, 13)))
 #
+# sites in HRBFlux2022
+files_HRBFlux2022 <- list.files(path = file.path(dir_rawdata, "HRBFlux2022", "csv"), pattern = "ReddyProcRF_FULLSET_HH")
+sites_HRBFlux2022 <- unlist(lapply(files_HRBFlux2022, function(x) substring(x, 9, 14)))
+
+#
 # characteristics of these sites: climate, vegetation, MAP, MAT, Elevation
 sites_long <- data.frame(site_ID = c(sites_Ameri, sites_Ameri_BASE, 
                                      sites_FLUXNET2020_ICOS, sites_FLUXNET2015_ICOS, 
                                      sites_FLUXNET2020, sites_FLUXNET2015,
-                                     sites_JapanFlux2024, sites_OzFlux2025), 
+                                     sites_JapanFlux2024, sites_OzFlux2025, 
+                                     sites_HRBFlux2022), 
                           source = c(rep("AmeriFlux_FLUXNET", length(sites_Ameri)), 
                                      rep("AmeriFlux_BASE", length(sites_Ameri_BASE)), 
                                      rep("FLUXNET2020_ICOS", length(sites_FLUXNET2020_ICOS)), 
@@ -79,7 +85,9 @@ sites_long <- data.frame(site_ID = c(sites_Ameri, sites_Ameri_BASE,
                                      rep("FLUXNET2020", length(sites_FLUXNET2020)), 
                                      rep("FLUXNET2015", length(sites_FLUXNET2015)),
                                      rep("JapanFlux2024", length(sites_JapanFlux2024)),
-                                     rep("OzFlux2025", length(sites_OzFlux2025)) ) )
+                                     rep("OzFlux2025", length(sites_OzFlux2025)), 
+                                     rep("HRBFlux2022", length(sites_HRBFlux2022))
+                                     ) )
 #
 # get climate and vegetation information for these sites
 sites_info_Ameri <- read.csv(file.path('data', 'AmeriFlux-site-search-results-202512092232.csv'))
@@ -109,14 +117,16 @@ sites_info_Japan <- sites_info_Japan %>% rename("Site.ID"="Site.code..BADM.",
 sites_info_Oz <- read.csv(file.path("data", "OzFlux_metadata.csv"))
 sites_info_Oz <- sites_info_Oz %>% rename("Site.ID"="site_ID",
                                           "Climate.class" = "Köppen_climate") 
+# 
+sites_info_HRB <- read.csv(file.path("data", "HRBFlux2022_metadata.csv"))
 
 # get climate classes for these locations
 climate_koppen   <- terra::rast(file.path('data', 'koppen_geiger_0p00833333.tif'))
 # plot(climate_koppen)
 #
 # get climate for the European and OZ fluxes based on coordinates
-xy <- data.frame(x=c(sites_info_Europ$Long, sites_info_Oz$Long), 
-                 y=c(sites_info_Europ$Lat, sites_info_Oz$Lat))
+xy <- data.frame(x=c(sites_info_Europ$Long, sites_info_Oz$Long, sites_info_HRB$Long), 
+                 y=c(sites_info_Europ$Lat, sites_info_Oz$Lat, sites_info_HRB$Lat))
 #
 tmp <- terra::extract(climate_koppen, xy)
 #
@@ -163,13 +173,15 @@ tmp <- tmp %>% mutate(koppen = case_when(
 ))
 #
 sites_info_Europ$Climate.class <- tmp$koppen[1: nrow(sites_info_Europ)]
-sites_info_Oz$Climate.class <- tmp$koppen[(nrow(sites_info_Europ) + 1) : nrow(tmp)]
+sites_info_Oz$Climate.class <- tmp$koppen[(nrow(sites_info_Europ) + 1) : (nrow(sites_info_Europ) + nrow(sites_info_Oz))]
+sites_info_HRB$Climate.class <- tmp$koppen[(nrow(sites_info_Europ) + nrow(sites_info_Oz) + 1) : nrow(tmp)]
 #
 common_cols <- intersect(colnames(sites_info_Europ), colnames(sites_info_Ameri))
 #
 sites_all <- rbind(sites_info_Ameri[common_cols], sites_info_Europ[common_cols])
 sites_all <- dplyr::bind_rows(sites_all, sites_info_Japan[, c("Site.ID", "Lat", "Long", "IGBP", "Climate.class")])
 sites_all <- dplyr::bind_rows(sites_all, sites_info_Oz[, c("Site.ID", "Lat", "Long", "IGBP", "Climate.class")])
+sites_all <- dplyr::bind_rows(sites_all, sites_info_HRB[, c("Site.ID", "Lat", "Long", "IGBP", "Climate.class")])
 #
 #####correct some climate classification
 sites_all$Climate.class[sites_all$Site.ID=='CA-LP1'] <- 'Dfb'
@@ -206,9 +218,10 @@ sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6'
 #
 # add NEE partition method
 sites_long <- sites_long %>% mutate(NEEpartition = case_when( 
-site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae", "US-Oho", "DE-RuW", "US-Uaf", "US-Esm", "US-Elm", "US-MtB", "US-Prr", "CA-Cbo", "US-PFa") ~ 'NT',
+site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae", "US-Oho", "DE-RuW", "US-Uaf", "US-Esm", "US-Elm", "US-MtB", "US-Prr", "CA-Cbo", "US-PFa", "CN-ARS", "CN-HZZ") ~ 'NT',
 TRUE ~ 'DT'))
 #
+
 ```
 
 
@@ -430,8 +443,11 @@ for (i in 1:nrow(sites_long)) {
     a_HH$SW_IN_F_MDS <- a_HH$SW_IN_F_MDS / 2.3 
   } else if (sites_long$source[i] == "JapanFlux2024") {
     a_HH$RH <- a_HH$RH_F
-  } else if (sites_long$source[i] == "OzFlux2025") {
+  } else if (sites_long$source[i] %in% c("OzFlux2025")) {
     a_HH$RH <- a_HH$RH_F_MDS
+  } else if (sites_long$source[i] %in% c("HRBFlux2022")) {
+    a_HH$RH <- a_HH$RH_F_MDS
+    a_HH$WS_F <- 3      # no measurement, use global average. 
   }
   
   a_HH[a_HH==-9999] <- NA
@@ -466,7 +482,7 @@ for (i in 1:nrow(sites_long)) {
 #  climate_hourly$Tdew <- climate_hourly$Temp - (100 - climate_hourly$RH) / 5.0
 #  
   #### Rs - incoming solar radiation in Megajoules per square metres per day: "Tdew";        
-  mydata_PET <- ReadInputs(varnames=c("Temp", "RH", "Rs", "uz"), climate_hourly, constants, stopmissing=c(50,50,50), timestep = "subdaily",
+  mydata_PET <- Evapotranspiration::ReadInputs(varnames=c("Temp", "RH", "Rs", "uz"), climate_hourly, constants, stopmissing=c(50,50,50), timestep = "subdaily",
       interp_missing_days = TRUE,
       interp_missing_entries = TRUE,
       interp_abnormal = TRUE,
@@ -475,14 +491,14 @@ for (i in 1:nrow(sites_long)) {
       message = "yes")
   ####Penman-Monteith FAO56 Reference Crop ET
   if (sites_long$IGBP[i] %in% c("WET", "GRA", "OSH")) {
-    try(results_crop <- ET.PenmanMonteith(mydata_PET, constants, ts='daily', solar='data', crop = "short", save.csv="no"))  ###reference crop ET; short=grass, tall=standard crop; 
+    try(results_crop <- Evapotranspiration::ET.PenmanMonteith(mydata_PET, constants, ts='daily', solar='data', crop = "short", save.csv="no"))  ###reference crop ET; short=grass, tall=standard crop; 
   } else {
     if (sites_long$MAT[i] > 5) {
       #
-      try(results_crop <- ET.PenmanMonteith(mydata_PET, constants, ts='daily', solar='data', crop = "tall", save.csv="no"))  ###reference crop ET; short=grass, tall=standard crop;
+      try(results_crop <- Evapotranspiration::ET.PenmanMonteith(mydata_PET, constants, ts='daily', solar='data', crop = "tall", save.csv="no"))  ###reference crop ET; short=grass, tall=standard crop;
     } else {
       #  
-      try(results_crop <- ET.PriestleyTaylor(mydata_PET, constants, ts='daily', solar='data', alpha=0.23,
+      try(results_crop <- Evapotranspiration::ET.PriestleyTaylor(mydata_PET, constants, ts='daily', solar='data', alpha=0.23,
 message="yes", AdditionalStats="yes", save.csv="no"))  ###reference crop ET; short=grass, tall=standard crop; 
     }
   }
@@ -499,6 +515,8 @@ water_flux$AI <- water_flux$AET / water_flux$PET
 #####what is the best method for PET calculation in the field? 
 write.csv(water_flux, file.path('data', 'water_flux_AI.csv'), row.names = F)
 #
+
+
 ```
 
 
