@@ -535,7 +535,8 @@ sites_long <- sites_long %>%
                             Climate.class %in% c("Am", "Cwa", "Af") ~ "wet", 
                             Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "Dsb", "ET", "Dwc") ~ "cold",
                             Climate.class %in% c("Cfa") ~ "wet",
-                            Climate.class %in% c("Cfb") ~ "cold"         # those sites has winters and in high latitudes
+                            Climate.class %in% c("Cfb") & IGBP != 'EBF' ~ "cold",  # those sites has winters and in high latitudes
+                            Climate.class %in% c("Cfb") & IGBP == 'EBF' ~ "wet"    # EBF: evergreen broadleaf forests. 
                             ))
 #
 # sites_long <- sites_long %>% mutate(category=case_when(Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "ET", "Dwc")  ~ 'cold',
