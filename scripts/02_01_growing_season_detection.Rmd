@@ -209,7 +209,8 @@ source(file.path("scripts", "00_functions.R"))
 df_file_structure <- get_rawflux_file_structure(dir_rawdata)
 #
 # sites that grow year-long: MAT >= 20 and in wet climate
-sites_grow_yearlong <- c('BR-Ma2', 'BR-Sa1', 'US-Elm', 'US-Esm', 'US-LL1', 'US-LL2', 'US-LL3', 'US-SP1', 'US-SP3', 'GF-Guy', 'ZA-Kru', 'ID-PaD')
+sites_grow_yearlong <- c('BR-Ma2', 'BR-Sa1', 'US-Elm', 'US-Esm', 'US-LL1', 'US-LL2', 'US-LL3', 'US-SP1', 'US-SP3', 'GF-Guy', 'ZA-Kru', 'ID-PaD', 'AU-How',
+ 'AU-Rob', "AU-Tum", "AU-Cum", "AU-Cow")
 #
 data_grow_season <- data.frame(site_ID=character(), year=integer(), sos_Beck=double(), eos_Beck=double(), 
                                sos_Elmore=double(), eos_Elmore=double(), sos_Gu=double(), eos_Gu=double(), 
@@ -235,20 +236,22 @@ for (i in 1:nrow(sites_long)) {
   #
   ####read in daily data
   a_DD$TIMESTAMP <- ymd(a_DD$TIMESTAMP)
-  # remove bad years
-  if (!site_ID %in% c('ZA-Kru')) {
-    # do not remove years if the site is CL-SDF because southern hemisphere sites have growing seasons cross years
-    a_DD <- a_DD %>% filter(!year(TIMESTAMP) %in% rm_years$years[rm_years$site_ID==site_ID])
+  
+  # decide if this is in the southern hemisphere
+  south_hemisphere <- ifelse(sites_long$Lat[i] < -15, TRUE, FALSE)
+  # for southern sites, using growing year and DOY from July first
+  if (south_hemisphere) {
+    a_DD$TIMESTAMP <- a_DD$TIMESTAMP - ifelse(leap_year(year(a_DD$TIMESTAMP[1])), 182, 181)
   }
+  
+  # remove bad years
+  a_DD <- a_DD %>% filter(!year(TIMESTAMP) %in% rm_years$years[rm_years$site_ID==site_ID])
   #
   if (site_ID == 'AU-Dry') {
     a_DD <- a_DD %>% filter(year(TIMESTAMP) > 2015)
   }
   if (site_ID == 'AU-Gin') {
     a_DD <- a_DD %>% filter(year(TIMESTAMP) != 2015)
-  } 
-  if (site_ID == 'AU-How') {
-    a_DD <- a_DD %>% filter(year(TIMESTAMP) != 2022)
   } 
   if (site_ID == 'AU-DaS') {
     a_DD <- a_DD %>% filter(year(TIMESTAMP) <= 2020)
@@ -273,8 +276,6 @@ for (i in 1:nrow(sites_long)) {
   #
   a_DD$w <- 1.0     # Data quality of this partition?? this is missing. 
   a_DD$QC_flag <- "good"
-  # decide if this is in the southern hemisphere
-  south_hemisphere <- ifelse(sites_long$Lat[i]<0, TRUE, FALSE)
   #
   # remove the years without GPP measurements for better interpolation
   # missed_years <- a_DD %>% mutate(year=year(TIMESTAMP)) %>% group_by(year) %>% summarise(nNaGPP=sum(is.na(GPP))) %>% filter(nNaGPP > 300)
@@ -289,7 +290,7 @@ for (i in 1:nrow(sites_long)) {
       nptperyear = nptperyear,
       maxgap = nptperyear / 4, wmin = wmin, 
       mask_spike = TRUE, 
-      south = south_hemisphere
+      south = FALSE
   )
   #
   ####moving growing season division
@@ -303,20 +304,20 @@ for (i in 1:nrow(sites_long)) {
             MaxPeaksPerYear = 1,
             MaxTroughsPerYear = 2
         ))
-  } else if (site_ID %in% c("AU-Cow", "AU-Cpr", "AU-Cum", "AU-Gin", "AU-GWW", "AU-How", "AU-Rob", "AU-Stp", "AU-Tum", "AU-Ync")) {
+  } else if (site_ID %in% c("AU-Gin", "AU-GWW", "AU-Stp", "AU-Ync")) {
      brks <- season_mov(INPUT,
         list(FUN = "smooth_wWHIT", wFUN = wFUN,
-            maxExtendMonth = 8,
+            maxExtendMonth = 4,
             wmin = 0.0, r_min = 0.02,
             lambda = 8000,
             iters = 5,
             MaxPeaksPerYear = 1,
             MaxTroughsPerYear =2
         ))
-  } else if (site_ID %in% c("AU-Dry", "AU-ASM", "AU-DaS")) {
+  } else if (site_ID %in% c("AU-Dry", "AU-ASM", "AU-DaS", "AU-Cpr")) {
      brks <- season_mov(INPUT,
         list(FUN = "smooth_wWHIT", wFUN = wFUN,
-            maxExtendMonth = 8,
+            maxExtendMonth = 4,
             wmin = 0.0, r_min = 0.00,
             lambda = 2000,
             iters = 5,
@@ -352,7 +353,7 @@ for (i in 1:nrow(sites_long)) {
   l_pheno <- get_pheno(fit, TRS = TRS, IsPlot = FALSE) # %>% map(~melt_list(., "meth"))
   print(l_pheno$doy$Beck)  # I should use Beck, Elmore, and Gu logistics have a more stable 
   #
-  # use the average of the three methods; and then the average of TSR_0.25, DER.sos and DER.eos
+  # use the average of the three methods; and then the average of TSR_0.25, DER.sos, and DER.eos
   ggplot(data=l_pheno$doy$Gu, aes(x=origin)) +
     geom_point(aes(y=DER.sos, col="blue")) +
     geom_point(aes(y=DER.eos, col="red")) +
