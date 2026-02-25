@@ -182,5 +182,5 @@ SWC_trend %>%
 SWC_ERA5 <- SWC_ERA5 %>% filter(!name == "IT-Noe") %>% 
   bind_rows(df)
 
-write.csv(SWC_ERA5, file.path(dir_rawdata, "ERA5L_daily_SWC_trend_sites_1990_2025_correct.csv"))
+write.csv(SWC_ERA5, file.path(dir_rawdata, "ERA5L_daily_SWC_trend_sites_1990_2025_correct.csv"), row.names = F)
 
