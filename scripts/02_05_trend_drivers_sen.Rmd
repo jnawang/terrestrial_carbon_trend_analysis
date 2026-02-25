@@ -181,6 +181,11 @@ merge_ERA_FLUX <- function(years2update, col_year, col_flux, col_era) {
 ```{r a function to calculate sens slope}
 cal_sens_slope <- function(x) {
   x <- x[!is.na(x)]
+  return(as.numeric(sens.slope(x)[c(1,3)]))
+}
+
+cal_sens_slope_scale <- function(x) {
+  x <- x[!is.na(x)]
   x <- scale(x)
   return(as.numeric(sens.slope(x)[c(1,3)]))
 }
@@ -402,20 +407,20 @@ for (i in 1:nrow(sites_long)) {
       trend_driver[id, 'NEE'] <- mean(a_YY_sub$NEE_VUT_REF, na.rm=T)
       trend_driver[id, 'GPP'] <- mean(a_YY_sub$GPP_VUT_REF, na.rm=T)
       trend_driver[id, 'ER'] <- mean(a_YY_sub$RECO_VUT_REF, na.rm=T)
-      trend_driver[id, c('NEE_t', 'NEE_p')] <- cal_sens_slope(a_YY_sub$NEE_VUT_REF)
+      trend_driver[id, c('NEE_t', 'NEE_p')] <- cal_sens_slope_scale(a_YY_sub$NEE_VUT_REF)
       if (sites_long$NEEpartition[i] == 'DT') {
         if (sum(!is.na(a_YY_sub$GPP_DT_VUT_REF)) >= 5) {
-          trend_driver[id, c('GPP_t', 'GPP_p')] <- cal_sens_slope(a_YY_sub$GPP_DT_VUT_REF)
+          trend_driver[id, c('GPP_t', 'GPP_p')] <- cal_sens_slope_scale(a_YY_sub$GPP_DT_VUT_REF)
         }
         if (sum(!is.na(a_YY_sub$RECO_DT_VUT_REF)) >= 5) {
-          trend_driver[id, c('ER_t', 'ER_p')] <- cal_sens_slope(a_YY_sub$RECO_DT_VUT_REF)
+          trend_driver[id, c('ER_t', 'ER_p')] <- cal_sens_slope_scale(a_YY_sub$RECO_DT_VUT_REF)
         }
       } else if (sites_long$NEEpartition[i] == 'NT') {
         if (sum(!is.na(a_YY_sub$GPP_NT_VUT_REF)) >= 5) {
-          trend_driver[id, c('GPP_t', 'GPP_p')] <- cal_sens_slope(a_YY_sub$GPP_NT_VUT_REF)
+          trend_driver[id, c('GPP_t', 'GPP_p')] <- cal_sens_slope_scale(a_YY_sub$GPP_NT_VUT_REF)
         }
         if (sum(!is.na(a_YY_sub$RECO_NT_VUT_REF)) >= 5) {
-          trend_driver[id, c('ER_t', 'ER_p')] <- cal_sens_slope(a_YY_sub$RECO_NT_VUT_REF)
+          trend_driver[id, c('ER_t', 'ER_p')] <- cal_sens_slope_scale(a_YY_sub$RECO_NT_VUT_REF)
         }
       }
       #
