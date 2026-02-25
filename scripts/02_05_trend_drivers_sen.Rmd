@@ -425,29 +425,29 @@ for (i in 1:nrow(sites_long)) {
       }
       #
       # Calculate trends of environmental conditions
-      trend_driver[id, c("TA_t", "TA_p")] <- cal_sens_slope(a_YY_sub$TA_F_MDS)
-      trend_driver[id, c("TA_gs_t", "TA_gs_p")] <- cal_sens_slope(a_YY_gw_sub$TA_F_MDS)
-      trend_driver[id, c("TA_ngs_t", "TA_ngs_p")] <- cal_sens_slope(a_YY_ngw_sub$TA_F_MDS)
+      trend_driver[id, c("TA_t", "TA_p")] <- cal_sens_slope_scale(a_YY_sub$TA_F_MDS)
+      trend_driver[id, c("TA_gs_t", "TA_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$TA_F_MDS)
+      trend_driver[id, c("TA_ngs_t", "TA_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$TA_F_MDS)
       #
-      trend_driver[id, c("P_t", "P_p")] <- cal_sens_slope(a_YY_sub$P_ERA)
-      trend_driver[id, c("P_gs_t", "P_gs_p")] <- cal_sens_slope(a_YY_gw_sub$P_ERA)
-      trend_driver[id, c("P_ngs_t", "P_ngs_p")] <- cal_sens_slope(a_YY_ngw_sub$P_ERA)
+      trend_driver[id, c("P_t", "P_p")] <- cal_sens_slope_scale(a_YY_sub$P_ERA)
+      trend_driver[id, c("P_gs_t", "P_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$P_ERA)
+      trend_driver[id, c("P_ngs_t", "P_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$P_ERA)
       #
-      trend_driver[id, c("VPD_t", "VPD_p")] <- cal_sens_slope(a_YY_sub$VPD_F_MDS)
-      trend_driver[id, c("VPD_gs_t", "VPD_gs_p")] <- cal_sens_slope(a_YY_gw_sub$VPD_F_MDS)
-      trend_driver[id, c("VPD_ngs_t", "VPD_ngs_p")] <- cal_sens_slope(a_YY_ngw_sub$VPD_F_MDS)
+      trend_driver[id, c("VPD_t", "VPD_p")] <- cal_sens_slope_scale(a_YY_sub$VPD_F_MDS)
+      trend_driver[id, c("VPD_gs_t", "VPD_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$VPD_F_MDS)
+      trend_driver[id, c("VPD_ngs_t", "VPD_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$VPD_F_MDS)
       # 
-      trend_driver[id, c("SWC_t", "SWC_p")] <- cal_sens_slope(a_YY_sub$SWC_ERA5)
-      trend_driver[id, c("SWC_gs_t", "SWC_gs_p")] <- cal_sens_slope(a_YY_gw_sub$SWC_ERA5)
-      trend_driver[id, c("SWC_ngs_t", "SWC_ngs_p")] <- cal_sens_slope(a_YY_ngw_sub$SWC_ERA5)
+      trend_driver[id, c("SWC_t", "SWC_p")] <- cal_sens_slope_scale(a_YY_sub$SWC_ERA5)
+      trend_driver[id, c("SWC_gs_t", "SWC_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$SWC_ERA5)
+      trend_driver[id, c("SWC_ngs_t", "SWC_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$SWC_ERA5)
       #
-      trend_driver[id, c("SW_t", "SW_p")] <- cal_sens_slope(a_YY_sub$SW_IN_F_MDS)
-      trend_driver[id, c("SW_gs_t", "SW_gs_p")] <- cal_sens_slope(a_YY_gw_sub$SW_IN_F_MDS)
-      trend_driver[id, c("SW_ngs_t", "SW_ngs_p")] <- cal_sens_slope(a_YY_ngw_sub$SW_IN_F_MDS)
+      trend_driver[id, c("SW_t", "SW_p")] <- cal_sens_slope_scale(a_YY_sub$SW_IN_F_MDS)
+      trend_driver[id, c("SW_gs_t", "SW_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$SW_IN_F_MDS)
+      trend_driver[id, c("SW_ngs_t", "SW_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$SW_IN_F_MDS)
       #
-      trend_driver[id, c("LE_t", "LE_p")] <- cal_sens_slope(a_YY_sub$LE_F_MDS)
-      trend_driver[id, c("LE_gs_t", "LE_gs_p")] <- cal_sens_slope(a_YY_gw_sub$LE_F_MDS)
-      trend_driver[id, c("LE_ngs_t", "LE_ngs_p")] <- cal_sens_slope(a_YY_ngw_sub$LE_F_MDS)
+      trend_driver[id, c("LE_t", "LE_p")] <- cal_sens_slope_scale(a_YY_sub$LE_F_MDS)
+      trend_driver[id, c("LE_gs_t", "LE_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$LE_F_MDS)
+      trend_driver[id, c("LE_ngs_t", "LE_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$LE_F_MDS)
       #
       # left join a_YY, a_YY_gw, and a_YY_ngw and put data into a data frame
       a_YY_gw_rename <- a_YY_gw
@@ -472,15 +472,15 @@ for (i in 1:nrow(sites_long)) {
       data_trend_driver <- rbind(data_trend_driver, merged_df)
       #
       ## we do not differentiate CO2, Lgs for growing and non-growing seasons
-      trend_driver[id, c("CO2_t", "CO2_p")] <- summary(lm(data=a_YY_sub, CO2_F_MDS ~ year))$coefficients[2, c(1,4)]
+      trend_driver[id, c("CO2_t", "CO2_p")] <- cal_sens_slope(a_YY_sub$CO2_F_MDS)  # use nonscaled value. 
       trend_driver[id, c("CO2")] <- mean(a_YY_sub$CO2_F_MDS, na.rm = T)
       if (site_ID %in% sites_grow_yearlong) {
         trend_driver[id, c("Lgs_t", "Lgs_p")] <- 0
         trend_driver[id, c("Lgs_piece_t", "Lgs_piece_p")] <- 0
       } else {
         subdata_grow_season <- data_grow_season[data_grow_season$site_ID==site_ID, ] %>% filter(year %in% years_window)
-        trend_driver[id, c("Lgs_t", "Lgs_p")] <- cal_sens_slope(subdata_grow_season$length_gs)
-        trend_driver[id, c("Lgs_piece_t", "Lgs_piece_p")] <- cal_sens_slope(subdata_grow_season$length_gs_piece)
+        trend_driver[id, c("Lgs_t", "Lgs_p")] <- cal_sens_slope_scale(subdata_grow_season$length_gs)
+        trend_driver[id, c("Lgs_piece_t", "Lgs_piece_p")] <- cal_sens_slope_scale(subdata_grow_season$length_gs_piece)
         
         # ###########################start plot figures for data quality check##################
         # plot(subdata_grow_season$year, subdata_grow_season$length_gs, main=site_ID)
