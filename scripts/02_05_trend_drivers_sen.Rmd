@@ -4,7 +4,7 @@ output: pdf_document
 date: "2025-03-12"
 author: "Junna Wang"
 editor_options: 
-  chunk_output_type: inline
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -181,7 +181,7 @@ merge_ERA_FLUX <- function(years2update, col_year, col_flux, col_era) {
 ```{r a function to calculate sens slope}
 cal_sens_slope <- function(x) {
   x <- x[!is.na(x)]
-  return(as.numeric(sens.slope(x)[c(1,3)]))
+  return(as.numeric(sens.slope(x)[c(1)]))
 }
 
 cal_sens_slope_scale <- function(x) {
@@ -199,7 +199,6 @@ shelf(lme4, ggplot2, tidyverse, lmerTest, trend, ggpubr)
 #
 rm_years <- read.csv(file.path('data', 'years_to_remove.csv'))
 sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
-# a_YY_all <- read.csv(file.path("data", "a_YY_all.csv"))
 a_YY_co2 <- read.csv(file.path("data", "a_YY_co2_gap_filled.csv"))
 #
 source(file.path("scripts", "00_functions.R"))
@@ -207,9 +206,10 @@ df_file_structure <- get_rawflux_file_structure(dir_rawdata)
 #
 # we need to differentiate growing and non-growing season for SWC
 a_DD_SWC <- read.csv(file.path(dir_rawdata, "ERA5L_daily_SWC_trend_sites_1990_2025_correct.csv"))
+a_DD_SWC$date <- ymd(a_DD_SWC$date)
 # date, name, SWC
 #
-a_YY_SWC <- a_DD_SWC %>% mutate(year = year(mdy(a_DD_SWC$date))) %>%
+a_YY_SWC <- a_DD_SWC %>% mutate(year = year(a_DD_SWC$date)) %>%
   group_by(name, year) %>% summarise(SWC_ERA5 = mean(SWC, na.rm = T))
 #
 data_grow_season <- read.csv(file.path('data', 'growing_season_yearly.csv'))
@@ -223,16 +223,30 @@ grow_season_site <- data_grow_season %>%
 # }
 trend_driver <- data.frame(site_ID = character(), year_mid=integer(), 
                      NEE = double(), GPP = double(), ER = double(), 
-                     NEE_t = double(), NEE_p = double(), GPP_t = double(), GPP_p = double(), 
-                     ER_t = double(), ER_p = double(),
-                     TA_t=double(), TA_p=double(), TA_gs_t=double(), TA_gs_p=double(), TA_ngs_t=double(), TA_ngs_p=double(),
-                     P_t=double(), P_p=double(), P_gs_t=double(), P_gs_p=double(), P_ngs_t=double(), P_ngs_p=double(),
-                     VPD_t=double(), VPD_p=double(), VPD_gs_t=double(), VPD_gs_p=double(), VPD_ngs_t=double(), VPD_ngs_p=double(),
-                     SWC_t=double(), SWC_p=double(), SWC_gs_t=double(), SWC_gs_p=double(), SWC_ngs_t=double(), SWC_ngs_p=double(),
-                     SW_t=double(), SW_p=double(), SW_gs_t=double(), SW_gs_p=double(), SW_ngs_t=double(), SW_ngs_p=double(),
-                     LE_t=double(), LE_p=double(), LE_gs_t=double(), LE_gs_p=double(), LE_ngs_t=double(), LE_ngs_p=double(),
-                     CO2=double(), CO2_t=double(), CO2_p=double(), 
-                     Lgs_t=double(), Lgs_p=double(), Lgs_piece_t=double(), Lgs_piece_p=double(),
+                     NEE_t = double(), NEE_p = double(), NEE_at = double(), # at: actual trend
+                     GPP_t = double(), GPP_p = double(), GPP_at = double(), 
+                     ER_t = double(), ER_p = double(), ER_at = double(), 
+                     TA_t=double(), TA_p=double(), TA_at=double(), 
+                     TA_gs_t=double(), TA_gs_p=double(), TA_gs_at=double(), 
+                     TA_ngs_t=double(), TA_ngs_p=double(), TA_ngs_at=double(), 
+                     P_t=double(), P_p=double(), P_at=double(), 
+                     P_gs_t=double(), P_gs_p=double(), P_gs_at=double(), 
+                     P_ngs_t=double(), P_ngs_p=double(), P_ngs_at=double(), 
+                     VPD_t=double(), VPD_p=double(), VPD_at=double(), 
+                     VPD_gs_t=double(), VPD_gs_p=double(), VPD_gs_at=double(), 
+                     VPD_ngs_t=double(), VPD_ngs_p=double(), VPD_ngs_at=double(), 
+                     SWC_t=double(), SWC_p=double(), SWC_at=double(), 
+                     SWC_gs_t=double(), SWC_gs_p=double(), SWC_gs_at=double(), 
+                     SWC_ngs_t=double(), SWC_ngs_p=double(), SWC_ngs_at=double(), 
+                     SW_t=double(), SW_p=double(), SW_at=double(), 
+                     SW_gs_t=double(), SW_gs_p=double(), SW_gs_at=double(), 
+                     SW_ngs_t=double(), SW_ngs_p=double(), SW_ngs_at=double(), 
+                     LE_t=double(), LE_p=double(), LE_at=double(), 
+                     LE_gs_t=double(), LE_gs_p=double(), LE_gs_at=double(), 
+                     LE_ngs_t=double(), LE_ngs_p=double(), LE_ngs_at=double(), 
+                     CO2=double(), CO2_at=double(), CO2_p=double(), 
+                     Lgs_t=double(), Lgs_p=double(), Lgs_at=double(), 
+                     Lgs_piece_t=double(), Lgs_piece_p=double(), Lgs_piece_at=double(), 
                      MAT=double(), MAP=double(), Height=double())
 
 # yearly data used to calculate trends
@@ -245,6 +259,7 @@ sites_grow_yearlong <- c('BR-Ma2', 'BR-Sa1', 'US-Elm', 'US-Esm', 'US-LL1', 'US-L
                          'GF-Guy', 'ZA-Kru', 'ID-PaD', 'AU-How', 'AU-Rob', "AU-Tum", "AU-Cum", "AU-Cow")
 #
 id = 1
+TA_site_years_removed = 0
 for (i in 1:nrow(sites_long)) {
   print(i)
   site_ID <- sites_long$site_ID[i]
@@ -262,19 +277,19 @@ for (i in 1:nrow(sites_long)) {
   a_DD <- a_DD %>% mutate(year=year(a_DD$TIMESTAMP), doy=yday(a_DD$TIMESTAMP))
   #
   a_YY <- a_YY %>% filter(!TIMESTAMP %in% rm_years$years[rm_years$site_ID==site_ID])
-  # update CO2 data in a_YY
-  a_YY$CO2_F_MDS <- a_YY_co2$CO2_F_MDS[
-    match(
-    interaction(a_YY$site_ID, a_YY$TIMESTAMP),
-    interaction(a_YY_co2$site_ID, a_YY_co2$TIMESTAMP)
-  )]
+  # Update CO2 data in a_YY
+  co2_site <- a_YY_co2[a_YY_co2$site_ID == site_ID, c("TIMESTAMP", "CO2_F_MDS")]
+
+  # Replace or update CO2_F_MDS in a_YY
+  a_YY <- a_YY %>% mutate(CO2_F_MDS = co2_site$CO2_F_MDS[match(TIMESTAMP, co2_site$TIMESTAMP)])
   #
   # add ERA5 SWC into a_YY and a_DD
-  a_DD <- a_DD %>% left_join(a_DD_SWC[, c("date", "name", "SWC")], by = c("TIMESTAMP" = "date", "site_ID" = "name")) %>%
+  a_DD <- a_DD %>% left_join(a_DD_SWC[a_DD_SWC$name == site_ID, c("date", "SWC")], by = c("TIMESTAMP" = "date")) %>%
     rename(SWC_ERA5 = SWC)
-  a_YY <- a_YY %>% left_join(a_YY_SWC, by = c("TIMESTAMP" = 'year', "site_ID" = "name"))
-  #
-  if (sub_time_series$Lat[i] < 0.0) {
+  a_YY <- a_YY %>% left_join(a_YY_SWC[a_YY_SWC$name == site_ID, ], by = c("TIMESTAMP" = 'year'))
+  
+  # use the south of -15 degree to be consistent with growing season detection.
+  if (sites_long$Lat[i] < -15) {
     a_DD$doy <- southern_hemisphere_doy(a_DD$TIMESTAMP)
   }
   #
@@ -282,11 +297,11 @@ for (i in 1:nrow(sites_long)) {
   a_DD <- a_DD %>% filter(!year %in% rm_years$years[rm_years$site_ID==site_ID])
   
   # deal with missing variables and outliers
-  if (sum(!is.na(a_YY$VPD_F_MDS)) < 5 & "VPD_F" %in% names(a_YY))  {
+  if (sum(is.na(a_YY$VPD_F_MDS)) > 3 & "VPD_F" %in% names(a_YY))  {
     a_YY$VPD_F_MDS <- a_YY$VPD_F
     a_DD$VPD_F_MDS <- a_DD$VPD_F
   }
-  if (sum(!is.na(a_YY$SW_IN_F_MDS)) < 5 & "SW_IN_F" %in% names(a_YY))  {
+  if (sum(is.na(a_YY$SW_IN_F_MDS)) > 3 & "SW_IN_F" %in% names(a_YY))  {
     a_YY$SW_IN_F_MDS <- a_YY$SW_IN_F
     a_DD$SW_IN_F_MDS <- a_DD$SW_IN_F
   }
@@ -297,6 +312,10 @@ for (i in 1:nrow(sites_long)) {
   if (length(outlier_years_TA) > 0) {
     TA_site_years_removed <- TA_site_years_removed + length(outlier_years_TA)
     print(paste0('Site ', site_ID, ' has TA outliers in years ', outlier_years_TA))
+    
+    # check outliers
+    # print(plot(a_YY$TIMESTAMP, a_YY$TA_F_MDS, main = site_ID))
+    # print(plot(a_YY$TIMESTAMP, a_YY$VPD_F_MDS, main = site_ID))
     #
     if (!"TA_ERA" %in% names(a_DD)) {
         a_DD$TA_F_MDS[a_DD$year %in% outlier_years_TA] <- NA
@@ -305,39 +324,23 @@ for (i in 1:nrow(sites_long)) {
         a_YY$VPD_F_MDS[a_YY$TIMESTAMP %in% outlier_years_TA] <- NA
         print('no_ERA5')
     } else {
-      if (length(outlier_years_TA) <= 2) {
-        # replace with ERA5 data after doing linear regression
-        a_DD$TA_F_MDS <- merge_ERA_FLUX(outlier_years_TA, a_DD$year, a_DD$TA_F_MDS, a_DD$TA_ERA)
-        a_DD$VPD_F_MDS <- merge_ERA_FLUX(outlier_years_TA, a_DD$year, a_DD$VPD_F_MDS, a_DD$VPD_ERA)
-        a_YY$TA_F_MDS <- merge_ERA_FLUX(outlier_years_TA, a_YY$TIMESTAMP, a_YY$TA_F_MDS, a_YY$TA_ERA)
-        a_YY$VPD_F_MDS <- merge_ERA_FLUX(outlier_years_TA, a_YY$TIMESTAMP, a_YY$VPD_F_MDS, a_YY$VPD_ERA)
-      } else if (length(outlier_years_TA) > 2) {
+      if (length(outlier_years_TA) > 2 | site_ID %in% c("CA-Ca1", "US-Los", "CH-Aws")) {
         # directly use ERA5 data
         a_DD$TA_F_MDS <- a_DD$TA_ERA
         a_DD$VPD_F_MDS <- a_DD$VPD_ERA
         a_YY$TA_F_MDS <- a_YY$TA_ERA
         a_YY$VPD_F_MDS <- a_YY$VPD_ERA
-      }
-    }    
-  }
-
-  # remove extreme LE outliers using the simplest method
-  outlier_years_LE <- OutlierYearsLE(a_YY$TIMESTAMP, a_YY$LE_F_MDS)
-  
-  # remove years with bad data quality based QC flag
-  if ('LE_F_MDS_QC' %in% names(a_YY)) {
-    lackdata_years <- a_YY$TIMESTAMP[a_YY$LE_F_MDS_QC < 0.5 & !is.na(a_YY$LE_F_MDS_QC)]
-    if (length(lackdata_years) > 0) {
-      outlier_years_LE <- unique(c(outlier_years_LE, lackdata_years))
+      } else if (length(outlier_years_TA) <= 2) {
+        # replace with ERA5 data after doing linear regression
+        a_DD$TA_F_MDS <- merge_ERA_FLUX(outlier_years_TA, a_DD$year, a_DD$TA_F_MDS, a_DD$TA_ERA)
+        a_DD$VPD_F_MDS <- merge_ERA_FLUX(outlier_years_TA, a_DD$year, a_DD$VPD_F_MDS, a_DD$VPD_ERA)
+        a_YY$TA_F_MDS <- merge_ERA_FLUX(outlier_years_TA, a_YY$TIMESTAMP, a_YY$TA_F_MDS, a_YY$TA_ERA)
+        a_YY$VPD_F_MDS <- merge_ERA_FLUX(outlier_years_TA, a_YY$TIMESTAMP, a_YY$VPD_F_MDS, a_YY$VPD_ERA)
+      } 
+      print('The TA outliers are replaced with ERA5 TA.')
     }
   }
-  
-  # set NA to these years' LE
-  if (length(outlier_years_LE) > 0) {
-    a_DD$LE_F_MDS[a_DD$year %in% outlier_years_LE] <- NA
-    a_YY$LE_F_MDS[a_YY$TIMESTAMP %in% outlier_years_LE] <- NA
-    print(paste0('Site ', site_ID, ' has LE outliers in years ', outlier_years_LE))
-  }
+  #
   #
   # #############start plot figures for data quality check##########
   # plot(a_DD$TIMESTAMP, a_DD$TA_F_MDS, main=site_ID)
@@ -364,8 +367,8 @@ for (i in 1:nrow(sites_long)) {
   
   ## we differentiate TA, P, VPD, SW_IN, LE, SWC for growing and non-growing seasons
   if (site_ID %in% sites_grow_yearlong) {
-    a_YY_gw <- a_YY
-    a_YY_ngw <- a_YY
+    a_YY_gw <- a_YY %>% rename("year" = "TIMESTAMP")
+    a_YY_ngw <- a_YY %>% rename("year" = "TIMESTAMP")
   } else {
     # start and end of growing season
     sos <- grow_season_site$sos[grow_season_site$site_ID == site_ID]
@@ -384,6 +387,19 @@ for (i in 1:nrow(sites_long)) {
     a_YY_gw$P_ERA[a_YY_gw$year %in% missed_PERA_years] <- NA
     a_YY_ngw$P_ERA[a_YY_ngw$year %in% missed_PERA_years] <- NA
   }  
+  if (site_ID %in% c("JP-Yms")) {
+    # LE of these sites are mostly missing, using linear regression based on net radiation
+    mod <- lm(data = a_YY, LE_F_MDS ~ NETRAD_F_MDS)
+    a_YY$LE_F_MDS <- predict(mod, newdata = data.frame(NETRAD_F_MDS = a_YY$NETRAD_F_MDS))
+    # 
+    data_gw <- a_DD %>% filter(doy >= sos & doy <= eos) %>% group_by(year) %>% 
+          summarise(NETRAD_F_MDS=mean(NETRAD_F_MDS, na.rm=T))
+    a_YY_gw$LE_F_MDS <- predict(mod, newdata = data_gw)
+    # 
+    data_ngw <- a_DD %>% filter(doy < sos | doy > eos) %>% group_by(year) %>% 
+          summarise(NETRAD_F_MDS=mean(NETRAD_F_MDS, na.rm=T))
+    a_YY_ngw$LE_F_MDS <- predict(mod, newdata = data_ngw)
+  }
   #----------------------
   #
   years <- a_YY$TIMESTAMP[!is.na(a_YY$NEE_VUT_REF)]
@@ -392,62 +408,98 @@ for (i in 1:nrow(sites_long)) {
   nwindow = max(year_end - year_start + 1 - window_size + 1, 1)
   for (iwindow in 1:nwindow) {
     years_window <- (year_start + iwindow - 1):(year_start + iwindow + window_size - 2)
-    a_DD_sub <- a_DD %>% filter(year %in% years_window)
     a_YY_sub <- a_YY %>% filter(TIMESTAMP %in% years_window)
     #
-    a_DD_gw_sub <- a_DD_gw %>% filter(year %in% years_window)
-    a_YY_gw_sub <- a_YY_gw %>% filter(TIMESTAMP %in% years_window)
+    a_YY_gw_sub <- a_YY_gw %>% filter(year %in% years_window)
     #
-    a_DD_ngw_sub <- a_DD_ngw %>% filter(year %in% years_window)
-    a_YY_ngw_sub <- a_YY_ngw %>% filter(TIMESTAMP %in% years_window)
+    a_YY_ngw_sub <- a_YY_ngw %>% filter(year %in% years_window)
     #
     if (sum(!is.na(a_YY_sub$NEE_VUT_REF)) >= 5) {
-      trend_driver[id, 'site_ID'] <- sites_long$site_ID[i] 
+      trend_driver[id, 'site_ID'] <- sites_long$site_ID[i]
       trend_driver[id, 'year_mid'] <- round(mean(a_YY_sub$TIMESTAMP, na.rm=T))
       trend_driver[id, 'NEE'] <- mean(a_YY_sub$NEE_VUT_REF, na.rm=T)
-      trend_driver[id, 'GPP'] <- mean(a_YY_sub$GPP_VUT_REF, na.rm=T)
-      trend_driver[id, 'ER'] <- mean(a_YY_sub$RECO_VUT_REF, na.rm=T)
+      if (sites_long$NEEpartition[i] == 'NT') {
+        trend_driver[id, 'GPP'] <- mean(a_YY_sub$GPP_NT_VUT_REF, na.rm=T)
+        trend_driver[id, 'ER'] <- mean(a_YY_sub$RECO_NT_VUT_REF, na.rm=T)        
+      } else {
+        trend_driver[id, 'GPP'] <- mean(a_YY_sub$GPP_DT_VUT_REF, na.rm=T)
+        trend_driver[id, 'ER'] <- mean(a_YY_sub$RECO_DT_VUT_REF, na.rm=T)
+      }
       trend_driver[id, c('NEE_t', 'NEE_p')] <- cal_sens_slope_scale(a_YY_sub$NEE_VUT_REF)
+      trend_driver[id, c('NEE_at')] <- cal_sens_slope(a_YY_sub$NEE_VUT_REF)
+      
       if (sites_long$NEEpartition[i] == 'DT') {
         if (sum(!is.na(a_YY_sub$GPP_DT_VUT_REF)) >= 5) {
           trend_driver[id, c('GPP_t', 'GPP_p')] <- cal_sens_slope_scale(a_YY_sub$GPP_DT_VUT_REF)
+          trend_driver[id, c('GPP_at')] <- cal_sens_slope(a_YY_sub$GPP_DT_VUT_REF)
         }
         if (sum(!is.na(a_YY_sub$RECO_DT_VUT_REF)) >= 5) {
           trend_driver[id, c('ER_t', 'ER_p')] <- cal_sens_slope_scale(a_YY_sub$RECO_DT_VUT_REF)
+          trend_driver[id, c('ER_at')] <- cal_sens_slope(a_YY_sub$RECO_DT_VUT_REF)
         }
       } else if (sites_long$NEEpartition[i] == 'NT') {
         if (sum(!is.na(a_YY_sub$GPP_NT_VUT_REF)) >= 5) {
           trend_driver[id, c('GPP_t', 'GPP_p')] <- cal_sens_slope_scale(a_YY_sub$GPP_NT_VUT_REF)
+          trend_driver[id, c('GPP_at')] <- cal_sens_slope(a_YY_sub$GPP_NT_VUT_REF)
         }
         if (sum(!is.na(a_YY_sub$RECO_NT_VUT_REF)) >= 5) {
           trend_driver[id, c('ER_t', 'ER_p')] <- cal_sens_slope_scale(a_YY_sub$RECO_NT_VUT_REF)
+          trend_driver[id, c('ER_at')] <- cal_sens_slope(a_YY_sub$RECO_NT_VUT_REF)
         }
       }
       #
       # Calculate trends of environmental conditions
       trend_driver[id, c("TA_t", "TA_p")] <- cal_sens_slope_scale(a_YY_sub$TA_F_MDS)
+      trend_driver[id, c("TA_at")] <- cal_sens_slope(a_YY_sub$TA_F_MDS)
       trend_driver[id, c("TA_gs_t", "TA_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$TA_F_MDS)
+      trend_driver[id, c("TA_gs_at")] <- cal_sens_slope(a_YY_gw_sub$TA_F_MDS)
       trend_driver[id, c("TA_ngs_t", "TA_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$TA_F_MDS)
+      trend_driver[id, c("TA_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$TA_F_MDS)
       #
       trend_driver[id, c("P_t", "P_p")] <- cal_sens_slope_scale(a_YY_sub$P_ERA)
+      trend_driver[id, c("P_at")] <- cal_sens_slope(a_YY_sub$P_ERA)
       trend_driver[id, c("P_gs_t", "P_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$P_ERA)
+      trend_driver[id, c("P_gs_at")] <- cal_sens_slope(a_YY_gw_sub$P_ERA)
       trend_driver[id, c("P_ngs_t", "P_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$P_ERA)
+      trend_driver[id, c("P_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$P_ERA)
       #
       trend_driver[id, c("VPD_t", "VPD_p")] <- cal_sens_slope_scale(a_YY_sub$VPD_F_MDS)
+      trend_driver[id, c("VPD_at")] <- cal_sens_slope(a_YY_sub$VPD_F_MDS)
       trend_driver[id, c("VPD_gs_t", "VPD_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$VPD_F_MDS)
+      trend_driver[id, c("VPD_gs_at")] <- cal_sens_slope(a_YY_gw_sub$VPD_F_MDS)
       trend_driver[id, c("VPD_ngs_t", "VPD_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$VPD_F_MDS)
-      # 
-      trend_driver[id, c("SWC_t", "SWC_p")] <- cal_sens_slope_scale(a_YY_sub$SWC_ERA5)
-      trend_driver[id, c("SWC_gs_t", "SWC_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$SWC_ERA5)
-      trend_driver[id, c("SWC_ngs_t", "SWC_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$SWC_ERA5)
+      trend_driver[id, c("VPD_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$VPD_F_MDS)
+      #
+      if (site_ID %in% c('GL-ZaH')) {
+        # gleanland site, constant SWC ERA5 data; use measured SWC_F_MDS_1 for nonscale trend; use LE data for actual trend assumming SWC and LE have the same trend.  
+        trend_driver[id, c("SWC_t", "SWC_p")] <- cal_sens_slope_scale(a_YY_sub$LE_F_MDS)
+        trend_driver[id, c("SWC_at")] <- cal_sens_slope(a_YY$SWC_F_MDS_1 / 100)  # consistent with ERA5
+        trend_driver[id, c("SWC_gs_t", "SWC_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$LE_F_MDS)
+        trend_driver[id, c("SWC_gs_at")] <- cal_sens_slope(a_YY$SWC_F_MDS_1 / 100)
+        trend_driver[id, c("SWC_ngs_t", "SWC_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$LE_F_MDS)
+        trend_driver[id, c("SWC_ngs_at")] <- cal_sens_slope(a_YY$SWC_F_MDS_1 / 100)
+      } else {
+        trend_driver[id, c("SWC_t", "SWC_p")] <- cal_sens_slope_scale(a_YY_sub$SWC_ERA5)
+        trend_driver[id, c("SWC_at")] <- cal_sens_slope(a_YY_sub$SWC_ERA5)
+        trend_driver[id, c("SWC_gs_t", "SWC_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$SWC_ERA5)
+        trend_driver[id, c("SWC_gs_at")] <- cal_sens_slope(a_YY_gw_sub$SWC_ERA5)
+        trend_driver[id, c("SWC_ngs_t", "SWC_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$SWC_ERA5)
+        trend_driver[id, c("SWC_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$SWC_ERA5)        
+      }
       #
       trend_driver[id, c("SW_t", "SW_p")] <- cal_sens_slope_scale(a_YY_sub$SW_IN_F_MDS)
+      trend_driver[id, c("SW_at")] <- cal_sens_slope(a_YY_sub$SW_IN_F_MDS)
       trend_driver[id, c("SW_gs_t", "SW_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$SW_IN_F_MDS)
+      trend_driver[id, c("SW_gs_at")] <- cal_sens_slope(a_YY_gw_sub$SW_IN_F_MDS)
       trend_driver[id, c("SW_ngs_t", "SW_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$SW_IN_F_MDS)
+      trend_driver[id, c("SW_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$SW_IN_F_MDS)
       #
       trend_driver[id, c("LE_t", "LE_p")] <- cal_sens_slope_scale(a_YY_sub$LE_F_MDS)
+      trend_driver[id, c("LE_at")] <- cal_sens_slope(a_YY_sub$LE_F_MDS)
       trend_driver[id, c("LE_gs_t", "LE_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$LE_F_MDS)
+      trend_driver[id, c("LE_gs_at")] <- cal_sens_slope(a_YY_gw_sub$LE_F_MDS)
       trend_driver[id, c("LE_ngs_t", "LE_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$LE_F_MDS)
+      trend_driver[id, c("LE_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$LE_F_MDS)
       #
       # left join a_YY, a_YY_gw, and a_YY_ngw and put data into a data frame
       a_YY_gw_rename <- a_YY_gw
@@ -472,26 +524,29 @@ for (i in 1:nrow(sites_long)) {
       data_trend_driver <- rbind(data_trend_driver, merged_df)
       #
       ## we do not differentiate CO2, Lgs for growing and non-growing seasons
-      trend_driver[id, c("CO2_t", "CO2_p")] <- cal_sens_slope(a_YY_sub$CO2_F_MDS)  # use nonscaled value. 
+      trend_driver[id, c("CO2_at")] <- cal_sens_slope(a_YY_sub$CO2_F_MDS)  
+      trend_driver[id, c("CO2_p")] <- cal_sens_slope_scale(a_YY_sub$CO2_F_MDS)[2]
       trend_driver[id, c("CO2")] <- mean(a_YY_sub$CO2_F_MDS, na.rm = T)
       if (site_ID %in% sites_grow_yearlong) {
-        trend_driver[id, c("Lgs_t", "Lgs_p")] <- 0
-        trend_driver[id, c("Lgs_piece_t", "Lgs_piece_p")] <- 0
+        trend_driver[id, c("Lgs_t", "Lgs_p", "Lgs_at")] <- 0
+        trend_driver[id, c("Lgs_piece_t", "Lgs_piece_p", "Lgs_piece_at")] <- 0
       } else {
         subdata_grow_season <- data_grow_season[data_grow_season$site_ID==site_ID, ] %>% filter(year %in% years_window)
         trend_driver[id, c("Lgs_t", "Lgs_p")] <- cal_sens_slope_scale(subdata_grow_season$length_gs)
+        trend_driver[id, c("Lgs_at")] <- cal_sens_slope(subdata_grow_season$length_gs)
         trend_driver[id, c("Lgs_piece_t", "Lgs_piece_p")] <- cal_sens_slope_scale(subdata_grow_season$length_gs_piece)
-        
+        trend_driver[id, c("Lgs_piece_at")] <- cal_sens_slope(subdata_grow_season$length_gs_piece)
+
         # ###########################start plot figures for data quality check##################
         # plot(subdata_grow_season$year, subdata_grow_season$length_gs, main=site_ID)
         # plot(subdata_grow_season$year, subdata_grow_season$length_gs_piece, main=site_ID)
         # ###########################end plot figures for data quality check####################
-        
+
       }
       # Baseline conditions: MAT, MAP; use our TNvalues if we have >10 year data
       if (is.na(sites_long$MAT[sites_long$site_ID==site_ID])) {
         trend_driver[id, "MAT"] <- mean(a_YY$TA_F_MDS, na.rm=T)
-        trend_driver[id, "MAP"] <- mean(a_YY$P_ERA, na.rm=T)    
+        trend_driver[id, "MAP"] <- mean(a_YY$P_ERA, na.rm=T)
       } else {
         trend_driver[id, "MAT"] <- sites_long$MAT[sites_long$site_ID==site_ID]
         trend_driver[id, "MAP"] <- sites_long$MAP[sites_long$site_ID==site_ID]
@@ -499,18 +554,18 @@ for (i in 1:nrow(sites_long)) {
       # plant height
       # trend_driver[id, "Height"] <- canopyHeight$Height[canopyHeight$site_ID==site_ID & abs(canopyHeight$year_start-sub_time_series$year_start[i]) < 0.1]
       # forest age
-      
+
     #
-    id = id + 1        
+    id = id + 1
     }
   }
 }
 
+print(paste0('total number of site years with TA outliers is removed: ', TA_site_years_removed))
 
+write.csv(trend_driver, file.path("data", "potential_trend_drivers_sen.csv"), row.names = F)
 
-
-
-
+write.csv(data_trend_driver, file.path("data", "data_trend_driver_sen.csv"), row.names = F)
 
 ```
 
