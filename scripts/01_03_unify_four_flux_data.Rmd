@@ -345,9 +345,12 @@ for (i in 1:nrow(sites_long)) {
     tmp <- c(tmp, 2009)
   }
   if (site_ID %in% c("US-Rws", "US-Rms")) {
-    # use the first year data at this site, because that year's data is consistent with overall trend, and we need sites in dry climate. 
+    # use the first year data at this site, because that year's data is consistent with overall trend. 
     tmp <- c()
   }
+  # if (site_ID == 'US-Los') {
+  #   tmp <- c(tmp, 2001:2008)    # TA data is wrong and inconsistent with after 2014
+  # }
   #
   #########process the removed years, and put them into data frame
   tmp <- unique(tmp)

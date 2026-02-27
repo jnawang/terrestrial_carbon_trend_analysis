@@ -195,7 +195,7 @@ cal_sens_slope_scale <- function(x) {
 
 ```{r calculate environmental conditions of carbon trends during each period}
 library(librarian)
-shelf(lme4, ggplot2, tidyverse, lmerTest, trend, ggpubr)
+shelf(lme4, ggplot2, tidyverse, lmerTest, trend, ggpubr, mblm)
 #
 rm_years <- read.csv(file.path('data', 'years_to_remove.csv'))
 sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
@@ -297,18 +297,24 @@ for (i in 1:nrow(sites_long)) {
   a_DD <- a_DD %>% filter(!year %in% rm_years$years[rm_years$site_ID==site_ID])
   
   # deal with missing variables and outliers
-  if (sum(is.na(a_YY$VPD_F_MDS)) > 3 & "VPD_F" %in% names(a_YY))  {
-    a_YY$VPD_F_MDS <- a_YY$VPD_F
-    a_DD$VPD_F_MDS <- a_DD$VPD_F
+  if (sum(is.na(a_YY$VPD_F_MDS)) > 3 & "VPD_ERA" %in% names(a_YY))  {
+    a_YY$VPD_F_MDS <- a_YY$VPD_ERA
+    a_DD$VPD_F_MDS <- a_DD$VPD_ERA
   }
-  if (sum(is.na(a_YY$SW_IN_F_MDS)) > 3 & "SW_IN_F" %in% names(a_YY))  {
-    a_YY$SW_IN_F_MDS <- a_YY$SW_IN_F
-    a_DD$SW_IN_F_MDS <- a_DD$SW_IN_F
+  if (sum(is.na(a_YY$SW_IN_F_MDS)) > 3 & "SW_IN_ERA" %in% names(a_YY))  {
+    a_YY$SW_IN_F_MDS <- a_YY$SW_IN_ERA
+    a_DD$SW_IN_F_MDS <- a_DD$SW_IN_ERA
   }
   
   #####This is a big section to remove outliers in environmental conditions#####
   # replace TA and VPD outliers with ERA5 data
   outlier_years_TA <- OutlierYearsTA(a_YY$TIMESTAMP, a_YY$TA_F_MDS)
+  if (site_ID == 'US-Ho1') {
+    outlier_years_TA <- 1996:2007    # outliers not identified. 
+  }
+  if (site_ID == 'RU-Cok') {
+    outlier_years_TA <- 2003:2011    # outliers not identified. 
+  }
   if (length(outlier_years_TA) > 0) {
     TA_site_years_removed <- TA_site_years_removed + length(outlier_years_TA)
     print(paste0('Site ', site_ID, ' has TA outliers in years ', outlier_years_TA))
@@ -343,26 +349,26 @@ for (i in 1:nrow(sites_long)) {
   #
   #
   # #############start plot figures for data quality check##########
-  # plot(a_DD$TIMESTAMP, a_DD$TA_F_MDS, main=site_ID)
-  # plot(a_YY$TIMESTAMP, a_YY$TA_F_MDS, main=site_ID)
-  # #
-  # plot(a_DD$TIMESTAMP, a_DD$VPD_F_MDS, main=site_ID)
-  # plot(a_YY$TIMESTAMP, a_YY$VPD_F_MDS, main=site_ID)
+  plot(a_DD$TIMESTAMP, a_DD$TA_F_MDS, main=site_ID)
+  plot(a_YY$TIMESTAMP, a_YY$TA_F_MDS, main=site_ID)
   #
-  # plot(a_DD$TIMESTAMP, a_DD$SWC_ERA5, main=site_ID)
-  # plot(a_YY$TIMESTAMP, a_YY$SWC_ERA5, main=site_ID) 
-  # #
-  # plot(a_DD$TIMESTAMP, a_DD$SW_IN_F_MDS, main=site_ID)
-  # plot(a_YY$TIMESTAMP, a_YY$SW_IN_F_MDS, main=site_ID)
-  # #
-  # plot(a_DD$TIMESTAMP, a_DD$LE_F_MDS, main=site_ID)
-  # plot(a_YY$TIMESTAMP, a_YY$LE_F_MDS, main=site_ID)
-  # #
-  # plot(a_DD$TIMESTAMP, a_DD$P_ERA, main=site_ID)
-  # plot(a_YY$TIMESTAMP, a_YY$P_ERA, main=site_ID)
-  # #
-  # plot(a_DD$TIMESTAMP, a_DD$CO2_F_MDS, main=site_ID)
-  # plot(a_YY$TIMESTAMP, a_YY$CO2_F_MDS, main=site_ID)
+  plot(a_DD$TIMESTAMP, a_DD$VPD_F_MDS, main=site_ID)
+  plot(a_YY$TIMESTAMP, a_YY$VPD_F_MDS, main=site_ID)
+
+  plot(a_DD$TIMESTAMP, a_DD$SWC_ERA5, main=site_ID)
+  plot(a_YY$TIMESTAMP, a_YY$SWC_ERA5, main=site_ID)
+  #
+  plot(a_DD$TIMESTAMP, a_DD$SW_IN_F_MDS, main=site_ID)
+  plot(a_YY$TIMESTAMP, a_YY$SW_IN_F_MDS, main=site_ID)
+  #
+  plot(a_DD$TIMESTAMP, a_DD$LE_F_MDS, main=site_ID)
+  plot(a_YY$TIMESTAMP, a_YY$LE_F_MDS, main=site_ID)
+  #
+  plot(a_DD$TIMESTAMP, a_DD$P_ERA, main=site_ID)
+  plot(a_YY$TIMESTAMP, a_YY$P_ERA, main=site_ID)
+  #
+  plot(a_DD$TIMESTAMP, a_DD$CO2_F_MDS, main=site_ID)
+  plot(a_YY$TIMESTAMP, a_YY$CO2_F_MDS, main=site_ID)
   # #############end plot figures for data quality check##########
   
   ## we differentiate TA, P, VPD, SW_IN, LE, SWC for growing and non-growing seasons
