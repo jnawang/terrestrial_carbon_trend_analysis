@@ -477,7 +477,7 @@ for (i in 1:nrow(sites_long)) {
       trend_driver[id, c("VPD_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$VPD_F_MDS)
       #
       if (site_ID %in% c('GL-ZaH')) {
-        # gleanland site, constant SWC ERA5 data; use measured SWC_F_MDS_1 for nonscale trend; use LE data for actual trend assumming SWC and LE have the same trend.  
+        # a greenland site, constant SWC ERA5 data; use measured SWC_F_MDS_1 for nonscale trend; use LE data for actual trend assumming SWC and LE have the same trend.  
         trend_driver[id, c("SWC_t", "SWC_p")] <- cal_sens_slope_scale(a_YY_sub$LE_F_MDS)
         trend_driver[id, c("SWC_at")] <- cal_sens_slope(a_YY$SWC_F_MDS_1 / 100)  # consistent with ERA5
         trend_driver[id, c("SWC_gs_t", "SWC_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$LE_F_MDS)
@@ -569,9 +569,20 @@ for (i in 1:nrow(sites_long)) {
 
 print(paste0('total number of site years with TA outliers is removed: ', TA_site_years_removed))
 
-write.csv(trend_driver, file.path("data", "potential_trend_drivers_sen.csv"), row.names = F)
+write.csv(trend_driver, file.path("data", "potential_trend_driver_sen.csv"), row.names = F)
 
 write.csv(data_trend_driver, file.path("data", "data_trend_driver_sen.csv"), row.names = F)
+
+# # check calculated results
+# trend_driver <- read.csv(file.path("data", "potential_trend_driver_sen.csv"))
+# 
+# for (j in 7:20) {
+#   if ((j - 1) %% 3 != 0) {
+#     print(plot(trend_driver[, j], main = names(trend_driver)[j]))
+#     print(plot(density(trend_driver[, j], main = names(trend_driver)[j])))
+#   }
+# }
+
 
 ```
 
