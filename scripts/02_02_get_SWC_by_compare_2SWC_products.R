@@ -2,7 +2,8 @@
 # Generate a new dataset that including data for every site
 # 1/28/2026, Junna Wang
 
-# important: SWC_ERA5 does not include data from IT-Noe. 
+# important: SWC_ERA5 does not include data from IT-Noe, used measured data for this site.
+# it takes ~40 min to complete. 
 rm(list=ls())
 
 # change this location where the raw data will be saved accordingly
@@ -179,7 +180,10 @@ SWC_trend %>%
 
 # We have 95 sites or this comparison. 
 # One site IT-Noe, their modeled SWC is missing, we will use measured data. 
-SWC_ERA5 <- SWC_ERA5 %>% filter(!name == "IT-Noe") %>% 
+SWC_ERA5 <- SWC_ERA5 %>% 
+  mutate(SWC = SWC * 100) %>% 
+  select("date", "name", "SWC") %>% 
+  filter(!name == "IT-Noe") %>% 
   bind_rows(df)
 
 write.csv(SWC_ERA5, file.path(dir_rawdata, "ERA5L_daily_SWC_trend_sites_1990_2025_correct.csv"), row.names = F)
