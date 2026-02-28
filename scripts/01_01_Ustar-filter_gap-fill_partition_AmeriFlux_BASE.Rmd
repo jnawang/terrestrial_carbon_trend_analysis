@@ -414,7 +414,7 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   
   name_site <- sites_selected_BASE1$Site.ID[i]
   print(name_site)
-  if (!name_site %in% c("BR-Sa1", "CA-Cbo")) {
+  if (!name_site %in% c("US-Los")) {
     next
   }
   
@@ -525,6 +525,11 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   #  set reasonable range of Rg, NEE values. 
   data_EddyProc$Rg <- pmax(data_EddyProc$Rg, 0.0)
   data_EddyProc$NEE[abs(data_EddyProc$NEE) > 40] <- NA
+  #
+  # for US-los, using PI_F, TA data
+  if (name_site == 'US-Los') {
+    data_EddyProc$Tair <- data_BASE$TA_PI_F_1_1_1
+  }
   #
   #  remove some abnormal fluxes during very low temperature
   if (name_site == 'CA-Man') {

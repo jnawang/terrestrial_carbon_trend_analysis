@@ -195,12 +195,20 @@ merge_ERA_FLUX <- function(years2update, col_year, col_flux, col_era) {
 # use new methods covering irregular time series
 library(mblm)
 cal_sens_slope <- function(time, y) {
+  id.nonna <- !is.na(y) & !is.na(time) 
+  y <- y[id.nonna]
+  time <- time[id.nonna]
+  #
   model <- mblm(y ~ time)
   # summary(model)
   return(summary(model)$coefficients[2, 1])
 }
 
 cal_sens_slope_scale <- function(time, y) {
+  id.nonna <- !is.na(y) & !is.na(time) 
+  y <- y[id.nonna]
+  time <- time[id.nonna]
+  #
   y <- scale(y)
   model <- mblm(y ~ time)
   # summary(model)
@@ -366,26 +374,26 @@ for (i in 1:nrow(sites_long)) {
   #
   #
   # #############start plot figures for data quality check##########
-  plot(a_DD$TIMESTAMP, a_DD$TA_F_MDS, main=site_ID)
-  plot(a_YY$TIMESTAMP, a_YY$TA_F_MDS, main=site_ID)
-  #
-  plot(a_DD$TIMESTAMP, a_DD$VPD_F_MDS, main=site_ID)
-  plot(a_YY$TIMESTAMP, a_YY$VPD_F_MDS, main=site_ID)
-
-  plot(a_DD$TIMESTAMP, a_DD$SWC_ERA5, main=site_ID)
-  plot(a_YY$TIMESTAMP, a_YY$SWC_ERA5, main=site_ID)
-  #
-  plot(a_DD$TIMESTAMP, a_DD$SW_IN_F_MDS, main=site_ID)
-  plot(a_YY$TIMESTAMP, a_YY$SW_IN_F_MDS, main=site_ID)
-  #
-  plot(a_DD$TIMESTAMP, a_DD$LE_F_MDS, main=site_ID)
-  plot(a_YY$TIMESTAMP, a_YY$LE_F_MDS, main=site_ID)
-  #
-  plot(a_DD$TIMESTAMP, a_DD$P_ERA, main=site_ID)
-  plot(a_YY$TIMESTAMP, a_YY$P_ERA, main=site_ID)
-  #
-  plot(a_DD$TIMESTAMP, a_DD$CO2_F_MDS, main=site_ID)
-  plot(a_YY$TIMESTAMP, a_YY$CO2_F_MDS, main=site_ID)
+  # plot(a_DD$TIMESTAMP, a_DD$TA_F_MDS, main=site_ID)
+  # plot(a_YY$TIMESTAMP, a_YY$TA_F_MDS, main=site_ID)
+  # #
+  # plot(a_DD$TIMESTAMP, a_DD$VPD_F_MDS, main=site_ID)
+  # plot(a_YY$TIMESTAMP, a_YY$VPD_F_MDS, main=site_ID)
+  # 
+  # plot(a_DD$TIMESTAMP, a_DD$SWC_ERA5, main=site_ID)
+  # plot(a_YY$TIMESTAMP, a_YY$SWC_ERA5, main=site_ID)
+  # #
+  # plot(a_DD$TIMESTAMP, a_DD$SW_IN_F_MDS, main=site_ID)
+  # plot(a_YY$TIMESTAMP, a_YY$SW_IN_F_MDS, main=site_ID)
+  # #
+  # plot(a_DD$TIMESTAMP, a_DD$LE_F_MDS, main=site_ID)
+  # plot(a_YY$TIMESTAMP, a_YY$LE_F_MDS, main=site_ID)
+  # #
+  # plot(a_DD$TIMESTAMP, a_DD$P_ERA, main=site_ID)
+  # plot(a_YY$TIMESTAMP, a_YY$P_ERA, main=site_ID)
+  # #
+  # plot(a_DD$TIMESTAMP, a_DD$CO2_F_MDS, main=site_ID)
+  # plot(a_YY$TIMESTAMP, a_YY$CO2_F_MDS, main=site_ID)
   # #############end plot figures for data quality check##########
   
   ## we differentiate TA, P, VPD, SW_IN, LE, SWC for growing and non-growing seasons

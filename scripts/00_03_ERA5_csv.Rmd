@@ -58,7 +58,7 @@ utc_offset(40, -100)
 ```{r read era5 precipitation data, convert it to csv files}
 #### read nc files
 ##ERA5_Tair_Prec
-data.folder <- 'ERA5_prep'
+data.folder <- "ERA5_Tair_Prec"  # 'ERA5_prep'
 ##
 ## read each file, get long, lat, var, and years
 nc_files <- list.files(file.path(dir_rawdata, data.folder), pattern='.nc$')
@@ -71,12 +71,18 @@ names(sites_Ameri) <- c("site_ID", "Long", "Lat")
 df <- data.frame(Long=double(), Lat=double(), Var=character(), site_ID=character(), file_ID=integer())
 ##
 for (i in 1:length(nc_files)) {
-#  i = 35
+#  i = 40
   nc_file <- nc_open(file.path(dir_rawdata, data.folder, nc_files[i]))
   df[i,3] <- names(nc_file$var)[3]
   df$Long[i] <- ncvar_get(nc_file, "longitude")
   df$Lat[i]  <- ncvar_get(nc_file, "latitude")
   df$file_ID[i] <- i
+  # Two years (2024, 2025) of US-Los TP data have inaccurate coordinates TO get data. 
+  # US-Los: -89.9792, 46.0827 (accurate); used to download data: -90, 46
+  if (abs(df$Long[i] + 90) < 0.01  & abs(df$Lat[i] - 46) < 0.01) {
+    df$Long[i] = -89.98
+    df$Lat[i] = 46.07
+  }
   # 
   id <- sites_Ameri$site_ID[abs(df$Long[i] - sites_Ameri$Long) < 0.02 & abs(df$Lat[i] - sites_Ameri$Lat) < 0.02]
   if (length(id) == 1) {

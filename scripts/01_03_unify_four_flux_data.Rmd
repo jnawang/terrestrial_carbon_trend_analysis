@@ -216,11 +216,12 @@ sites_long$Climate.class[sites_long$site_ID %in% c("US-Akn")] <- "Cfa"
 ## ZM-Mon: too few years of good data
 sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6', 'US-Myb', "CA-Ca2", "US-KLS", "US-NC1", "US-NC3", "US-Tw4", "US-SP2", "CL-SDP", "DE-Hzd", "US-Blo", "US-NR3", "US-NR4", "IT-Lav", "IT-TrF", "US-Akn", "ZM-Mon"))
 #
-# add NEE partition method
+# Add NEE partition method
 sites_long <- sites_long %>% mutate(NEEpartition = case_when( 
-site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae", "US-Oho", "DE-RuW", "US-Uaf", "US-Esm", "US-Elm", "US-MtB", "US-Prr", "CA-Cbo", "US-PFa", "CN-ARS", "CN-HZZ") ~ 'NT',
+site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae", "US-Oho", "DE-RuW", "US-Uaf", "US-Esm", "US-Elm", "US-MtB", "US-Prr", "CA-Cbo", "US-PFa", "CN-ARS", "CN-HZZ") ~ 'NT',
 TRUE ~ 'DT'))
-#
+
+# First few years' TA at "US-Ho1" has problem, which affect NT partition, so we use DT. 
 
 ```
 
@@ -348,9 +349,6 @@ for (i in 1:nrow(sites_long)) {
     # use the first year data at this site, because that year's data is consistent with overall trend. 
     tmp <- c()
   }
-  # if (site_ID == 'US-Los') {
-  #   tmp <- c(tmp, 2001:2008)    # TA data is wrong and inconsistent with after 2014
-  # }
   #
   #########process the removed years, and put them into data frame
   tmp <- unique(tmp)
