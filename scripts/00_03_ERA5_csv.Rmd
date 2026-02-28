@@ -55,6 +55,7 @@ utc_offset(40, -100)
 
 ```
 
+
 ```{r read era5 precipitation data, convert it to csv files}
 #### read nc files
 ##ERA5_Tair_Prec
@@ -425,10 +426,11 @@ for(i in 1:nrow(df.sitemetadata)){
 ```{r convert ERA5 nc to csv}
 cat(paste0('"', 2002:2011, '"', collapse = ", "))
 
-coor <- round(c(-2.8567,	-54.9589), 2)
+coor <- round(c(46.0827,	-89.9792), 2)
 
-paste(as.character(round(c(coor[1] + 0.006, coor[2]-0.006, coor[1] - 0.006, coor[2]+0.006), 2)), collapse = ", ")
+paste(as.character(round(c(coor[1] + 0.01, coor[2] - 0.01, coor[1] - 0.01, coor[2] + 0.01), 2)), collapse = ", ")
 
+# interval could be 0.0625
 
 ```
 

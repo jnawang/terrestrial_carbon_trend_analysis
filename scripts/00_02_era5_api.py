@@ -35,10 +35,10 @@ dataset = "reanalysis-era5-single-levels"
 request = {
     "product_type": ["reanalysis"],
     "variable": [
-        "surface_solar_radiation_downwards"
+        "total_precipitation"
     ],
     "year": [
-        "2002", "2003"
+        "2024", "2025"
     ],
     "month": [
         "01", "02", "03",
@@ -71,7 +71,7 @@ request = {
     ],
     "data_format": "netcdf",
     "download_format": "unarchived",
-    "area": [-2.85, -54.97, -2.87, -54.95]
+    "area": [46.125, -90.0, 46.0, -89.875]
 }
 
 client = cdsapi.Client()
