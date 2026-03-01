@@ -356,7 +356,7 @@ for (i in 1:nrow(sites_long)) {
         a_YY$VPD_F_MDS[a_YY$TIMESTAMP %in% outlier_years_TA] <- NA
         print('no_ERA5')
     } else {
-      if (length(outlier_years_TA) > 2 | site_ID %in% c("CA-Ca1", "US-Los", "CH-Aws")) {
+      if (length(outlier_years_TA) > 2 | site_ID %in% c("CA-Ca1", "CH-Aws")) {
         # directly use ERA5 data
         a_DD$TA_F_MDS <- a_DD$TA_ERA
         a_DD$VPD_F_MDS <- a_DD$VPD_ERA
@@ -372,7 +372,36 @@ for (i in 1:nrow(sites_long)) {
       print('The TA outliers are replaced with ERA5 TA.')
     }
   }
-  #
+  if (site_ID == "IT-Noe") {
+    a_YY$VPD_F_MDS[a_YY$TIMESTAMP %in% c(2008:2010)] = NA  # bad data
+    a_DD$VPD_F_MDS[a_DD$year %in% c(2008:2010)] = NA  # bad data
+  }
+  if (site_ID == "IT-Ro2") {
+    a_YY$VPD_F_MDS[a_YY$TIMESTAMP %in% c(2002:2003)] = a_YY$VPD_ERA[a_YY$TIMESTAMP %in% c(2002:2003)]
+    a_DD$VPD_F_MDS[a_DD$year %in% c(2002:2003)] = a_DD$VPD_ERA[a_DD$year %in% c(2002:2003)]
+  }
+  if (site_ID == "CH-Aws") {
+    a_YY$SW_IN_F_MDS = a_YY$SW_IN_F
+    a_DD$SW_IN_F_MDS = a_DD$SW_IN_F
+  }
+  if (site_ID == "US-WCr") {
+    a_YY$P_ERA[a_YY$TIMESTAMP %in% c(2025)] = NA
+    a_DD$P_ERA[a_DD$year %in% c(2025)] = NA
+    a_YY$SW_IN_F_MDS[a_YY$TIMESTAMP %in% c(2015:2017)] = NA
+    a_DD$SW_IN_F_MDS[a_DD$year %in% c(2015:2017)] = NA
+  } 
+  if (site_ID == "ES-Agu") {
+    a_YY$SW_IN_F_MDS = a_YY$SW_IN_F    # the recent SW_IN_F_MDS should be replaced. 
+    a_DD$SW_IN_F_MDS = a_DD$SW_IN_F
+  }
+  if (site_ID == "US-Rls") {
+    a_YY$P_ERA = a_YY$P_ERA / 14      # too high
+    a_DD$P_ERA = a_DD$P_ERA / 14
+  }  
+  if (site_ID == "U-SP1") {
+    a_YY$P_ERA = a_YY$P_ERA / 2.85      # too high, adjusted
+    a_DD$P_ERA = a_DD$P_ERA / 2.85
+  } 
   #
   # #############start plot figures for data quality check##########
   # plot(a_DD$TIMESTAMP, a_DD$TA_F_MDS, main=site_ID)
@@ -566,6 +595,9 @@ for (i in 1:nrow(sites_long)) {
         trend_driver[id, c("Lgs_piece_t", "Lgs_piece_p", "Lgs_piece_at")] <- 0
       } else {
         subdata_grow_season <- data_grow_season[data_grow_season$site_ID==site_ID, ] %>% filter(year %in% years_window)
+        if (site_ID == 'US-Jo2') {
+          subdata_grow_season <- subdata_grow_season[subdata_grow_season$year != 2014, ]
+        }
         trend_driver[id, c("Lgs_t", "Lgs_p")] <- cal_sens_slope_scale(subdata_grow_season$year, subdata_grow_season$length_gs)
         trend_driver[id, c("Lgs_at")] <- cal_sens_slope(subdata_grow_season$year, subdata_grow_season$length_gs)
         trend_driver[id, c("Lgs_piece_t", "Lgs_piece_p")] <- cal_sens_slope_scale(subdata_grow_season$year, subdata_grow_season$length_gs_piece)
@@ -594,6 +626,8 @@ for (i in 1:nrow(sites_long)) {
     }
   }
 }
+
+trend_driver[trend_driver$site_ID == "US-Los" & trend_driver$year_mid < 2011, c("LE_t", "LE_p", "LE_at", "LE_gs_t", "LE_gs_p", "LE_gs_at", "LE_ngs_t", "LE_ngs_p", "LE_ngs_at")] <- NA
 
 print(paste0('total number of site years with TA outliers is removed: ', TA_site_years_removed))
 
