@@ -20,7 +20,7 @@ rm(list=ls())
 dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 #
 library(librarian)
-shelf(tidyverse, ggpubr, MuMIn, car, fBasics, olsrr, lme4, Hmisc, corrplot, trend)
+shelf(tidyverse, ggpubr, MuMIn, car, fBasics, olsrr, lme4, Hmisc, corrplot, trend, glmmTMB)
 #
 ```
 
@@ -84,7 +84,7 @@ forestSites[!forestSites %in% forestAge$Site[!is.na(forestAge$Age_standard)]]
 
 ```{r get canopy height}
 # plant height information
-canopyHeightLang <- read.csv(file.path('data', 'CanopyHeight_Lang.csv'))
+canopyHeightLang <- read.csv(file.path('data', 'CanopyHeight_Lang.csv'))   # we have this data downloaded. 
 canopyHeightChu <- read.csv(file.path('data', 'AMF-HEIGHTC-BADM_AND_PI_chu.csv'))
 #
 sub_time_series <- read.csv('data/sub_time_series_sen.csv')
@@ -247,6 +247,7 @@ grow_season_site <- data_grow_season %>%
 #   a_YY_all <- a_YY_all %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by = "site_ID")
 # }
 trend_driver <- data.frame(site_ID = character(), year_mid=integer(), 
+                           year_start = integer(), year_end = integer(),
                      NEE = double(), GPP = double(), ER = double(), 
                      NEE_t = double(), NEE_p = double(), NEE_at = double(), # at: actual trend
                      GPP_t = double(), GPP_p = double(), GPP_at = double(), 
@@ -448,6 +449,8 @@ for (i in 1:nrow(sites_long)) {
     if (sum(!is.na(a_YY_sub$NEE_VUT_REF)) >= 5) {
       trend_driver[id, 'site_ID'] <- sites_long$site_ID[i]
       trend_driver[id, 'year_mid'] <- round(mean(a_YY_sub$TIMESTAMP, na.rm=T))
+      trend_driver[id, 'year_start'] <- min(a_YY_sub$TIMESTAMP, na.rm=T)
+      trend_driver[id, 'year_end'] <- max(a_YY_sub$TIMESTAMP, na.rm=T)
       trend_driver[id, 'NEE'] <- mean(a_YY_sub$NEE_VUT_REF, na.rm=T)
       if (sites_long$NEEpartition[i] == 'NT') {
         trend_driver[id, 'GPP'] <- mean(a_YY_sub$GPP_NT_VUT_REF, na.rm=T)
@@ -598,18 +601,36 @@ write.csv(trend_driver, file.path("data", "potential_trend_driver_sen.csv"), row
 
 write.csv(data_trend_driver, file.path("data", "data_trend_driver_sen.csv"), row.names = F)
 
-# check calculated results
-trend_driver <- read.csv(file.path("data", "potential_trend_driver_sen.csv"))
+# # check calculated results
+# trend_driver <- read.csv(file.path("data", "potential_trend_driver_sen.csv"))
+# 
+# for (j in 60:80) {
+#   print(j)
+#   if ((j - 1) %% 3 != 0) {
+#     print(plot(trend_driver[, j], main = names(trend_driver)[j]))
+#     print(plot(density(trend_driver[, j], main = names(trend_driver)[j])))
+#   }
+# }
+# 
+# trend_driver$site_ID[trend_driver[, c('LE_at')] < -3.5]
+# 
+# 
+# # simple trend analysis
+# sort(table(trend_driver$site_ID))
+# 
+# trend_driver_long <- trend_driver %>% filter(site_ID %in% c("CH-Dav", "DE-Tha", "FI-Hyy", "NL-Loo", "US-Ho1", "CA-Cbo", "US-Ha1"))    # "BE-Vie", 
+# 
+# ggplot(data = trend_driver_long, aes(x = Lgs_at, y = NEE_at, col = site_ID)) +
+#   geom_point() +
+#   geom_smooth(method = 'lm')
+# 
+# summary(glmmTMB(data = trend_driver_long, NEE_at ~ TA_gs_at + P_gs_at + (1|site_ID)))
 
-for (j in 60:80) {
-  print(j)
-  if ((j - 1) %% 3 != 0) {
-    print(plot(trend_driver[, j], main = names(trend_driver)[j]))
-    print(plot(density(trend_driver[, j], main = names(trend_driver)[j])))
-  }
-}
+# for each year, how many sites. 
+# sort(table(trend_driver$year_mid))
 
-trend_driver$site_ID[trend_driver[, c('LE_at')] < -3.5]
+
+
 
 ```
 
