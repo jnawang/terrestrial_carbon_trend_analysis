@@ -645,19 +645,26 @@ write.csv(data_trend_driver, file.path("data", "data_trend_driver_sen.csv"), row
 ```{r look at calculated trend driver data}
 # check calculated results
 trend_driver <- read.csv(file.path("data", "potential_trend_driver_sen.csv"))
+sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
 
-for (j in 41:60) {
-  print(j)
-  if ((j - 1) %% 3 != 2) {
-    acol <- trend_driver[, j]
-    acol <- acol[  !is.na(acol)  ]
-    
-    print(plot(acol, main = names(trend_driver)[j]))
-    print(plot(density(acol, main = names(trend_driver)[j])))
-  }
+
+# for (j in 41:60) {
+#   print(j)
+#   if ((j - 1) %% 3 != 2) {
+#     acol <- trend_driver[, j]
+#     acol <- acol[  !is.na(acol)  ]
+#     
+#     print(plot(acol, main = names(trend_driver)[j]))
+#     print(plot(density(acol, main = names(trend_driver)[j])))
+#   }
+# }
+# trend_driver$site_ID[trend_driver[, c('P_ngs_at')] > 100]
+
+# adding IGBP, climate, and category into trend driver
+if (!'category' %in% names(trend_driver)) {
+  trend_driver <- trend_driver %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by = "site_ID")
 }
 
-trend_driver$site_ID[trend_driver[, c('P_ngs_at')] > 100]
 
 
 # simple trend analysis
@@ -673,6 +680,9 @@ summary(glmmTMB(data = trend_driver_long, NEE_at ~ TA_gs_at + P_gs_at + (1|site_
 
 # for each year, how many sites.
 sort(table(as.numeric(trend_driver$year_mid)))
+
+
+
 
 
 
@@ -1487,6 +1497,9 @@ data_dry %>%
 
 ```
 
+
+
+
 ```{r trend driver for wet climate }
 # identify trend drivers for dry climate
 data_wet <- sub_time_series %>% left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>% filter(category=='wet') 
@@ -1564,174 +1577,6 @@ summary(model_best)
 
 model_best <- lm(NEEtrend_lm ~ LE_t + SW_t + IGBP, data = data_wet)
 summary(model_best)
-
-```
-
-
-```{r how about differentiate vegetation types}
-data_ENF_cold <- sub_time_series %>% left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>% 
-  filter(IGBP %in% c('ENF', "EBF") & category %in% c("cold")) 
-
-data <- data_ENF_cold %>% 
-        dplyr::select(c("NEEtrend_lm", "GPPtrend_lm", "ERtrend_lm", 
-                            "TA_gs_t", "P_gs_t", "VPD_gs_t", "SW_gs_t", "LE_gs_t", 
-                            "TA_ngs_t", "P_ngs_t", "VPD_ngs_t", "SW_ngs_t", "LE_ngs_t", 
-                            "Lgs_t", "MAT", "MAP", "Height", "Nmean", "Age"))
-
-rcorr_results <- rcorr(as.matrix(data))
-cor_matrix <- rcorr_results$r
-p_matrix <- rcorr_results$P
-
-# Print correlation matrix
-print(cor_matrix)
-
-# Print p-value matrix
-print(p_matrix)
-
-data_use <- na.omit(data)
-#
-M=cor(data_use)
-testRes = cor.mtest(data_use, conf.level = 0.95)
-#
-plot <- corrplot(M, p.mat = testRes$p, method = 'circle', insig='blank',
-         diag = FALSE)
-plot
-
-options(na.action = na.fail)
-#
-# do not differentiate between growing and non-growing season
-data_use <- subset(data_use, select=-c(GPPtrend_lm, ERtrend_lm))
-#
-model <- lm(NEEtrend_lm ~ ., data = data_use)
-summary(model)
-#
-vif_values <- vif(model)
-vif_values
-
-system.time(dd <- dredge(model, rank = "AICc"))    # subset = sexpr, cluster = cl
-dd
-
-model_best <- lm(NEEtrend_lm ~ Age + MAT + P_gs_t + SW_gs_t + P_ngs_t + VPD_ngs_t, data = data_use)
-summary(model_best)
-
-data_use %>% 
-  ggplot(aes(x=P_gs_t, y=NEEtrend_lm)) + 
-  geom_point() +
-  geom_smooth(method = lm) +
-  stat_cor(color='green') 
-
-
-```
-
-```{r how about differentiate vegetation types}
-data_DBF_cold <- sub_time_series %>% left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>% 
-  filter(IGBP %in% c('MF', "DBF") ) %>% filter(category %in% c("cold"))
-data <- data_DBF_cold %>%
-        dplyr::select(c("NEEtrend_lm", "GPPtrend_lm", "ERtrend_lm", 
-                            "TA_gs_t", "P_gs_t", "VPD_gs_t", "SW_gs_t", 
-                            "TA_ngs_t", "P_ngs_t", "VPD_ngs_t", "SW_ngs_t", 
-                            "Lgs_t", "MAT", "MAP", "Height", "Nmean", "Age"))
-
-rcorr_results <- rcorr(as.matrix(data))
-cor_matrix <- rcorr_results$r
-p_matrix <- rcorr_results$P
-
-# Print correlation matrix
-print(cor_matrix)
-
-# Print p-value matrix
-print(p_matrix)
-
-data_use <- na.omit(data)
-#
-M=cor(data_use)
-testRes = cor.mtest(data_use, conf.level = 0.95)
-#
-plot <- corrplot(M, p.mat = testRes$p, method = 'circle', insig='blank',
-         diag = FALSE)
-plot
-
-options(na.action = na.fail)
-#
-# do not differentiate between growing and non-growing season
-data_use <- subset(data_use, select=-c(GPPtrend_lm, ERtrend_lm))
-#
-model <- lm(NEEtrend_lm ~ ., data = data_use)
-summary(model)
-#
-vif_values <- vif(model)
-vif_values
-
-system.time(dd <- dredge(model, rank = "AICc"))    # subset = sexpr, cluster = cl
-dd
-
-model_best <- lm(NEEtrend_lm ~ Age + P_ngs_t + VPD_ngs_t + VPD_gs_t, data = data_use)
-summary(model_best)
-
-data_DBF_cold %>% 
-  ggplot(aes(x=LE_gs_t, y=NEEtrend_lm)) + 
-  geom_point() +
-  geom_smooth(method = lm) +
-  stat_cor(color='green') 
-
-```
-
-```{r how about differentiate vegetation types}
-data_cold_nonforest <- sub_time_series %>% left_join(sites_long[, c("site_ID", "category")], by="site_ID") %>% 
-  filter(!IGBP %in% c('MF', "DBF", "EBF", "ENF") ) %>% filter(category %in% c("cold")) 
-data <- data_cold_nonforest %>%
-        dplyr::select(c("NEEtrend_lm", "GPPtrend_lm", "ERtrend_lm", 
-                            "TA_gs_t", "P_gs_t", "VPD_gs_t", "SW_gs_t", 
-                            "TA_ngs_t", "P_ngs_t", "VPD_ngs_t", "SW_ngs_t", 
-                            "Lgs_t", "MAT", "MAP", "Nmean"))
-
-rcorr_results <- rcorr(as.matrix(data))
-cor_matrix <- rcorr_results$r
-p_matrix <- rcorr_results$P
-
-# Print correlation matrix
-print(cor_matrix)
-
-# Print p-value matrix
-print(p_matrix)
-
-data_use <- na.omit(data)
-#
-M=cor(data_use)
-testRes = cor.mtest(data_use, conf.level = 0.95)
-#
-plot <- corrplot(M, p.mat = testRes$p, method = 'circle', insig='blank',
-         diag = FALSE)
-plot
-
-options(na.action = na.fail)
-#
-# do not differentiate between growing and non-growing season
-data_use <- subset(data_use, select=-c(GPPtrend_lm, ERtrend_lm))
-#
-model <- lm(NEEtrend_lm ~ ., data = data_use)
-summary(model)
-#
-vif_values <- vif(model)
-vif_values
-
-system.time(dd <- dredge(model, rank = "AICc"))    # subset = sexpr, cluster = cl
-dd
-
-model_best <- lm(NEEtrend_lm ~ MAP + Nmean , data = data_cold_nonforest)
-summary(model_best)
-
-data %>% 
-  ggplot(aes(x=Nmean, y=NEEtrend_lm)) + 
-  geom_point() +
-  geom_smooth(method = lm) +
-  stat_cor(color='green') 
-
-data %>% 
-  ggplot(aes(x=MAP, y=NEEtrend_lm)) + 
-  geom_point() +
-  geom_smooth(method = lm) +
-  stat_cor(color='green') 
 
 ```
 
