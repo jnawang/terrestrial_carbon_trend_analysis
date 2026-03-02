@@ -398,12 +398,12 @@ for (i in 1:nrow(sites_long)) {
     a_YY$P_ERA = a_YY$P_ERA / 14      # too high
     a_DD$P_ERA = a_DD$P_ERA / 14
   }  
-  if (site_ID == "U-SP1") {
+  if (site_ID == "US-SP1") {
     a_YY$P_ERA = a_YY$P_ERA / 2.85      # too high, adjusted
     a_DD$P_ERA = a_DD$P_ERA / 2.85
   } 
   #
-  # #############start plot figures for data quality check##########
+  #############start plot figures for data quality check##########
   # plot(a_DD$TIMESTAMP, a_DD$TA_F_MDS, main=site_ID)
   # plot(a_YY$TIMESTAMP, a_YY$TA_F_MDS, main=site_ID)
   # #
@@ -424,7 +424,7 @@ for (i in 1:nrow(sites_long)) {
   # #
   # plot(a_DD$TIMESTAMP, a_DD$CO2_F_MDS, main=site_ID)
   # plot(a_YY$TIMESTAMP, a_YY$CO2_F_MDS, main=site_ID)
-  # #############end plot figures for data quality check##########
+  #############end plot figures for data quality check##########
   
   ## we differentiate TA, P, VPD, SW_IN, LE, SWC for growing and non-growing seasons
   if (site_ID %in% sites_grow_yearlong) {
