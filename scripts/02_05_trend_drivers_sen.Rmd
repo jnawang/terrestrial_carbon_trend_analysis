@@ -20,7 +20,7 @@ rm(list=ls())
 dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 #
 library(librarian)
-shelf(tidyverse, ggpubr, MuMIn, car, fBasics, olsrr, lme4, Hmisc, corrplot, trend, glmmTMB)
+shelf(tidyverse, ggpubr, MuMIn, car, fBasics, olsrr, lme4, Hmisc, corrplot, trend, glmmTMB, mblm, brms)
 #
 ```
 
@@ -631,7 +631,13 @@ for (i in 1:nrow(sites_long)) {
   }
 }
 
+# LE data for the Lost Creek before 2010 is problematic, and not used. 
 trend_driver[trend_driver$site_ID == "US-Los" & trend_driver$year_mid < 2011, c("LE_t", "LE_p", "LE_at", "LE_gs_t", "LE_gs_p", "LE_gs_at", "LE_ngs_t", "LE_ngs_p", "LE_ngs_at")] <- NA
+
+trend_driver <- trend_driver %>%
+  group_by(site_ID, year_mid) %>%
+  slice_max(order_by = year_end - year_start, n = 1, with_ties = F) %>%
+  ungroup()
 
 print(paste0('total number of site years with TA outliers is removed: ', TA_site_years_removed))
 
@@ -646,7 +652,6 @@ write.csv(data_trend_driver, file.path("data", "data_trend_driver_sen.csv"), row
 # check calculated results
 trend_driver <- read.csv(file.path("data", "potential_trend_driver_sen.csv"))
 sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
-
 
 # for (j in 41:60) {
 #   print(j)
@@ -665,24 +670,94 @@ if (!'category' %in% names(trend_driver)) {
   trend_driver <- trend_driver %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by = "site_ID")
 }
 
+# Sites classification based on period
+trend_driver_period1 <- trend_driver %>% filter(year_end <= 2015)
+unique_sites <- unique(trend_driver_period1$site_ID)
+table(trend_driver_period1$category[!duplicated(trend_driver_period1$site_ID)])
+# cold  dry  wet 
+#  39    4   12
 
+trend_driver_period2 <- trend_driver %>% filter(year_start >= 2005 & year_end <= 2020)
+unique_sites <- unique(trend_driver_period2$site_ID)
+table(trend_driver_period2$category[!duplicated(trend_driver_period2$site_ID)])
+# cold  dry  wet 
+#   46   14   19
 
-# simple trend analysis
-sort(table(trend_driver$site_ID))
+trend_driver_period2 <- trend_driver %>% filter(year_start >= 2010 & year_end <= 2025)
+unique_sites <- unique(trend_driver_period2$site_ID)
+table(trend_driver_period2$category[!duplicated(trend_driver_period2$site_ID)])
+# cold  dry  wet 
+#   48   22   15
 
-trend_driver_long <- trend_driver %>% filter(site_ID %in% c("CH-Dav", "DE-Tha", "FI-Hyy", "NL-Loo", "US-Ho1", "CA-Cbo", "US-Ha1"))    # "BE-Vie",
+unique_midyear <- unique(trend_driver$year_mid)
+for (midyear in unique_midyear) {
+  trend_driver_peryear <- trend_driver[trend_driver$year_mid == midyear, ]
+  print(midyear)
+  print(table(trend_driver_peryear$category))
+}
+# maximum: cold: 41  dry: 11   wet: 15; only a small number of sites. 
+
+# for each year, how many sites.
+sort(table(trend_driver$year_mid))
+
+# long-term sites
+sites20year <- trend_driver %>% group_by(site_ID) %>% summarise(nperiod = n()) %>%
+  filter(nperiod > 0) %>% pull(site_ID)
+trend_driver_long <- trend_driver %>% filter(site_ID %in% sites20year & category == 'cold' & IGBP %in% c('ENF', 'EBF'))
+# trend_driver_long <- trend_driver %>% filter(site_ID %in% sites20year & category == 'cold' & IGBP %in% c('ENF', 'EBF'))
+
 
 ggplot(data = trend_driver_long, aes(x = Lgs_at, y = NEE_at, col = site_ID)) +
   geom_point() +
   geom_smooth(method = 'lm')
 
-summary(glmmTMB(data = trend_driver_long, NEE_at ~ TA_gs_at + P_gs_at + (1|site_ID)))
+trend_driver_long <- trend_driver_long %>% mutate(year_mid_fac = factor(year_mid, levels = sort(unique(year_mid))))
+# Absolute trends
+summary(glmmTMB(data = trend_driver_long, NEE_at ~ TA_gs_at + P_gs_at + SW_gs_at + LE_gs_at + Lgs_at + CO2_at + CO2 + SWC_gs_at + TA_ngs_at + P_ngs_at + SW_ngs_at + LE_ngs_at + (1|site_ID) + ar1(year_mid_fac + 0 | site_ID),
+                family = gaussian()))
+# what if using brm
+mod_brm <- brm(
+    bf(
+    NEE_at ~ TA_gs_at + P_gs_at + SW_gs_at + LE_gs_at + Lgs_at +
+             CO2_at + CO2 + SWC_gs_at +
+             TA_ngs_at + P_ngs_at + SW_ngs_at + LE_ngs_at +
+             (1 | site_ID),
+    autocor = cor_ar(~ year_mid | site_ID, p = 1)
+  ),
+  data = trend_driver_long,
+  family = gaussian(),
+  chains = 4,
+  cores = 4,
+  iter = 4000
+)
+  
+  
+  
 
-# for each year, how many sites.
-sort(table(as.numeric(trend_driver$year_mid)))
+summary(glmmTMB(data = trend_driver_long, NEE_at ~ TA_gs_at + P_gs_at + SW_gs_at + LE_gs_at + Lgs_at + CO2_at + CO2 + SWC_gs_at + TA_ngs_at + P_ngs_at + SW_ngs_at + LE_ngs_at + (1|site_ID) + ar1(year_mid + 0 | site_ID),
+                family = gaussian()))
 
 
 
+
+# summary(glmmTMB(data = trend_driver_long, NEE_at ~ TA_gs_at + P_gs_at + SW_gs_at + LE_gs_at + Lgs_at + CO2_at + CO2 + SWC_gs_at + TA_ngs_at + (1|site_ID)))
+
+
+
+
+
+
+
+# Not so much benefit from Lgs. 
+summary(glmmTMB(data = trend_driver_long, GPP_at ~ TA_gs_at + P_gs_at + SW_gs_at + LE_gs_at + Lgs_at + CO2_at + CO2 + SWC_gs_at + (1|site_ID)))
+
+# Evergreen: Lgs, LE of gs promote ER, in ngs, TA, P, and SW promote ER. 
+summary(glmmTMB(data = trend_driver_long, ER_at ~ TA_gs_at + TA_ngs_at + P_ngs_at + LE_gs_at + SW_ngs_at + Lgs_at + SWC_gs_at + CO2 + (1|site_ID)))
+
+# Standard trends
+summary(glmmTMB(data = trend_driver_long, NEE_t ~ TA_gs_t + P_gs_t + SW_gs_t + LE_gs_t + Lgs_t + CO2_at + CO2 + SWC_gs_t +  (1|site_ID)))
+
+# Simplify messages. 
 
 
 
