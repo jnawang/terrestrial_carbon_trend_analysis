@@ -394,37 +394,42 @@ for (i in 1:nrow(sites_long)) {
     a_YY$SW_IN_F_MDS = a_YY$SW_IN_F    # the recent SW_IN_F_MDS should be replaced. 
     a_DD$SW_IN_F_MDS = a_DD$SW_IN_F
   }
-  if (site_ID == "US-Rls") {
-    a_YY$P_ERA = a_YY$P_ERA / 14      # too high
-    a_DD$P_ERA = a_DD$P_ERA / 14
+  # these sites' precipitation is not consistent with reported values. 
+  if (site_ID %in% c("US-Rls", "US-SP1", "US-Cwt", "CH-Aws", "US-PFa", "US-UMd", "US-Tw1", "US-Syv", "US-Rws", "US-Rms", "US-KFS", "US-EML", "CA-TP3", "CA-Ca1")) {
+    ratio = sites_long$MAP[i] / mean(a_YY$P_ERA, na.rm = T)
+    a_YY$P_ERA = a_YY$P_ERA * ratio
+    a_DD$P_ERA = a_DD$P_ERA * ratio
   }  
-  if (site_ID == "US-SP1") {
-    a_YY$P_ERA = a_YY$P_ERA / 2.85      # too high, adjusted
-    a_DD$P_ERA = a_DD$P_ERA / 2.85
-  } 
   #
   #############start plot figures for data quality check##########
-  # plot(a_DD$TIMESTAMP, a_DD$TA_F_MDS, main=site_ID)
-  # plot(a_YY$TIMESTAMP, a_YY$TA_F_MDS, main=site_ID)
-  # #
-  # plot(a_DD$TIMESTAMP, a_DD$VPD_F_MDS, main=site_ID)
-  # plot(a_YY$TIMESTAMP, a_YY$VPD_F_MDS, main=site_ID)
-  # 
-  # plot(a_DD$TIMESTAMP, a_DD$SWC_ERA5, main=site_ID)
-  # plot(a_YY$TIMESTAMP, a_YY$SWC_ERA5, main=site_ID)
-  # #
-  # plot(a_DD$TIMESTAMP, a_DD$SW_IN_F_MDS, main=site_ID)
-  # plot(a_YY$TIMESTAMP, a_YY$SW_IN_F_MDS, main=site_ID)
-  # #
-  # plot(a_DD$TIMESTAMP, a_DD$LE_F_MDS, main=site_ID)
-  # plot(a_YY$TIMESTAMP, a_YY$LE_F_MDS, main=site_ID)
-  # #
-  # plot(a_DD$TIMESTAMP, a_DD$P_ERA, main=site_ID)
-  # plot(a_YY$TIMESTAMP, a_YY$P_ERA, main=site_ID)
-  # #
-  # plot(a_DD$TIMESTAMP, a_DD$CO2_F_MDS, main=site_ID)
-  # plot(a_YY$TIMESTAMP, a_YY$CO2_F_MDS, main=site_ID)
+  plot(a_DD$TIMESTAMP, a_DD$TA_F_MDS, main=site_ID)
+  plot(a_YY$TIMESTAMP, a_YY$TA_F_MDS, main=site_ID)
+  #
+  plot(a_DD$TIMESTAMP, a_DD$VPD_F_MDS, main=site_ID)
+  plot(a_YY$TIMESTAMP, a_YY$VPD_F_MDS, main=site_ID)
+
+  plot(a_DD$TIMESTAMP, a_DD$SWC_ERA5, main=site_ID)
+  plot(a_YY$TIMESTAMP, a_YY$SWC_ERA5, main=site_ID)
+  #
+  plot(a_DD$TIMESTAMP, a_DD$SW_IN_F_MDS, main=site_ID)
+  plot(a_YY$TIMESTAMP, a_YY$SW_IN_F_MDS, main=site_ID)
+  #
+  plot(a_DD$TIMESTAMP, a_DD$LE_F_MDS, main=site_ID)
+  plot(a_YY$TIMESTAMP, a_YY$LE_F_MDS, main=site_ID)
+  #
+  plot(a_DD$TIMESTAMP, a_DD$P_ERA, main=site_ID)
+  plot(a_YY$TIMESTAMP, a_YY$P_ERA, main=site_ID)
+  #
+  plot(a_DD$TIMESTAMP, a_DD$CO2_F_MDS, main=site_ID)
+  plot(a_YY$TIMESTAMP, a_YY$CO2_F_MDS, main=site_ID)
   #############end plot figures for data quality check##########
+  # check MAT and MAP: "US-Cwt" may be too low; "CH-Aws" may be too high; "US-PFa": too low; "US-UMd"; "US-Tw1"; "US-Syv"; "US-Rws"; "US-Rms"; "US-KFS"; "US-EML"; "CA-TP3"; "CA-Ca1"; 
+  # if (!is.na(sites_long[i, "MAT"]) & abs(sites_long[i, "MAT"] - mean(a_YY$TA_F_MDS, na.rm=T)) > 3) {
+  #   print(paste0("MAT may have problems--", sites_long[i, "MAT"], "--", mean(a_YY$TA_F_MDS, na.rm=T)))
+  # }
+  # if (!is.na(sites_long[i, "MAP"]) & abs(sites_long[i, "MAP"] - mean(a_YY$P_ERA, na.rm=T)) > 0.15*sites_long[i, "MAP"]) {
+  #   print(paste0("MAP may have problems--", sites_long[i, "MAP"], "--", mean(a_YY$P_ERA, na.rm=T)))
+  # }
   
   ## we differentiate TA, P, VPD, SW_IN, LE, SWC for growing and non-growing seasons
   if (site_ID %in% sites_grow_yearlong) {
@@ -620,9 +625,8 @@ for (i in 1:nrow(sites_long)) {
       # plant height
       # trend_driver[id, "Height"] <- canopyHeight$Height[canopyHeight$site_ID==site_ID & abs(canopyHeight$year_start-sub_time_series$year_start[i]) < 0.1]
       # forest age
-
-    #
-    id = id + 1
+      #
+      id = id + 1
     }
   }
 }
