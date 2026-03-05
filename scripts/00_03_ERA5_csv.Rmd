@@ -424,13 +424,17 @@ for(i in 1:nrow(df.sitemetadata)){
 
 
 ```{r convert ERA5 nc to csv}
-cat(paste0('"', 2002:2011, '"', collapse = ", "))
+cat(paste0('"', 2000:2020, '"', collapse = ", "))
 
-coor <- round(c(46.0827,	-89.9792), 2)
+coor <- round(c(29.7381,	-82.2188), 2)
 
-paste(as.character(round(c(coor[1] + 0.01, coor[2] - 0.01, coor[1] - 0.01, coor[2] + 0.01), 2)), collapse = ", ")
+# paste(as.character(round(c(coor[1] + 0.01, coor[2] - 0.01, coor[1] - 0.01, coor[2] + 0.01), 2)), collapse = ", ")
+paste(as.character(round(c(coor[1] + 0.125, coor[2] - 0.125, coor[1] - 0.125, coor[2] + 0.125), 2)), collapse = ", ")
+
+# "US-Rls" (2014-2023), "US-SP1" (2000-2020), "US-Cwt" (2011-2024), "CH-Aws" (2006-2020), "US-PFa" (1997-2025; we may have data of this site), "US-UMd" (2007-2025), "US-Tw1" (2011-2023), "US-Syv" (2001-2025), "US-Rws" (2014-2023), "US-Rms" (2014-2023), "US-KFS" (2007-2019), "US-EML" (2008-2023), "CA-TP3" (2002-2023; can we use CA-TP4's tp data?), "CA-Ca1" (1997-2010). 
 
 # interval could be 0.0625
+
 
 ```
 

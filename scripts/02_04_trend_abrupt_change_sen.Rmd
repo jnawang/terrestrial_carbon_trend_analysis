@@ -563,7 +563,7 @@ df_trend_prop %>%
 
 #### site level results
 
-CarbonTrend %>% filter(category == 'dry') %>% # filter(year_mid >= 2014 & year_mid <= 2030) %>%       # filter(IGBP %in% c("WET")) %>%
+CarbonTrend %>% filter(category == 'wet') %>% # filter(year_mid >= 2014 & year_mid <= 2030) %>%       # filter(IGBP %in% c("WET")) %>%
 ggplot(aes(x=GPPtrend, y=ERtrend)) +
   geom_point() +
   # stat_cor(color='green') +
@@ -573,6 +573,18 @@ ggplot(aes(x=GPPtrend, y=ERtrend)) +
   ) +
   theme_classic()
 
+#
+CarbonTrend %>% filter(category == 'wet') %>% # filter(year_mid >= 2014 & year_mid <= 2030) %>%       # filter(IGBP %in% c("WET")) %>%
+ggplot(aes(x=GPPtrend, y=NEEtrend)) +
+  geom_point() +
+  # stat_cor(color='green') +
+  geom_smooth(method = 'lm') +
+  stat_regline_equation(
+    aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~"))
+  ) +
+  theme_classic()
+
+# in wet climate GPP trend is not highly correlated to NEE trend. similar to other methods. 
 # For the cold climate: indeed, the slope is increasing from 0.77, 0.81, 0.84; yes, it is.
   
 ```

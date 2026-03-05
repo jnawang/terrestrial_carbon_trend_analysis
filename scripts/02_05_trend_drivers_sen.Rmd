@@ -667,7 +667,7 @@ sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
 
 # adding IGBP, climate, and category into trend driver
 if (!'category' %in% names(trend_driver)) {
-  trend_driver <- trend_driver %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by = "site_ID")
+  trend_driver <- trend_driver %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category", "NEEpartition", "source")], by = "site_ID")
 }
 
 # Sites classification based on period
@@ -703,25 +703,36 @@ sort(table(trend_driver$year_mid))
 # long-term sites
 sites20year <- trend_driver %>% group_by(site_ID) %>% summarise(nperiod = n()) %>%
   filter(nperiod > 0) %>% pull(site_ID)
-trend_driver_long <- trend_driver %>% filter(site_ID %in% sites20year & category == 'cold' & IGBP %in% c('ENF', 'EBF'))
+
+# trend_driver_long <- trend_driver %>% filter(site_ID %in% sites20year & category == 'wet')
+# trend_driver_long <- trend_driver %>% filter(site_ID %in% sites20year & category == 'dry')
+trend_driver_long <- trend_driver %>% filter(site_ID %in% sites20year & category == 'cold' & IGBP %in% c("GRA", "SAV", "WSA", "WET", "OSH", "CSH"))  # Interestingly, autocorrelation reduced significantly.
+
+# trend_driver_long <- trend_driver %>% filter(site_ID %in% sites20year & category == 'cold' & IGBP %in% c('DBF', 'MF', 'DNF'))
 # trend_driver_long <- trend_driver %>% filter(site_ID %in% sites20year & category == 'cold' & IGBP %in% c('ENF', 'EBF'))
 
 
-ggplot(data = trend_driver_long, aes(x = Lgs_at, y = NEE_at, col = site_ID)) +
+ggplot(data = trend_driver_long, aes(x = GPP_at, y = NEE_at, col = site_ID)) +
   geom_point() +
   geom_smooth(method = 'lm')
 
 trend_driver_long <- trend_driver_long %>% mutate(year_mid_fac = factor(year_mid, levels = sort(unique(year_mid))))
-# Absolute trends
-summary(glmmTMB(data = trend_driver_long, NEE_at ~ TA_gs_at + P_gs_at + SW_gs_at + LE_gs_at + Lgs_at + CO2_at + CO2 + SWC_gs_at + TA_ngs_at + P_ngs_at + SW_ngs_at + LE_ngs_at + (1|site_ID) + ar1(year_mid_fac + 0 | site_ID),
-                family = gaussian()))
-# what if using brm
+# Absolute trends: 
+summary(glmmTMB(data = trend_driver_long, 
+                NEE_at ~ TA_gs_at + P_gs_at + SW_gs_at + LE_gs_at + Lgs_at + SWC_gs_at + VPD_gs_at + 
+                TA_ngs_at + P_ngs_at + SW_ngs_at + LE_ngs_at + SWC_ngs_at + VPD_ngs_at + 
+                CO2 +
+                source + # address confounding effects; ideally, NEE parition should not be here.
+                (1|site_ID) + ar1(year_mid_fac + 0 | site_ID),  # mixed effect accounts for clustering in data. 
+                family = gaussian())) 
+
+
+# what if using brm, they give the same results
 mod_brm <- brm(
     bf(
-    NEE_at ~ TA_gs_at + P_gs_at + SW_gs_at + LE_gs_at + Lgs_at +
-             CO2_at + CO2 + SWC_gs_at +
-             TA_ngs_at + P_ngs_at + SW_ngs_at + LE_ngs_at +
-             (1 | site_ID),
+    NEE_at ~ TA_gs_at + P_gs_at + SW_gs_at + LE_gs_at + SWC_gs_at + Lgs_at + VPD_gs_at + CO2_at + CO2 + 
+             TA_ngs_at + P_ngs_at + SW_ngs_at + LE_ngs_at + SWC_ngs_at + VPD_ngs_at + 
+             (1 | site_ID) + (1 | Climate.class) + (1 | IGBP) + (1 | source),
     autocor = cor_ar(~ year_mid | site_ID, p = 1)
   ),
   data = trend_driver_long,
@@ -730,36 +741,80 @@ mod_brm <- brm(
   cores = 4,
   iter = 4000
 )
-  
-  
-  
+summary(mod_brm)
 
-summary(glmmTMB(data = trend_driver_long, NEE_at ~ TA_gs_at + P_gs_at + SW_gs_at + LE_gs_at + Lgs_at + CO2_at + CO2 + SWC_gs_at + TA_ngs_at + P_ngs_at + SW_ngs_at + LE_ngs_at + (1|site_ID) + ar1(year_mid + 0 | site_ID),
+# Not so much benefit from LE data 
+summary(glmmTMB(data = trend_driver_long, 
+                GPP_at ~ TA_gs_at + P_gs_at + SW_gs_at + LE_gs_at + Lgs_at + VPD_gs_at + SWC_gs_at + 
+                CO2_at + CO2 + 
+                NEEpartition + source + # address confounding effects
+                (1|site_ID) + ar1(year_mid_fac + 0 | site_ID),  # mixed effect accounts for clustering in data. 
+                family = gaussian()))
+
+# Evergreen: Lgs, LE of gs promote ER, in ngs, TA, P, and SW promote ER. 
+summary(glmmTMB(data = trend_driver_long, 
+                ER_at ~ TA_gs_at + TA_ngs_at + P_gs_at + P_ngs_at + LE_gs_at + LE_ngs_at + 
+                SW_gs_at + SW_ngs_at + Lgs_at + SWC_gs_at + SWC_ngs_at + VPD_gs_at + VPD_ngs_at + 
+                CO2_at + CO2 + 
+                NEEpartition + source + # address confounding effects
+                (1|site_ID) + ar1(year_mid_fac + 0 | site_ID),  # mixed effect accounts for clustering in data. 
+                family = gaussian()))
+
+# ##---------------------------------------------unitless; not used so far----------------------------------------------
+# # Standard trends: it is hard to get the results. 
+# summary(glmmTMB(data = trend_driver_long, 
+#                 NEE_t ~ TA_gs_t + P_gs_t + SW_gs_t + LE_gs_t + Lgs_t + SWC_gs_t + VPD_gs_t + 
+#                   TA_ngs_t + P_ngs_t + SW_ngs_t + LE_ngs_t + SWC_ngs_t + VPD_ngs_t + 
+#                   CO2_at + CO2 +(1|site_ID) + ar1(year_mid_fac + 0 | site_ID),
+#                 family = gaussian())) 
+# 
+# summary(glmmTMB(data = trend_driver_long, GPP_t ~ TA_gs_t + P_gs_t + SW_gs_t + LE_gs_t + Lgs_t + VPD_gs_t + CO2 + SWC_gs_t + (1|site_ID) + ar1(year_mid_fac + 0 | site_ID),
+#                 family = gaussian()))
+# 
+# summary(glmmTMB(data = trend_driver_long, 
+#                 ER_t ~ TA_gs_t + P_gs_t + SW_gs_t + LE_gs_t + Lgs_t + SWC_gs_t + VPD_gs_t + 
+#                   TA_ngs_t + P_ngs_t + SW_ngs_t + LE_ngs_t + SWC_ngs_t + VPD_ngs_t + 
+#                   + CO2 +(1|site_ID) + ar1(year_mid_fac + 0 | site_ID),
+#                 family = gaussian()))
+
+#-------------------------------------------------------------------------
+##### wet climate: a good reason for not using GPP and ER into the DAG. 
+trend_driver_long <- trend_driver %>% filter(site_ID %in% sites20year & category == 'wet')
+trend_driver_long <- trend_driver_long %>% mutate(year_mid_fac = factor(year_mid, levels = sort(unique(year_mid))))
+
+summary(glmmTMB(data = trend_driver_long, 
+                NEE_at ~ TA_at + P_at + SW_at + LE_at + SWC_at + VPD_at + 
+                  CO2 + 
+                  source + # address confounding effects; ideally, NEE parition should not be here. NEEpartition + 
+                  (1|site_ID) + ar1(year_mid_fac + 0 | site_ID),
+                family = gaussian()))
+
+# use scaled data
+summary(glmmTMB(data = trend_driver_long, 
+                NEE_t ~ TA_t + P_t + SW_t + LE_t + SWC_t + VPD_t + 
+                  CO2 + 
+                  # (1 | source) + (1 | IGBP) +
+                  (1|site_ID) + ar1(year_mid_fac + 0 | site_ID),
                 family = gaussian()))
 
 
+# TA and CO2
+summary(glmmTMB(data = trend_driver_long, 
+                GPP_at ~ TA_at + P_at + LE_at + SW_at + SWC_at + VPD_at + 
+                CO2_at + CO2 + 
+                NEEpartition + source + # address confounding effects; ideally, NEE parition should not be here.
+                (1|site_ID) + ar1(year_mid_fac + 0 | site_ID),
+                family = gaussian()))
 
+summary(glmmTMB(data = trend_driver_long, 
+                ER_at ~ TA_at + P_at + LE_at + SW_at + SWC_at + VPD_at + 
+                CO2_at + CO2 + 
+                NEEpartition + source + # address confounding effects; ideally, NEE parition should not be here.  
+                (1|site_ID) + ar1(year_mid_fac + 0 | site_ID),
+                family = gaussian()))
 
-# summary(glmmTMB(data = trend_driver_long, NEE_at ~ TA_gs_at + P_gs_at + SW_gs_at + LE_gs_at + Lgs_at + CO2_at + CO2 + SWC_gs_at + TA_ngs_at + (1|site_ID)))
-
-
-
-
-
-
-
-# Not so much benefit from Lgs. 
-summary(glmmTMB(data = trend_driver_long, GPP_at ~ TA_gs_at + P_gs_at + SW_gs_at + LE_gs_at + Lgs_at + CO2_at + CO2 + SWC_gs_at + (1|site_ID)))
-
-# Evergreen: Lgs, LE of gs promote ER, in ngs, TA, P, and SW promote ER. 
-summary(glmmTMB(data = trend_driver_long, ER_at ~ TA_gs_at + TA_ngs_at + P_ngs_at + LE_gs_at + SW_ngs_at + Lgs_at + SWC_gs_at + CO2 + (1|site_ID)))
-
-# Standard trends
-summary(glmmTMB(data = trend_driver_long, NEE_t ~ TA_gs_t + P_gs_t + SW_gs_t + LE_gs_t + Lgs_t + CO2_at + CO2 + SWC_gs_t +  (1|site_ID)))
-
-# Simplify messages. 
-
-
+cor.test(trend_driver_long$GPP_at, trend_driver_long$NEE_at)  # Not very correlated; why?
+plot(trend_driver_long$GPP_at, trend_driver_long$NEE_at)
 
 
 ```

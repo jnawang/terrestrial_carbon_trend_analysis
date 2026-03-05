@@ -807,6 +807,7 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   if (!name_site %in% c("US-SP2")) {
     df_prec <- read.csv(files_ERA[grepl(paste0(name_site, '_tp_'), files_ERA)])
     a_HH <- a_HH %>% left_join(df_prec, by=c("TIMESTAMP_START" = "time"))
+    a_HH$P_ERA <- a_HH$P_ERA * dt * 48
     #
     a_DD_P <- a_HH %>% mutate(YEAR=year(ymd_hm(TIMESTAMP_START)), MONTH=month(ymd_hm(TIMESTAMP_START)),     
                                DAY=day(ymd_hm(TIMESTAMP_START)), TIMESTAMP=sprintf("%04d%02d%02d", YEAR, MONTH, DAY)) %>% 
@@ -878,9 +879,11 @@ a_HH <- data_BASE %>% select(c(TIMESTAMP_START, TIMESTAMP_END)) %>%
          NEE_VUT_REF=data_BASE$NEE_PI_F, NEE_VUT_REF_QC=ifelse(is.na(data_BASE$NEE_PI), 1, 0), 
          CO2_F_MDS=output$CO2_f, CO2_F_MDS_QC=output$CO2_fqc, 
          GPP_NT_VUT_REF=data_BASE$GPP_PI_F, RECO_NT_VUT_REF=data_BASE$RECO_PI_F)   #
-# add ERA5 precipitation data
+# Add ERA5 precipitation data
 df_prec <- read.csv(files_ERA[grepl(paste0(name_site, '_tp_'), files_ERA)])
+# Connection between AmeriFlux-BASE and P_ERA5 should be related to time step T. 
 a_HH <- a_HH %>% left_join(df_prec, by=c("TIMESTAMP_START" = "time"))
+a_HH$P_ERA <- a_HH$P_ERA * dt * 48
 
 # we use NA values in our daily estimates, but not on our annual estimates
 a_DD <- a_HH %>% mutate(YEAR=year(ymd_hm(TIMESTAMP_START)), MONTH=month(ymd_hm(TIMESTAMP_START)),     
