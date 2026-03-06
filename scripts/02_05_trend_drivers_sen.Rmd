@@ -20,7 +20,7 @@ rm(list=ls())
 dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 #
 library(librarian)
-shelf(tidyverse, ggpubr, MuMIn, car, fBasics, olsrr, lme4, Hmisc, corrplot, trend, glmmTMB, mblm, brms)
+shelf(tidyverse, ggpubr, MuMIn, car, fBasics, olsrr, lme4, Hmisc, corrplot, trend, glmmTMB, mblm, brms, mgcv)
 #
 ```
 
@@ -214,6 +214,114 @@ cal_sens_slope_scale <- function(time, y) {
   # summary(model)
   return(as.numeric(summary(model)$coefficients[2,c(1, 4)]))
 }
+
+```
+
+
+```{r calculate disturbance effects}
+# merge 4-day LAI data
+data_LAI <- read.csv(file.path(dir_rawdata, 'Trend022026-MCD15A3H-061-results.csv'))
+data_LAI_DE_Akm <- read.csv(file.path(dir_rawdata, 'trend-DE-Akm-MCD15A3H-061-results.csv'))
+#
+data_LAI <- data_LAI %>% filter(ID != "DE-Akm")
+#
+data_LAI <- bind_rows(data_LAI, data_LAI_DE_Akm)
+data_LAI$MCD15A3H_061_Lai_500m[data_LAI$MCD15A3H_061_Lai_500m > 20] = NA
+
+plot(data_LAI$MCD15A3H_061_Lai_500m)
+
+# If a site is in southern hemisphere
+sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
+sites_south_hemisphere <- sites_long$site_ID[sites_long$Lat < -15]
+
+data_LAI_north <- data_LAI %>% 
+  filter(!ID %in% sites_south_hemisphere) %>%
+  mutate(Date = ymd(Date)) %>%
+  mutate(year = year(Date), doy = yday(Date)) %>%
+  select(ID, Date, year, doy, MCD15A3H_061_Lai_500m) %>%
+  rename(LAI = MCD15A3H_061_Lai_500m) %>%
+  arrange(ID, year, doy)
+
+data_LAI_south <- data_LAI %>% 
+  filter(ID %in% sites_south_hemisphere) %>%
+  mutate(Date = ymd(Date), year = year(ymd(Date))) %>%
+  mutate(doy = case_when(leap_year(year) & month(ymd(Date)) < 7 ~ yday(Date) - 182 + 366, 
+                         leap_year(year) & month(ymd(Date)) >= 7 ~ yday(Date) - 182,
+                         !leap_year(year) & month(ymd(Date)) < 7 ~ yday(Date) - 181 + 365, 
+                         !leap_year(year) & month(ymd(Date)) >= 7 ~ yday(Date) - 181)) %>% 
+  select(ID, Date, year, doy, MCD15A3H_061_Lai_500m) %>%
+    rename(LAI = MCD15A3H_061_Lai_500m) %>%
+    arrange(ID, year, doy)
+  
+
+data_LAI <- bind_rows(data_LAI_north, data_LAI_south)
+write.csv(data_LAI, file.path("data", 'modis_LAI.csv'), row.names = F)
+#
+LAI_seasonal_pattern <- data_LAI %>% 
+  group_by(ID, doy) %>% 
+  summarise(LAI = mean(MCD15A3H_061_Lai_500m, na.rm = T), .groups = "drop") 
+
+# read in start and end of growing season
+data_grow_season <- read.csv(file.path('data', 'growing_season_yearly.csv'))
+grow_season_site <- data_grow_season %>%
+  group_by(site_ID) %>% 
+  summarise(sos=floor((mean(sos_DER) + mean(sos_TRS)) / 2), 
+            eos=ceiling((mean(eos_DER) + mean(eos_TRS)) / 2))
+
+#
+sites_all <- unique(LAI_seasonal_pattern$ID)
+LAI_seasonal_pattern_smooth <- data.frame(site_ID = character(), doy = integer(), LAI_gam = double())
+for (site in sites_all) {
+  tmp <- LAI_seasonal_pattern %>% filter(ID == site) 
+  plot(tmp$doy, tmp$LAI, main = site)
+  # adding lines of growing season
+  sos <- 1
+  eos <- 366
+  if (sum(grow_season_site$site_ID == site)) {
+    sos <- grow_season_site$sos[grow_season_site$site_ID == site]
+    eos <- grow_season_site$eos[grow_season_site$site_ID == site]
+    points(x = c(sos, eos), 
+           y = c(mean(tmp$LAI, na.rm=T), mean(tmp$LAI, na.rm=T)), col = 'red', pch = 19)
+  }
+  
+  # smooth the seasonal pattern (losses, or gam)
+  loess_model <- loess(LAI ~ doy, data = tmp)
+  gam_model <- gam(LAI ~ s(doy), data = tmp)
+  #
+  df <- data.frame(site_ID = site, doy = sos:eos)
+  df$LAI_loess <- predict(loess_model, newdata = df)
+  df$LAI_gam <- predict(gam_model, newdata = df)
+  #
+  lines(df$doy, df$LAI_loess, col = 'yellow')
+  lines(df$doy, df$LAI_gam, col = 'blue')
+  
+  LAI_seasonal_pattern_smooth <- bind_rows(LAI_seasonal_pattern_smooth, df)
+}
+
+# we should use the gam smoothed line. 
+# How many site-years have been missing in the data?
+for (site in sites_all) {
+  LAI_seasonal_pattern_smooth_site <- LAI_seasonal_pattern_smooth %>% filter(site_ID == site)
+  data_LAI_site  <- data_LAI %>% filter(ID == site) %>%
+    filter(between(doy, min(LAI_seasonal_pattern_smooth_site$doy), max(LAI_seasonal_pattern_smooth_site$doy))) %>%
+    select(ID, Date, year, doy, MCD15A3H_061_Lai_500m) %>%
+    rename(LAI = MCD15A3H_061_Lai_500m) %>%
+    arrange(year, doy)
+  #
+  ggplot() +
+    geom_line(data = LAI_seasonal_pattern_smooth_site, aes(x = doy, y=LAI_gam), col='red') +
+    geom_line(data = data_LAI_site, aes(x = doy, y = LAI, col = year)) +
+    theme_classic()
+    
+    
+  
+  
+}
+
+
+
+
+
 
 ```
 
