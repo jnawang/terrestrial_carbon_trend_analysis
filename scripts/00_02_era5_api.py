@@ -38,7 +38,7 @@ request = {
         "total_precipitation"
     ],
     "year": [
-        "2020"
+        "2025"
     ],
     "month": [
         "01", "02", "03",
@@ -71,7 +71,7 @@ request = {
     ],
     "data_format": "netcdf",
     "download_format": "unarchived",
-    "area": [29.86, -82.34, 29.61, -82.1]
+    "area": [46.37, -89.47, 46.12, -89.22]
 }
 
 client = cdsapi.Client()

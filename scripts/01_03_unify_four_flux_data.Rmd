@@ -533,6 +533,7 @@ if (!"AI" %in% names(sites_long)) {
 sites_long <- sites_long %>% 
   mutate(category=case_when(Climate.class %in% c("Csa", "Csb", "Bsh", "Bsk", "BSh", "BWh", "Bwk", "Aw", "BWk", "BSk") & AI < 0.5 ~ 'dry', 
                             Climate.class %in% c("Csa", "Csb", "Bsh", "Bsk", "BSh", "BWh", "Bwk", "Aw", "BWk", "BSk") & AI >= 0.5 ~ 'wet', 
+                            Climate.class %in% c("Csb") & AI >= 0.5 ~ 'cold', 
                             Climate.class %in% c("Am", "Cwa", "Af") ~ "wet", 
                             Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "Dsb", "ET", "Dwc") ~ "cold",
                             Climate.class %in% c("Cfa") ~ "wet",
@@ -548,8 +549,11 @@ sites_long <- sites_long %>%
 # sites_long$category[is.na(sites_long$category) & sites_long$Climate.class %in% c('Cfa', 'Cfb')] <- 'wet'
 # sites_long$category[is.na(sites_long$category) & sites_long$Climate.class %in% c('Csa')] <- 'dry'
 #
+sites_long$category[sites_long$site_ID %in% c('US-Mpj', 'US-Ton')] <- 'dry'
 
 sum(sites_long$category=='dry', na.rm = T)
+# US-Me2, ENF (can be cold), US-MtB, ENF
+# US-Mpj, should be the dry site. US-Ton, dry sites. 
 # we have 28 dry sites.
 sum(sites_long$category=='wet', na.rm = T)
 # we have 36 wet sites.
