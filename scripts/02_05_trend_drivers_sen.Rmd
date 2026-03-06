@@ -395,7 +395,7 @@ for (i in 1:nrow(sites_long)) {
     a_DD$SW_IN_F_MDS = a_DD$SW_IN_F
   }
   # these sites' precipitation is not consistent with reported values. 
-  if (site_ID %in% c("US-Rls", "US-SP1", "US-Cwt", "CH-Aws", "US-PFa", "US-UMd", "US-Tw1", "US-Syv", "US-Rws", "US-Rms", "US-KFS", "US-EML", "CA-TP3", "CA-Ca1")) {
+  if (site_ID %in% c("US-Rls", "US-SP1", "CH-Aws", "US-UMd", "US-Tw1", "US-Syv", "US-Rws", "US-Rms", "US-KFS", "US-EML", "CA-TP3", "CA-Ca1")) {
     ratio = sites_long$MAP[i] / mean(a_YY$P_ERA, na.rm = T)
     a_YY$P_ERA = a_YY$P_ERA * ratio
     a_DD$P_ERA = a_DD$P_ERA * ratio

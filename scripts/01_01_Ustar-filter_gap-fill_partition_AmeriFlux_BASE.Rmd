@@ -414,7 +414,7 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   
   name_site <- sites_selected_BASE1$Site.ID[i]
   print(name_site)
-  if (!name_site %in% c("US-Los")) {
+  if (!name_site %in% c("US-Cwt")) {
     next
   }
   
