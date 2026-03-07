@@ -20,7 +20,7 @@ rm(list=ls())
 dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 #
 library(librarian)
-shelf(tidyverse, ggpubr, MuMIn, car, fBasics, olsrr, lme4, Hmisc, corrplot, trend, glmmTMB, mblm, brms, mgcv)
+shelf(tidyverse, ggpubr, MuMIn, car, fBasics, olsrr, lme4, Hmisc, corrplot, trend, glmmTMB, mblm, brms, mgcv, phenofit)
 #
 ```
 
@@ -228,7 +228,7 @@ data_LAI <- data_LAI %>% filter(ID != "DE-Akm")
 data_LAI <- bind_rows(data_LAI, data_LAI_DE_Akm)
 data_LAI$MCD15A3H_061_Lai_500m[data_LAI$MCD15A3H_061_Lai_500m > 20] = NA
 
-plot(data_LAI$MCD15A3H_061_Lai_500m)
+# plot(data_LAI$MCD15A3H_061_Lai_500m)
 
 # If a site is in southern hemisphere
 sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
@@ -238,7 +238,8 @@ data_LAI_north <- data_LAI %>%
   filter(!ID %in% sites_south_hemisphere) %>%
   mutate(Date = ymd(Date)) %>%
   mutate(year = year(Date), doy = yday(Date)) %>%
-  select(ID, Date, year, doy, MCD15A3H_061_Lai_500m) %>%
+  # filter(MCD15A3H_061_FparLai_QC_CloudState == '0b00') %>%  # MCD15A3H_061_FparLai_QC_MODLAND == '0b0' & 
+  select(ID, Date, year, doy, MCD15A3H_061_Lai_500m, MCD15A3H_061_FparLai_QC_MODLAND, MCD15A3H_061_FparLai_QC_CloudState) %>%
   rename(LAI = MCD15A3H_061_Lai_500m) %>%
   arrange(ID, year, doy)
 
@@ -248,18 +249,21 @@ data_LAI_south <- data_LAI %>%
   mutate(doy = case_when(leap_year(year) & month(ymd(Date)) < 7 ~ yday(Date) - 182 + 366, 
                          leap_year(year) & month(ymd(Date)) >= 7 ~ yday(Date) - 182,
                          !leap_year(year) & month(ymd(Date)) < 7 ~ yday(Date) - 181 + 365, 
-                         !leap_year(year) & month(ymd(Date)) >= 7 ~ yday(Date) - 181)) %>% 
-  select(ID, Date, year, doy, MCD15A3H_061_Lai_500m) %>%
+                         !leap_year(year) & month(ymd(Date)) >= 7 ~ yday(Date) - 181)) %>%
+  # filter(MCD15A3H_061_FparLai_QC_CloudState == '0b00') %>%
+  select(ID, Date, year, doy, MCD15A3H_061_Lai_500m, MCD15A3H_061_FparLai_QC_MODLAND, MCD15A3H_061_FparLai_QC_CloudState) %>%
     rename(LAI = MCD15A3H_061_Lai_500m) %>%
     arrange(ID, year, doy)
   
 
 data_LAI <- bind_rows(data_LAI_north, data_LAI_south)
-write.csv(data_LAI, file.path("data", 'modis_LAI.csv'), row.names = F)
+# write.csv(data_LAI, file.path("data", 'modis_LAI.csv'), row.names = F)
 #
 LAI_seasonal_pattern <- data_LAI %>% 
+  filter(MCD15A3H_061_FparLai_QC_CloudState == '0b00') %>% 
+  # filter(MCD15A3H_061_FparLai_QC_MODLAND == '0b0') %>%
   group_by(ID, doy) %>% 
-  summarise(LAI = mean(MCD15A3H_061_Lai_500m, na.rm = T), .groups = "drop") 
+  summarise(LAI = mean(LAI, na.rm = T), .groups = "drop") 
 
 # read in start and end of growing season
 data_grow_season <- read.csv(file.path('data', 'growing_season_yearly.csv'))
@@ -300,28 +304,68 @@ for (site in sites_all) {
 
 # we should use the gam smoothed line. 
 # How many site-years have been missing in the data?
+data_LAI <- data_LAI %>%
+  mutate(weight = case_when(
+    MCD15A3H_061_FparLai_QC_CloudState == '0b00' & MCD15A3H_061_FparLai_QC_MODLAND == '0b0' ~ 1,
+    MCD15A3H_061_FparLai_QC_CloudState == '0b00' & MCD15A3H_061_FparLai_QC_MODLAND != '0b0' ~ 0.5,
+    MCD15A3H_061_FparLai_QC_CloudState != '0b00' ~ 0)) %>%
+  left_join(LAI_seasonal_pattern_smooth, by = c("ID" = "site_ID", "doy"))
+  
+df_disturbance <- data.frame()
 for (site in sites_all) {
+  # site = 'CA-Cbo'
+  print(site)
   LAI_seasonal_pattern_smooth_site <- LAI_seasonal_pattern_smooth %>% filter(site_ID == site)
-  data_LAI_site  <- data_LAI %>% filter(ID == site) %>%
-    filter(between(doy, min(LAI_seasonal_pattern_smooth_site$doy), max(LAI_seasonal_pattern_smooth_site$doy))) %>%
-    select(ID, Date, year, doy, MCD15A3H_061_Lai_500m) %>%
-    rename(LAI = MCD15A3H_061_Lai_500m) %>%
-    arrange(year, doy)
+  data_LAI_site  <- data_LAI %>% filter(ID == site)
+  data_LAI_site$LAI[is.na(data_LAI_site$LAI)] <- 0
+  data_LAI_site$weight[is.na(data_LAI_site$LAI)] <- 0
+  # smooth out data_LAI_site
+  # INPUT <- check_input(t = data_LAI_site$Date, y = data_LAI_site$LAI, w = data_LAI_site$weight, nptperyear = 92)
+  # fit <- smooth_wSG(as.numeric(INPUT$t), INPUT$y, INPUT$w, nptperyear = 92)
+  fit_whit <- smooth_wWHIT(t = as.numeric(data_LAI_site$Date), 
+                    y = data_LAI_site$LAI, ylu = 0,
+                    w = data_LAI_site$weight, lambda = 50, 
+                    nptperyear = 92)
   #
-  ggplot() +
-    geom_line(data = LAI_seasonal_pattern_smooth_site, aes(x = doy, y=LAI_gam), col='red') +
-    geom_line(data = data_LAI_site, aes(x = doy, y = LAI, col = year)) +
-    theme_classic()
-    
-    
+  # fit <- smooth_wSG(t = as.numeric(data_LAI_site$Date), 
+  #                   y = data_LAI_site$LAI,
+  #                   w = data_LAI_site$weight, nptperyear = 92)
+  # The SG method is also not stable, and not used. 
   
+  # plot(data_LAI_site$Date, data_LAI_site$LAI, pch = 16, col = "grey")
+  # # lines(data_LAI_site$Date, fit$zs$ziter2, col = "blue", lwd = 2)
+  # lines(data_LAI_site$Date, fit_whit$zs$ziter1, col = "yellow", lwd = 2)
+  # lines(data_LAI_site$Date, data_LAI_site$LAI_gam, col = "red", lwd = 1)
   
+  data_LAI_site$LAI_whit =  fit_whit$zs$ziter1
+  # data_LAI_site$LAI_sg =  fit$zs$ziter2
+  
+  # interpolate missing points
+  data_LAI_site$LAI_intp <- data_LAI_site$LAI
+  data_LAI_site$LAI_intp[data_LAI_site$weight == 0] <- NA
+  data_LAI_site$LAI_intp <- approx(
+    x = as.numeric(data_LAI_site$Date),    # time axis as numeric
+    y = data_LAI_site$LAI_intp,                 # values to interpolate
+    xout = as.numeric(data_LAI_site$Date), # points where we want the output
+    method = "linear",
+    rule = 2                               # optional: extrapolate endpoints
+  )$y
+   
+  # calculate disturbance effects 
+  df <- data_LAI_site %>% filter(between(doy, min(LAI_seasonal_pattern_smooth_site$doy), max(LAI_seasonal_pattern_smooth_site$doy))) %>%
+    mutate(deficit_obs = pmax(LAI_gam - LAI_intp, 0), 
+           # deficit_sg = pmax(LAI_gam - LAI_sg, 0), 
+           deficit_whit = pmax(LAI_gam - LAI_whit, 0)) %>%
+    group_by(ID, year) %>%
+    summarise(deficit_obs = sum(deficit_obs, na.rm=T),
+              # deficit_sg = sum(deficit_sg, na.rm=T), 
+              deficit_whit = sum(deficit_whit, na.rm=T), .groups = 'drop') 
+    
+  df_disturbance <- bind_rows(df_disturbance, df)
 }
 
-
-
-
-
+# d_cor = df_disturbance %>% group_by(ID) %>% summarise(cor = cor(deficit_obs, deficit_whit))
+# mean(d_cor$cor)   # lambda = 50 ~ 0.9 ; lambda = 5 ~ 0.93; lambda = 10 ~ 0.92
 
 ```
 
@@ -380,7 +424,8 @@ trend_driver <- data.frame(site_ID = character(), year_mid=integer(),
                      LE_ngs_t=double(), LE_ngs_p=double(), LE_ngs_at=double(), 
                      CO2=double(), CO2_at=double(), CO2_p=double(), 
                      Lgs_t=double(), Lgs_p=double(), Lgs_at=double(), 
-                     Lgs_piece_t=double(), Lgs_piece_p=double(), Lgs_piece_at=double(), 
+                     Lgs_piece_t=double(), Lgs_piece_p=double(), Lgs_piece_at=double(),
+                     DIST_t=double(), DIST_p=double(), DIST_at=double(), 
                      MAT=double(), MAP=double(), Height=double())
 
 # yearly data used to calculate trends
@@ -715,13 +760,16 @@ for (i in 1:nrow(sites_long)) {
         trend_driver[id, c("Lgs_at")] <- cal_sens_slope(subdata_grow_season$year, subdata_grow_season$length_gs)
         trend_driver[id, c("Lgs_piece_t", "Lgs_piece_p")] <- cal_sens_slope_scale(subdata_grow_season$year, subdata_grow_season$length_gs_piece)
         trend_driver[id, c("Lgs_piece_at")] <- cal_sens_slope(subdata_grow_season$year, subdata_grow_season$length_gs_piece)
-
+        
         # ###########################start plot figures for data quality check##################
         # plot(subdata_grow_season$year, subdata_grow_season$length_gs, main=site_ID)
         # plot(subdata_grow_season$year, subdata_grow_season$length_gs_piece, main=site_ID)
         # ###########################end plot figures for data quality check####################
-
       }
+      # disturbance conditions
+      subdata_disturbance <- df_disturbance[df_disturbance$ID==site_ID, ] %>% filter(year %in% years_window)
+      trend_driver[id, c("DIST_t", "DIST_p")] <- cal_sens_slope_scale(subdata_disturbance$year, subdata_disturbance$deficit_whit) # deficit_obs
+      trend_driver[id, c("DIST_at")] <- cal_sens_slope(subdata_disturbance$year, subdata_disturbance$deficit_whit)
       # Baseline conditions: MAT, MAP; use our TNvalues if we have >10 year data
       if (is.na(sites_long$MAT[sites_long$site_ID==site_ID])) {
         trend_driver[id, "MAT"] <- mean(a_YY$TA_F_MDS, na.rm=T)

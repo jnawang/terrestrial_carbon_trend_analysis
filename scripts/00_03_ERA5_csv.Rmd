@@ -59,7 +59,7 @@ utc_offset(40, -100)
 ```{r read era5 precipitation data, convert it to csv files}
 #### read nc files
 ##ERA5_Tair_Prec
-data.folder <- "ERA5_Tair_Prec"  # 'ERA5_prep'
+data.folder <- "ERA5_Tair_Prec"  # 'ERA5_prep', "ERA5_Tair_Prec", "ERA5_prep/tp_2006"
 ##
 ## read each file, get long, lat, var, and years
 nc_files <- list.files(file.path(dir_rawdata, data.folder), pattern='.nc$')
@@ -84,7 +84,7 @@ for (i in 1:length(nc_files)) {
     df$Long[i] = -89.98
     df$Lat[i] = 46.07
   }
-  # 
+  # for the tp_2026 folder, we should use 0.125; otherwise 0.02
   id <- sites_Ameri$site_ID[abs(df$Long[i] - sites_Ameri$Long) < 0.02 & abs(df$Lat[i] - sites_Ameri$Lat) < 0.02]
   if (length(id) == 1) {
     df$site_ID[i] <- id

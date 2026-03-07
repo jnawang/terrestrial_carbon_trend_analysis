@@ -185,7 +185,7 @@ sites_all <- dplyr::bind_rows(sites_all, sites_info_HRB[, c("Site.ID", "Lat", "L
 #
 #####correct some climate classification
 sites_all$Climate.class[sites_all$Site.ID=='CA-LP1'] <- 'Dfb'
-sites_all$Climate.class[sites_all$Site.ID=='US-MtB'] <- 'Csb'   # it is a bit unsure.
+# sites_all$Climate.class[sites_all$Site.ID=='US-MtB'] <- 'Csb'   # use the reported climate
 sites_all$Climate.class[sites_all$Site.ID=='US-MBP'] <- 'Dfb'
 sites_all$Climate.class[sites_all$Site.ID=='IT-Tor'] <- 'Dfc'
 #
@@ -535,7 +535,7 @@ sites_long <- sites_long %>%
                             Climate.class %in% c("Csa", "Csb", "Bsh", "Bsk", "BSh", "BWh", "Bwk", "Aw", "BWk", "BSk") & AI >= 0.5 ~ 'wet', 
                             Climate.class %in% c("Csb") & AI >= 0.5 ~ 'cold', 
                             Climate.class %in% c("Am", "Cwa", "Af") ~ "wet", 
-                            Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "Dsb", "ET", "Dwc") ~ "cold",
+                            Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "Dsb", "ET", "Dwb", "Dwc") ~ "cold", 
                             Climate.class %in% c("Cfa") ~ "wet",
                             Climate.class %in% c("Cfb") & IGBP != 'EBF' ~ "cold",  # those sites has winters and in high latitudes
                             Climate.class %in% c("Cfb") & IGBP == 'EBF' ~ "wet"    # EBF: evergreen broadleaf forests. 

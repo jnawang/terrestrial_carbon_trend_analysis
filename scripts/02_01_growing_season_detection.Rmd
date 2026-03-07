@@ -209,8 +209,6 @@ source(file.path("scripts", "00_functions.R"))
 df_file_structure <- get_rawflux_file_structure(dir_rawdata)
 #
 # sites that grow year-long: MAT >= 20 and in wet climate
-sites_grow_yearlong <- c('BR-Ma2', 'BR-Sa1', 'US-Elm', 'US-Esm', 'US-LL1', 'US-LL2', 'US-LL3', 'US-SP1', 'US-SP3', 
-                         'GF-Guy', 'ZA-Kru', 'ID-PaD', 'AU-How', 'AU-Rob', "AU-Tum", "AU-Cum", "AU-Cow")
 #
 data_grow_season <- data.frame(site_ID=character(), year=integer(), sos_Beck=double(), eos_Beck=double(), 
                                sos_Elmore=double(), eos_Elmore=double(), sos_Gu=double(), eos_Gu=double(), 
@@ -259,7 +257,7 @@ for (i in 1:nrow(sites_long)) {
   #
   # using nighttime GPP for the following sites
   # have at least 5-year data and not in the bad daytime partitioned sites and GPP should be positive
-  if (sum(!is.na(a_DD$GPP_DT_VUT_REF)) >= 5*365 & !site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho1", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae", "US-Oho", "DE-RuW", "US-Uaf")) {
+  if (sum(!is.na(a_DD$GPP_DT_VUT_REF)) >= 5*365 & sites_long$NEEpartition[i] == 'DT') {
     a_DD$GPP <- pmax(a_DD$GPP_DT_VUT_REF, 0.0)
   } else {
     a_DD$GPP <- pmax(a_DD$GPP_NT_VUT_REF, 0.0)

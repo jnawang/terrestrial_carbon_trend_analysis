@@ -38,3 +38,6 @@ get_rawflux_file_structure <- function(dir_rawdata){
                                               "_ReddyProcRF_FULLSET_YY"))
   return(df_file_structure)
 }
+
+sites_grow_yearlong <- c('BR-Ma2', 'BR-Sa1', 'US-Elm', 'US-Esm', 'US-LL1', 'US-LL2', 'US-LL3', 'US-SP1', 'US-SP3', 
+                         'GF-Guy', 'ID-PaD', 'AU-How', 'AU-Rob', "AU-Tum", "AU-Cum", "AU-Cow")
