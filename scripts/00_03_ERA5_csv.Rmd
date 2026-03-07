@@ -431,14 +431,14 @@ for(i in 1:nrow(df.sitemetadata)){
 
 
 ```{r convert ERA5 nc to csv}
-cat(paste0('"', 2014:2023, '"', collapse = ", "))
+cat(paste0('"', 1997:2010, '"', collapse = ", "))
 
-coor <- round(c(43.0645,	-116.7486), 2)
+coor <- round(c(49.8673,	-125.3336), 2)
 
 # paste(as.character(round(c(coor[1] + 0.01, coor[2] - 0.01, coor[1] - 0.01, coor[2] + 0.01), 2)), collapse = ", ")
 paste(as.character(round(c(coor[1] + 0.125, coor[2] - 0.125, coor[1] - 0.125, coor[2] + 0.125), 2)), collapse = ", ")
 
-# "US-Rls" (2014-2023), "US-SP1" (2000-2020) , "CH-Aws" (2006-2020), "US-UMd" (2007-2025), "US-Tw1" (2011-2023), "US-Syv" (2001-2025)done, "US-Rws" (2014-2023), "US-Rms" (2014-2023), "US-KFS" (2007-2019), "US-EML" (2008-2023), "CA-TP3" (2002-2023; can we use CA-TP4's tp data?), "CA-Ca1" (1997-2010). 
+# "US-Rls" (2014-2023), "US-SP1" (2000-2020) , "CH-Aws" (2006-2020), "US-UMd" (2007-2025), "US-Tw1" (2011-2023), "US-Syv" (2001-2025)done, "US-Rws" (2014-2023), "US-Rms" (2014-2023)done, "US-KFS" (2007-2019), "US-EML" (2008-2023), "CA-TP3" (2002-2023; can we use CA-TP4's tp data?), "CA-Ca1" (1997-2010). 
 
 # interval could be 0.0625
 # submit more requests. 
