@@ -315,7 +315,6 @@ data_LAI <- data_LAI %>%
   
 df_disturbance <- data.frame()
 for (site in sites_all) {
-<<<<<<< HEAD
   # site = 'CA-Cbo'
   print(site)
   LAI_seasonal_pattern_smooth_site <- LAI_seasonal_pattern_smooth %>% filter(site_ID == site)
@@ -334,21 +333,7 @@ for (site in sites_all) {
   #                   y = data_LAI_site$LAI,
   #                   w = data_LAI_site$weight, nptperyear = 92)
   # The SG method is also not stable, and not used. 
-=======
-  site <- sites_all[20]
-  LAI_seasonal_pattern_smooth_site <- LAI_seasonal_pattern_smooth %>% filter(site_ID == site)
-  data_LAI_site  <- data_LAI %>% filter(ID == site) %>%
-    filter(between(doy, min(LAI_seasonal_pattern_smooth_site$doy), max(LAI_seasonal_pattern_smooth_site$doy))) %>%
-    arrange(year, doy)
-  #
-  ggplot() +
-    geom_line(data = LAI_seasonal_pattern_smooth_site, aes(x = doy, y=LAI_gam), col='red') +
-    geom_line(data = data_LAI_site %>% filter(year == 2020), aes(x = doy, y = LAI, col = as.factor(year))) +
-    theme_classic()
-    
-    
->>>>>>> 3c805b1 (tiny change)
-  
+
   # plot(data_LAI_site$Date, data_LAI_site$LAI, pch = 16, col = "grey")
   # # lines(data_LAI_site$Date, fit$zs$ziter2, col = "blue", lwd = 2)
   # lines(data_LAI_site$Date, fit_whit$zs$ziter1, col = "yellow", lwd = 2)
