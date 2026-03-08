@@ -84,6 +84,13 @@ for (i in 1:length(nc_files)) {
     df$Long[i] = -89.98
     df$Lat[i] = 46.07
   }
+  # one year US-WCr (45.8059, -90.0799) has inaccurate coordinates
+  if (abs(df$Long[i] + 90.0799) < 0.13  & abs(df$Lat[i] - 45.8059) < 0.13) {
+    print(paste0(df$Long[i], '--', df$Lat[i]))
+    df$Long[i] = -90.0799
+    df$Lat[i] = 45.8059
+  }  
+  
   # for the tp_2026 folder, we should use 0.125; otherwise 0.02
   id <- sites_Ameri$site_ID[abs(df$Long[i] - sites_Ameri$Long) < 0.02 & abs(df$Lat[i] - sites_Ameri$Lat) < 0.02]
   if (length(id) == 1) {
