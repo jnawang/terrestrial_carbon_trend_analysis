@@ -179,6 +179,172 @@ for (site in sites_BASE) {
 ```
 
 
+```{r read era5 precipitation data in 2026, convert it to csv files}
+# from 2026, climate data store only accepts coarse data coordinates. Therefore, we used a slightly different file. 
+# This data includes tp data at the following Ameriflux and European sites: 
+# "US-Rls" (2014-2023), "US-SP1" (2000-2020) , "CH-Aws" (2006-2020), "US-UMd" (2007-2025), "US-Tw1" (2011-2023), "US-Syv" (2001-2025)done, "US-Rws" (2014-2023), "US-Rms" (2014-2023)done, "US-KFS" (2007-2019), "US-EML" (2008-2023), "CA-Ca1" (1997-2010).
+
+# "US-Rls" = "US-Rws"; US-Rms has much larger precipitation
+
+data.folder <- "/Users/junnawang/Downloads/tp_2026"
+##
+## read each file, get long, lat, var, and years
+nc_files <- list.files(data.folder, pattern='.nc$')
+##
+# sites_Ameri <- read.csv('data/AmeriFlux-site-search-results-202501071742.csv')
+sites_Ameri <- read.csv('data/AmeriFlux-site-search-results-202512092232.csv')
+sites_Ameri <- sites_Ameri[, c("Site.ID", "Longitude..degrees.", "Latitude..degrees.")]
+names(sites_Ameri) <- c("site_ID", "Long", "Lat")
+
+sites_Europ <- read.csv(file.path("data", "European_SitesList.csv"))
+sites_Europ <- sites_Europ[, c("Site.Code", "Site.Latitude", "Site.Longitude")] %>% 
+  rename("site_ID"="Site.Code", "Lat"="Site.Latitude", "Long"="Site.Longitude")
+
+sites_Ameri <- bind_rows(sites_Ameri, sites_Europ)
+
+df <- data.frame(Long=double(), Lat=double(), Var=character(), site_ID=character(), file_ID=integer())
+##
+for (i in 1:length(nc_files)) {
+#  i = 40
+  nc_file <- nc_open(file.path(data.folder, nc_files[i]))
+  df[i,3] <- names(nc_file$var)[3]
+  df$Long[i] <- ncvar_get(nc_file, "longitude")
+  df$Lat[i]  <- ncvar_get(nc_file, "latitude")
+  df$file_ID[i] <- i
+  
+  # for the tp_2026 folder, we should use 0.125
+  id <- sites_Ameri$site_ID[abs(df$Long[i] - sites_Ameri$Long) < 0.125 & abs(df$Lat[i] - sites_Ameri$Lat) < 0.125]
+  if (length(id) == 1) {
+    df$site_ID[i] <- id
+    print(paste0('find', id[1]))
+  } else if (length(id) > 1 & id[1] == "US-SP1") {
+    df$site_ID[i] <- id[1]
+    print(paste0('find', id[1]))    
+    print(id)    
+  } else if (length(id) > 1 & id[2] == "US-UMd") {
+    df$site_ID[i] <- id[2]
+    print(paste0('find', id[2]))    
+    print(id)    
+  } else if (length(id) > 1 & id[2] == "US-Tw1") {
+    df$site_ID[i] <- id[2]
+    print(paste0('find', id[2]))    
+    print(id)    
+  } else if (length(id) > 1 & id[1] == "US-Rls") {
+    df$site_ID[i] <- id[1]
+    print(paste0('find', id[1]))    
+    print(paste0(df$Long[i], '--', df$Lat[i]))
+    print(id)    
+  } else if (length(id) > 1 & id[1] == "CA-Ca1") {
+    df$site_ID[i] <- id[1]
+    print(paste0('find', id[1]))
+    print(id)    
+  } 
+}
+#######
+df <- df %>% na.omit %>% arrange(site_ID)
+sites_prec_problem <- unique(df$site_ID)
+sites_prec_problem
+
+df_daily_prec <- data.frame()
+for (site in sites_prec_problem) {
+  
+  if (site == 'US-WCr') { next }
+  
+  df_prec <- data.frame()
+  df_sub <- subset(df, site_ID == site)
+  hour_offset <- utc_offset(df_sub$Lat[1], df_sub$Long[1])
+  #
+  for (i in 1:nrow(df_sub)) {
+    nc_file <- nc_open(file.path(data.folder, nc_files[df_sub$file_ID[i]]))
+    time <- ncvar_get(nc_file, "valid_time")
+    prec <- ncvar_get(nc_file, "tp")  # precipitation unit m
+    #
+    # convert to UTC time
+    time_origin <- ncatt_get(nc_file, "valid_time", "units")$value
+    #
+    time_converted <- as.POSIXct(time, origin = gsub("seconds since ", "", time_origin), tz = "UTC")
+    #
+    # convert to local time
+    df_prec <- rbind(df_prec, data.frame(time=time_converted+hour_offset*3600, prec=prec*1000))
+    #
+  }
+  print(paste0("Check duplicates for ", site, ": ", sum(duplicated(df_prec$time))))
+  if (sum(duplicated(df_prec$time)) > 0) {
+    df_prec <- df_prec[!duplicated(df_prec$time), ]
+  }
+  df_prec <- df_prec %>% arrange(time)
+  #
+  # start from the first time of a year and the end time of a year
+  df_prec_annual <- df_prec %>% mutate(year=year(time)) %>% group_by(year) %>% summarise(n=n()) %>% filter(n>100)
+  year_start <- df_prec_annual$year[1]
+  year_end   <- df_prec_annual$year[nrow(df_prec_annual)]
+  #
+  df_prec <- df_prec %>% filter(between(year(time), year_start, year_end))
+  # 
+  # convert this to sub-hourly data
+  df_output <- data.frame(time=seq(df_prec$time[1], df_prec$time[nrow(df_prec)] + 30*60, by = "30 min"))
+  # 
+  # divided by 2?
+  df_output$P_ERA <- rep(df_prec$prec/2, each=2)
+  #
+  # years I need to add missing data: check the first year
+  time_start <- make_datetime(year = year_start, month = 1, day = 1, hour = 0, min = 0, sec = 0)
+  if (df_prec$time[1] > time_start) {
+    df_missed <- data.frame(time=seq(time_start, df_output$time[1] - 30*60, by = "30 min"), P_ERA=0)
+    df_output <- rbind(df_missed, df_output)
+  }
+  #
+  # years I need to add missing data: check the last year
+  end_time <- make_datetime(year = year_end, month = 12, day = 31, hour = 23, min = 30, sec = 0)
+  if (df_output$time[nrow(df_output)] < end_time) {
+    df_missed <- data.frame(time=seq(df_output$time[nrow(df_output)] + 30*60, end_time, by = "30 min"), P_ERA=0)
+    df_output <- rbind(df_output, df_missed)
+  }
+  # # convert date time to numbers
+  # df_output$time <- format(df_output$time, "%Y%m%d%H%M")
+  # 
+  # # save to csv files: site_ID, var, year_start, year_end; 
+  # write.csv(df_output, file=file.path(data.folder, paste0(site, "_", df_sub$Var[1], "_", year_start, "_", year_end, ".csv")), row.names = F)
+  
+  # I need daily time series this time.
+  df_daily_prec <- bind_rows(df_daily_prec, 
+                             df_output %>% mutate(date = as.Date(time)) %>%
+    group_by(date) %>% 
+    summarise(P_ERA = sum(P_ERA, na.rm = T), .groups = "drop") %>%
+    mutate(site_ID = site))
+  
+  if (site == 'US-Rls') {
+    # assing P_ERA of the site US-Rls to the site US-Rws, because they are so close. 
+    df_daily_prec <- bind_rows(df_daily_prec, 
+                               df_output %>% mutate(date = as.Date(time)) %>%
+      group_by(date) %>% 
+      summarise(P_ERA = sum(P_ERA, na.rm = T), .groups = "drop") %>%
+      mutate(site_ID = "US-Rws"))    
+  }
+}
+# the 10 sites daily precipitation
+write.csv(df_daily_prec, file=file.path("data", "daily_ERA5_prec_10sites.csv"), row.names = F)
+
+# check if MAP is close to reported values. 
+df_daily_prec %>% mutate(year = year(date)) %>% group_by(year, site_ID) %>% summarise(P = sum(P_ERA)) %>% group_by(site_ID) %>% summarise(P= mean(P))
+
+# CA-Ca1	2201.9590			# CA-Ca1 is still too high. (check observations)
+# CH-Aws	1483.0178			# not accurate
+# US-EML	610.4139			# not accurate
+# US-KFS	1049.1767			# this is accurate. 
+# US-Rls	357.9064			# this is accurate. 
+# US-Rws	357.9064      # this is accurate.   
+# US-SP1	1037.3135			# this is fine. 
+# US-Syv	886.0491			# this is accurate. 
+# US-Tw1	441.3625      # this is accurate.
+# US-UMd	918.0893      # this is accurate. 
+
+```
+
+
+
+
+
 ```{r convert ERA solar radiaiton data to csv files}
 ##ERA5_SW
 data.folder <- 'ERA5_SW2'
@@ -433,7 +599,7 @@ for(i in 1:nrow(df.sitemetadata)){
 ```{r convert ERA5 nc to csv}
 cat(paste0('"', 1997:2010, '"', collapse = ", "))
 
-coor <- round(c(49.8673,	-125.3336), 2)
+coor <- round(c(38.1074,	-121.6469), 2)
 
 # paste(as.character(round(c(coor[1] + 0.01, coor[2] - 0.01, coor[1] - 0.01, coor[2] + 0.01), 2)), collapse = ", ")
 paste(as.character(round(c(coor[1] + 0.125, coor[2] - 0.125, coor[1] - 0.125, coor[2] + 0.125), 2)), collapse = ", ")

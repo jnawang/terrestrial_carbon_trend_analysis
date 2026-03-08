@@ -435,9 +435,9 @@ data_trend_driver <- data.frame()
 
 # get trends using local regressions
 window_size = 15
-
-sites_grow_yearlong <- c('BR-Ma2', 'BR-Sa1', 'US-Elm', 'US-Esm', 'US-LL1', 'US-LL2', 'US-LL3', 'US-SP1', 'US-SP3', 
-                         'GF-Guy', 'ZA-Kru', 'ID-PaD', 'AU-How', 'AU-Rob', "AU-Tum", "AU-Cum", "AU-Cow")
+#
+df_daily_prec <- read.csv(file.path("data", "daily_ERA5_prec_10sites.csv"))
+df_daily_prec$date <- as.Date(df_daily_prec$date)
 #
 id = 1
 TA_site_years_removed = 0
@@ -539,21 +539,24 @@ for (i in 1:nrow(sites_long)) {
     a_YY$SW_IN_F_MDS = a_YY$SW_IN_F
     a_DD$SW_IN_F_MDS = a_DD$SW_IN_F
   }
-  if (site_ID == "US-WCr") {
-    a_YY$P_ERA[a_YY$TIMESTAMP %in% c(2025)] = NA
-    a_DD$P_ERA[a_DD$year %in% c(2025)] = NA
-    a_YY$SW_IN_F_MDS[a_YY$TIMESTAMP %in% c(2015:2017)] = NA
-    a_DD$SW_IN_F_MDS[a_DD$year %in% c(2015:2017)] = NA
-  } 
   if (site_ID == "ES-Agu") {
     a_YY$SW_IN_F_MDS = a_YY$SW_IN_F    # the recent SW_IN_F_MDS should be replaced. 
     a_DD$SW_IN_F_MDS = a_DD$SW_IN_F
   }
-  # these sites' precipitation is not consistent with reported values. 
+  # these sites' precipitation is not consistent with reported values, and we used downloaded ERA5 precp. 
   if (site_ID %in% c("US-Rls", "US-SP1", "CH-Aws", "US-UMd", "US-Tw1", "US-Syv", "US-Rws", "US-Rms", "US-KFS", "US-EML", "CA-TP3", "CA-Ca1")) {
-    ratio = sites_long$MAP[i] / mean(a_YY$P_ERA, na.rm = T)
-    a_YY$P_ERA = a_YY$P_ERA * ratio
-    a_DD$P_ERA = a_DD$P_ERA * ratio
+    df_daily_prec_site <- df_daily_prec[df_daily_prec$site_ID == site_ID, ]
+    if (nrow(df_daily_prec_site) > 0) {
+      a_DD <- a_DD %>% select(-P_ERA) %>% left_join(df_daily_prec_site, by = c('TIMESTAMP'='date', 'site_ID'))
+      #
+      df_yearly <- df_daily_prec_site %>% mutate(year = year(date)) %>% 
+        group_by(year) %>% summarise(P_ERA = sum(P_ERA, na.rm=T), .groups = 'drop')
+      a_YY <- a_YY %>% select(-P_ERA) %>% left_join(df_yearly, by = c('TIMESTAMP'='year'))
+    } else {
+      ratio = sites_long$MAP[i] / mean(a_YY$P_ERA, na.rm = T)
+      a_YY$P_ERA = a_YY$P_ERA * ratio
+      a_DD$P_ERA = a_DD$P_ERA * ratio
+    }
   }  
   #
   #############start plot figures for data quality check##########
