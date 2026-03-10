@@ -550,15 +550,17 @@ sites_long <- sites_long %>%
 # sites_long$category[is.na(sites_long$category) & sites_long$Climate.class %in% c('Csa')] <- 'dry'
 #
 sites_long$category[sites_long$site_ID %in% c('US-Mpj', 'US-Ton')] <- 'dry'
+sites_long$category[sites_long$site_ID %in% c('US-Me2')] <- 'cold'
+# US-Me2 is an Alpine ENF, MAT = 6C, seasonal GPP pattern is close to ENF in cold climate. 
 
 sum(sites_long$category=='dry', na.rm = T)
 # US-Me2, ENF (can be cold), US-MtB, ENF
 # US-Mpj, should be the dry site. US-Ton, dry sites. 
-# we have 28 dry sites.
+# we have 29 dry sites.
 sum(sites_long$category=='wet', na.rm = T)
-# we have 36 wet sites.
+# we have 35 wet sites.
 sum(sites_long$category=='cold', na.rm = T)
-# we have 94 cold sites. 
+# we have 96 cold sites. 
 write.csv(sites_long, file = file.path('data', 'long_term_ec_sites.csv'), row.names = F)
 
 ```

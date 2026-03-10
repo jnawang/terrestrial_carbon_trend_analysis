@@ -94,6 +94,7 @@ print(l_pheno$doy$Gu)
 
 ```
 
+
 ```{r use GPP to calculate start and end of growing season}
 # it takes 30 mins. 
 ####it turns out I cannot use NEE for this package. 
@@ -217,7 +218,7 @@ data_grow_season <- data.frame(site_ID=character(), year=integer(), sos_Beck=dou
 id = 1
 #
 for (i in 1:nrow(sites_long)) {
-#  i = 2
+  # i = 66
   print(i)
   site_ID <- sites_long$site_ID[i]
   print(site_ID)
@@ -236,7 +237,7 @@ for (i in 1:nrow(sites_long)) {
   a_DD$TIMESTAMP <- ymd(a_DD$TIMESTAMP)
   
   # decide if this is in the southern hemisphere
-  south_hemisphere <- ifelse(sites_long$Lat[i] < -15, TRUE, FALSE)
+  south_hemisphere <- ifelse(sites_long$Lat[i] < -10, TRUE, FALSE)
   # for southern sites, using growing year and DOY from July first
   if (south_hemisphere) {
     a_DD$TIMESTAMP <- a_DD$TIMESTAMP - ifelse(leap_year(year(a_DD$TIMESTAMP[1])), 182, 181)
@@ -298,6 +299,17 @@ for (i in 1:nrow(sites_long)) {
             maxExtendMonth = 2,
             wmin = 0.0, r_min = 0.00,
             lambda = 10000,
+            iters = 5,
+            MaxPeaksPerYear = 1,
+            MaxTroughsPerYear = 2
+        ))
+  } else if (site_ID %in% c("US-KM4", "US-Me2")) {
+    # year 2012 needs large lambda at this site
+    brks <- season_mov(INPUT,
+        list(FUN = "smooth_wWHIT", wFUN = wFUN,
+            maxExtendMonth = 2,
+            wmin = 0.0, r_min = 0.00,
+            lambda = 1000000,
             iters = 5,
             MaxPeaksPerYear = 1,
             MaxTroughsPerYear = 2
@@ -368,6 +380,43 @@ for (i in 1:nrow(sites_long)) {
     labs(title=paste0(site_ID, "_Elmore"))
   #
   # put results into data frame 
+  # remove extreme small peaks before growing season especially for dry climate
+  if (site_ID == 'US-SRG') {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[l_pheno$doy$Beck$DER.sos > 150, ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[l_pheno$doy$Elmore$DER.sos > 150, ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[l_pheno$doy$Gu$DER.sos > 150, ]
+  }
+  if (site_ID %in% c('US-Wjs')) {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[l_pheno$doy$Beck$DER.eos > 200, ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[l_pheno$doy$Elmore$DER.eos > 200, ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[l_pheno$doy$Gu$DER.eos > 200, ]
+  }  
+  if (site_ID == 'CN-HZZ') {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[between(l_pheno$doy$Beck$DER.eos, 150, 366), ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[between(l_pheno$doy$Elmore$DER.eos, 150, 366), ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[between(l_pheno$doy$Gu$DER.eos, 150, 366), ]
+  }  
+  if (site_ID %in% c("ES-Agu")) {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[l_pheno$doy$Beck$DER.eos < 200, ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[l_pheno$doy$Elmore$DER.eos < 200, ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[l_pheno$doy$Gu$DER.eos < 200, ]
+  } 
+  if (site_ID %in% c("AU-Ync")) {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[l_pheno$doy$Beck$DER.eos < 210, ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[l_pheno$doy$Elmore$DER.eos < 210, ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[l_pheno$doy$Gu$DER.eos < 210, ]
+  }  
+  
+  if (site_ID %in% c("US-Rls")) {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[l_pheno$doy$Beck$DER.sos < 200, ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[l_pheno$doy$Elmore$DER.sos < 200, ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[l_pheno$doy$Gu$DER.sos < 200, ]
+  }
+  if (site_ID %in% c("AU-DaS")) {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[l_pheno$doy$Beck$DER.eos < 400, ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[l_pheno$doy$Elmore$DER.eos < 400, ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[l_pheno$doy$Gu$DER.eos < 400, ]
+  }
   # Merge two sub growing seasons if their distance is shorter than 2 months
   doy_Beck <- merge_pheno(l_pheno$doy$Beck)
   doy_Elmore <- merge_pheno(l_pheno$doy$Elmore)
@@ -377,6 +426,12 @@ for (i in 1:nrow(sites_long)) {
     doy_Elmore <- doy_Elmore[doy_Elmore$year!=2023, ]
     doy_Gu <- doy_Gu[doy_Gu$year!=2023, ]
   }
+  # abnormal year 2020 for US-SRM
+  if (site_ID == "US-SRM") {
+    doy_Beck <- doy_Beck[doy_Beck$year!=2020, ]
+    doy_Elmore <- doy_Elmore[doy_Elmore$year!=2020, ]
+    doy_Gu <- doy_Gu[doy_Gu$year!=2020, ]
+  }  
   # 
   # we cannot use 2021 data at CL-SDF because it missed half year data in southern hemisphere. 
   if (site_ID == "CL-SDF") {

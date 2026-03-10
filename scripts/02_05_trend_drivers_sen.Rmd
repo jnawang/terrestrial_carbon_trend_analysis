@@ -204,12 +204,20 @@ cal_sens_slope <- function(time, y) {
   return(summary(model)$coefficients[2, 1])
 }
 
-cal_sens_slope_scale <- function(time, y) {
+cal_sens_slope_scale <- function(time, y, ymean = NULL, ystd = NULL) {
   id.nonna <- !is.na(y) & !is.na(time) 
   y <- y[id.nonna]
   time <- time[id.nonna]
   #
-  y <- scale(y)
+  if (is.null(ymean)) {
+    ymean <- mean(y)
+  }
+  if (is.null(ystd)) {
+    ystd <- sd(y)
+  }
+  
+  # scale y
+  y <- (y - ymean) / ystd
   model <- mblm(y ~ time)
   # summary(model)
   return(as.numeric(summary(model)$coefficients[2,c(1, 4)]))
@@ -232,7 +240,7 @@ data_LAI$MCD15A3H_061_Lai_500m[data_LAI$MCD15A3H_061_Lai_500m > 20] = NA
 
 # If a site is in southern hemisphere
 sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
-sites_south_hemisphere <- sites_long$site_ID[sites_long$Lat < -15]
+sites_south_hemisphere <- sites_long$site_ID[sites_long$Lat < -10]
 
 data_LAI_north <- data_LAI %>% 
   filter(!ID %in% sites_south_hemisphere) %>%
@@ -469,8 +477,8 @@ for (i in 1:nrow(sites_long)) {
     rename(SWC_ERA5 = SWC)
   a_YY <- a_YY %>% left_join(a_YY_SWC[a_YY_SWC$name == site_ID, ], by = c("TIMESTAMP" = 'year'))
   
-  # use the south of -15 degree to be consistent with growing season detection.
-  if (sites_long$Lat[i] < -15) {
+  # use the south of -10 degree to be consistent with growing season detection.
+  if (sites_long$Lat[i] < -10) {
     a_DD$doy <- southern_hemisphere_doy(a_DD$TIMESTAMP)
   }
   #
