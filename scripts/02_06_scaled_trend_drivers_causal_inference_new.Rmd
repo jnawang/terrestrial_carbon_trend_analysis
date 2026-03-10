@@ -46,7 +46,6 @@ df_direct_effect <- df_total_effect
 ```
 
 
-
 ```{r a function to estimate total and direct effects}
 
 options(mc.cores = parallel::detectCores())
