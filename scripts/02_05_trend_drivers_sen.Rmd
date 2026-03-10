@@ -444,7 +444,7 @@ data_trend_driver <- data.frame()
 # get trends using local regressions
 window_size = 15
 #
-df_daily_prec <- read.csv(file.path("data", "daily_ERA5_prec_10sites.csv"))
+df_daily_prec <- read.csv(file.path("data", "daily_ERA5_prec_12sites.csv"))
 df_daily_prec$date <- as.Date(df_daily_prec$date)
 #
 id = 1

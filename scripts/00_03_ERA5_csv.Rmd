@@ -182,9 +182,7 @@ for (site in sites_BASE) {
 ```{r read era5 precipitation data in 2026, convert it to csv files}
 # from 2026, climate data store only accepts coarse data coordinates. Therefore, we used a slightly different file. 
 # This data includes tp data at the following Ameriflux and European sites: 
-# "US-Rls" (2014-2023), "US-SP1" (2000-2020) , "CH-Aws" (2006-2020), "US-UMd" (2007-2025), "US-Tw1" (2011-2023), "US-Syv" (2001-2025)done, "US-Rws" (2014-2023), "US-Rms" (2014-2023)done, "US-KFS" (2007-2019), "US-EML" (2008-2023), "CA-Ca1" (1997-2010).
-
-# "US-Rls" = "US-Rws"; US-Rms has much larger precipitation
+# "US-Rls" (2014-2023), "US-SP1" (2000-2020) , "CH-Aws" (2006-2020), "US-UMd" (2007-2025), "US-Tw1" (2011-2023), "US-Syv" (2001-2025)done, "US-Rws" (2014-2023), "US-Rms" (2014-2023)done, "US-KFS" (2007-2019), "US-EML" (2008-2023), "CA-Ca1" (1997-2010), "CA-TP3"
 
 data.folder <- "/Users/junnawang/Downloads/tp_2026"
 ##
@@ -249,6 +247,7 @@ df_daily_prec <- data.frame()
 for (site in sites_prec_problem) {
   
   if (site == 'US-WCr') { next }
+  if (site == 'US-Rls') { next }
   
   df_prec <- data.frame()
   df_sub <- subset(df, site_ID == site)
@@ -313,17 +312,35 @@ for (site in sites_prec_problem) {
     summarise(P_ERA = sum(P_ERA, na.rm = T), .groups = "drop") %>%
     mutate(site_ID = site))
   
-  if (site == 'US-Rls') {
-    # assing P_ERA of the site US-Rls to the site US-Rws, because they are so close. 
-    df_daily_prec <- bind_rows(df_daily_prec, 
-                               df_output %>% mutate(date = as.Date(time)) %>%
-      group_by(date) %>% 
-      summarise(P_ERA = sum(P_ERA, na.rm = T), .groups = "drop") %>%
-      mutate(site_ID = "US-Rws"))    
-  }
 }
-# the 10 sites daily precipitation
-write.csv(df_daily_prec, file=file.path("data", "daily_ERA5_prec_10sites.csv"), row.names = F)
+# for CA-TP3, we used data at CA-TP4. 
+df_output <- read.csv(file.path(data.folder, 'CA-TP4_tp_2002_2020.csv'))
+df_output <- df_output %>% mutate(time = ymd_hm(time)) %>% 
+  mutate(date = as.Date(time)) %>% 
+  group_by(date) %>% 
+  summarise(P_ERA = sum(P_ERA, na.rm = T), .groups = "drop") %>%
+  mutate(site_ID = "CA-TP3")
+df_daily_prec <- bind_rows(df_daily_prec, df_output)
+
+# precipitation data for sites US-Rms, US-Rws is from https://ars-usda.app.box.com/s/4jwgmxyxb8vacosvp1t5sdlibdc5qxoe/folder/328083546165?page=2
+# US-Rms: Site Location: 43.065605 ∞N    -116.759135 ∞W  WGS84, . m MSL; missing value -999, unit mm/day;ID: 176
+# US-Rws: Site Location: 43.168758 ∞N    -116.713675 ∞W  WGS84, . m MSL; ID: 098c
+# US-Rls: Site Location: 43.139999 ∞N    -116.733568 ∞W  WGS84, . m MSL; ID: 127
+csv_files <- c("reynolds-creek-176-daily-precipitation.csv", "reynolds-creek-098c-daily-precipitation.csv", "reynolds-creek-127-daily-precipitation.csv")
+reynolds_sites <- c("US-Rms", "US-Rws", "US-Rls")
+for (i in 1:length(reynolds_sites)) {
+  df_output <- read.csv(file.path(data.folder, csv_files[i]))
+  df_output[df_output == -999] <- NA
+  df_output <- df_output %>% mutate(date = mdy(date)) %>% 
+    filter(date > as.Date("2000-01-01")) %>%
+    group_by(date) %>% 
+    summarise(P_ERA = sum(ppta, na.rm = T), .groups = "drop") %>%
+    mutate(site_ID = reynolds_sites[i])
+  df_daily_prec <- bind_rows(df_daily_prec, df_output)
+}
+
+# the 12 sites daily precipitation
+write.csv(df_daily_prec, file=file.path("data", "daily_ERA5_prec_12sites.csv"), row.names = F)
 
 # check if MAP is close to reported values. 
 df_daily_prec %>% mutate(year = year(date)) %>% group_by(year, site_ID) %>% summarise(P = sum(P_ERA)) %>% group_by(site_ID) %>% summarise(P= mean(P))
@@ -332,12 +349,14 @@ df_daily_prec %>% mutate(year = year(date)) %>% group_by(year, site_ID) %>% summ
 # CH-Aws	1483.0178			# not accurate
 # US-EML	610.4139			# not accurate
 # US-KFS	1049.1767			# this is accurate. 
-# US-Rls	357.9064			# this is accurate. 
-# US-Rws	357.9064      # this is accurate.   
+# US-Rls	346.4937			# this is accurate. 
+# US-Rws	297.4000      # this is accurate. 
+# US-Rms	874.0962      # this is accurate. 
 # US-SP1	1037.3135			# this is fine. 
 # US-Syv	886.0491			# this is accurate. 
 # US-Tw1	441.3625      # this is accurate.
 # US-UMd	918.0893      # this is accurate. 
+# CA-TP3 1138.3732      # this is accurate. 
 
 ```
 
