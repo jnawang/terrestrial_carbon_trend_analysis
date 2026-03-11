@@ -555,7 +555,7 @@ for (i in 1:nrow(sites_long)) {
   if (site_ID %in% c("US-Rls", "US-SP1", "CH-Aws", "US-UMd", "US-Tw1", "US-Syv", "US-Rws", "US-Rms", "US-KFS", "US-EML", "CA-TP3", "CA-Ca1")) {
     df_daily_prec_site <- df_daily_prec[df_daily_prec$site_ID == site_ID, ]
     if (nrow(df_daily_prec_site) > 0) {
-      a_DD <- a_DD %>% select(-P_ERA) %>% left_join(df_daily_prec_site, by = c('TIMESTAMP'='date', 'site_ID'))
+      a_DD <- a_DD %>% select(-P_ERA) %>% left_join(df_daily_prec_site, by = c('TIMESTAMP'='date'))
       #
       df_yearly <- df_daily_prec_site %>% mutate(year = year(date)) %>% 
         group_by(year) %>% summarise(P_ERA = sum(P_ERA, na.rm=T), .groups = 'drop')
