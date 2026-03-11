@@ -596,6 +596,15 @@ for (i in 1:nrow(sites_long)) {
   # if (!is.na(sites_long[i, "MAP"]) & abs(sites_long[i, "MAP"] - mean(a_YY$P_ERA, na.rm=T)) > 0.15*sites_long[i, "MAP"]) {
   #   print(paste0("MAP may have problems--", sites_long[i, "MAP"], "--", mean(a_YY$P_ERA, na.rm=T)))
   # }
+  ## Correct GPP and ER to ensure NEE = ER - GPP
+  if ("GPP_NT_VUT_REF" %in% names(a_YY)) {
+    idx <- !is.na(a_YY$GPP_NT_VUT_REF) & !is.na(a_YY$RECO_NT_VUT_REF)       
+    a_YY$GPP_NT_VUT_REF[idx] <- a_YY$RECO_NT_VUT_REF[idx] - a_YY$NEE_VUT_REF[idx]
+  }
+  if ("GPP_DT_VUT_REF" %in% names(a_YY)) {
+    idx <- !is.na(a_YY$GPP_DT_VUT_REF) & !is.na(a_YY$RECO_DT_VUT_REF)       
+    a_YY$GPP_DT_VUT_REF[idx] <- a_YY$RECO_DT_VUT_REF[idx] - a_YY$NEE_VUT_REF[idx]
+  }
   
   ## we differentiate TA, P, VPD, SW_IN, LE, SWC for growing and non-growing seasons
   if (site_ID %in% sites_grow_yearlong) {
@@ -770,11 +779,14 @@ for (i in 1:nrow(sites_long)) {
         if (site_ID == 'US-Jo2') {
           subdata_grow_season <- subdata_grow_season[subdata_grow_season$year != 2014, ]
         }
-        trend_driver[id, c("Lgs_t", "Lgs_p")] <- cal_sens_slope_scale(subdata_grow_season$year, subdata_grow_season$length_gs, data_grow_season_site$length_gs)
-        trend_driver[id, c("Lgs_at")] <- cal_sens_slope(subdata_grow_season$year, subdata_grow_season$length_gs)
-        trend_driver[id, c("Lgs_piece_t", "Lgs_piece_p")] <- cal_sens_slope_scale(subdata_grow_season$year, subdata_grow_season$length_gs_piece, data_grow_season_site$length_gs_piece)
-        trend_driver[id, c("Lgs_piece_at")] <- cal_sens_slope(subdata_grow_season$year, subdata_grow_season$length_gs_piece)
-        
+        if (sum(!is.na(subdata_grow_season$length_gs)) >= 5) {
+          trend_driver[id, c("Lgs_t", "Lgs_p")] <- cal_sens_slope_scale(subdata_grow_season$year, subdata_grow_season$length_gs, data_grow_season_site$length_gs)
+          trend_driver[id, c("Lgs_at")] <- cal_sens_slope(subdata_grow_season$year, subdata_grow_season$length_gs)
+        }
+        if (sum(!is.na(subdata_grow_season$length_gs_piece)) >= 5) {
+          trend_driver[id, c("Lgs_piece_t", "Lgs_piece_p")] <- cal_sens_slope_scale(subdata_grow_season$year, subdata_grow_season$length_gs_piece, data_grow_season_site$length_gs_piece)
+          trend_driver[id, c("Lgs_piece_at")] <- cal_sens_slope(subdata_grow_season$year, subdata_grow_season$length_gs_piece)
+        }
         # ###########################start plot figures for data quality check##################
         # plot(subdata_grow_season$year, subdata_grow_season$length_gs, main=site_ID)
         # plot(subdata_grow_season$year, subdata_grow_season$length_gs_piece, main=site_ID)
