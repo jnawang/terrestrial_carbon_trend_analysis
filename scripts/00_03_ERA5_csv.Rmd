@@ -313,7 +313,7 @@ for (site in sites_prec_problem) {
     mutate(site_ID = site))
   
 }
-<<<<<<< HEAD
+
 # for CA-TP3, we used data at CA-TP4. 
 df_output <- read.csv(file.path(data.folder, 'CA-TP4_tp_2002_2020.csv'))
 df_output <- df_output %>% mutate(time = ymd_hm(time)) %>% 
