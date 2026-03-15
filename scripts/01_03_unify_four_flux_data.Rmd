@@ -30,8 +30,8 @@ files_Ameri <- list.files(path =  file.path(dir_rawdata, "Ameriflux_FLUXNET"), p
 data_length <- unlist(lapply(files_Ameri, function(x) (-as.numeric(substring(x, 28, 31))) + as.numeric(substring(x, 33, 36)) + 1))
 sites_Ameri <- unlist(lapply(files_Ameri, function(x) substring(x, 5, 10)))
 sites_Ameri <- sites_Ameri[data_length >= data_length_thresh]
-# site: "CA-Cbo", AmeriFlux FLUXNET data has problems. use partitioned data by ReddyProc
-sites_Ameri <- sites_Ameri[-which(sites_Ameri == "CA-Cbo")]
+# site: "CA-Cbo" and US-Ho1, AmeriFlux FLUXNET data has problems. use partitioned data by ReddyProc
+sites_Ameri <- sites_Ameri[-which(sites_Ameri %in% c("CA-Cbo", "US-Ho1"))]
 #
 # sites in FLUXNET2020 and also in ICOS FLUXNET
 files_FLUXNET2020_ICOS <- list.files(path =  file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), pattern = "_FLUXNET_HH_L2.csv$")
@@ -218,10 +218,8 @@ sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6'
 #
 # Add NEE partition method
 sites_long <- sites_long %>% mutate(NEEpartition = case_when( 
-site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae", "US-Oho", "DE-RuW", "US-Uaf", "US-Esm", "US-Elm", "US-MtB", "US-Prr", "CA-Cbo", "US-PFa", "CN-ARS", "CN-HZZ", "US-Los") ~ 'NT',
+site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae", "US-Oho", "DE-RuW", "US-Uaf", "US-Esm", "US-Elm", "US-MtB", "US-Prr", "CA-Cbo", "US-PFa", "CN-ARS", "CN-HZZ", "US-Los", "US-Ho1") ~ 'NT',
 TRUE ~ 'DT'))
-
-# First few years' TA at "US-Ho1" has problem, which affect NT partition, so we use DT. 
 
 ```
 
