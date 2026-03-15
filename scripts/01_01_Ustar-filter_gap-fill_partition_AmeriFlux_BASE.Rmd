@@ -48,7 +48,7 @@ sites_selected <- sites %>% filter(!Vegetation.Abbreviation..IGBP. %in% c("CRO",
 ## US-Fo1: data paused for a while, only measured during campaigns
 sites_selected_BASE <- sites_selected %>% filter(AmeriFlux.BASE.Data.End - AmeriFlux.BASE.Data.Start >= 9) %>% filter(AmeriFlux.FLUXNET.Data == "No") %>% filter(!Site.ID %in% c("US-Ho3", "CA-SJ2", "CA-SJ1", "US-An1", "US-An2", "US-SP2", "US-UiD", "CA-Qcu", "US-Fo1"))
 ##
-sites_selected_BASE <- rbind(sites_selected_BASE, sites_selected[sites_selected$Site.ID == 'CA-Cbo', ])
+sites_selected_BASE <- rbind(sites_selected_BASE, sites_selected[sites_selected$Site.ID %in%  c('CA-Cbo', 'US-Ho1'), ])
 ## sites I should work on: "BR-Ma2" "US-An3" "US-Aud" "US-Blo" "US-ChR" "US-Cwt" "US-Ha2" "US-IB2" "US-KL2" "US-KL3"
 ## "US-KM2" "US-KM3" "US-KM4" "US-LA2" "US-MBP" "US-Me4" "US-NR3" "US-NR4" "US-Vcs" "US-Wrc"
 
@@ -414,9 +414,9 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   
   name_site <- sites_selected_BASE1$Site.ID[i]
   print(name_site)
-  if (!name_site %in% c("US-WCr")) {
-    next
-  }
+  # if (!name_site %in% c("US-WCr")) {
+  #   next
+  # }
   
   # the site US-PFa should be processed separately, so skip it now. 
   if (name_site == "US-PFa") { next }
@@ -515,6 +515,15 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   names(data_EddyProc) <- c("DateTime", col_names[col_names_used])
   if (!PPFD_IN_used) {
     data_EddyProc$Rg <- data_EddyProc$Rg * 2.3      # use the PPFD_IN unit. 
+  }
+  # site US-Ho1 needs Rg, RH, NETRAD for the first 10 years
+  if (name_site == "US-Ho1") {
+    US_Ho1_Rg_rH <- read.csv(file.path(dir_rawdata, "US-Ho1_Rg_rH.csv"))
+    US_Ho1_Rg_rH$DateTime <- ymd_hm(US_Ho1_Rg_rH$DateTime)
+    US_Ho1_Rg_rH <- left_join(data_EddyProc[, c("DateTime", "NEE")], US_Ho1_Rg_rH, by = "DateTime")
+    data_EddyProc$Rg[is.na(data_EddyProc$Rg)] <- US_Ho1_Rg_rH$PPFD_IN[is.na(data_EddyProc$Rg)]
+    data_EddyProc$RH[is.na(data_EddyProc$RH)] <- US_Ho1_Rg_rH$rH[is.na(data_EddyProc$RH)]
+    data_EddyProc$VPD[is.na(data_EddyProc$VPD)] <- US_Ho1_Rg_rH$VPD[is.na(data_EddyProc$VPD)]
   }
   #
   # check if VPD exists or if it is complete; if not, recalculate it using RH
@@ -793,6 +802,9 @@ for (i in 1:nrow(sites_selected_BASE1)) {
                         summarise(GPP_NT_VUT_REF=sum(GPP_NT_VUT_REF)*dt*0.0864*12,
                                   RECO_NT_VUT_REF=sum(RECO_NT_VUT_REF)*dt*0.0864*12)
     a_YY <- a_YY %>% left_join(a_YY_NTP, by="TIMESTAMP")
+    # add missing GPP_NT_VUT_REF, if RECO_NT_VUT_REF AND NEE_VUT_REF are available
+    id_GPP_na <- which(is.na(a_YY$GPP_NT_VUT_REF) & !is.na(a_YY$RECO_NT_VUT_REF) & !is.na(a_YY$NEE_VUT_REF))
+    a_YY$GPP_NT_VUT_REF[id_GPP_na] <- a_YY$RECO_NT_VUT_REF[id_GPP_na] - a_YY$NEE_VUT_REF[id_GPP_na]
   }
   #
   # Separate daytime and nighttime NEE
