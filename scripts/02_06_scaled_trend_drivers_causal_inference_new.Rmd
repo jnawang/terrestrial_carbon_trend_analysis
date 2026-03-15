@@ -177,6 +177,7 @@ DAG_cold_evergreen_forest_scaled <- dagitty("dag {
   TA_gs_t -> Lgs_t -> NEE_t
   SWC_gs_t -> Lgs_t
   P_gs_t -> Lgs_t
+  SW_gs_t -> Lgs_t
   
   TA_ngs_t -> NEE_t
   CO2 -> TA_ngs_t
@@ -187,6 +188,13 @@ DAG_cold_evergreen_forest_scaled <- dagitty("dag {
   SWC_gs_t -> TA_ngs_t
   TA_ngs_t -> Lgs_t
   
+  DIST_t -> NEE_t
+  CO2 -> DIST_t
+  TA_gs_t -> DIST_t  
+  DIST_t -> LE_gs_t
+  DIST_t -> Lgs_t
+  DIST_t -> SWC_gs_t
+  
 }")
 
 plot(graphLayout(DAG_cold_evergreen_forest_scaled))
@@ -196,7 +204,7 @@ isAcyclic(DAG_cold_evergreen_forest_scaled)
 # test data-DAG consistency; 
 #----------------------------------------------
 data_cold_evergreen_forest <- trend_driver %>% 
-  filter(IGBP %in% c('ENF', 'EBF') & category == "cold") 
+  filter(IGBP %in% c('ENF', 'EBF') & category == "cold") %>% filter(!is.na(Lgs_t))
 
 data_cold_evergreen_forest_test <- data_cold_evergreen_forest %>% dplyr::select(-c("site_ID", "IGBP", "Climate.class", "category", "NEEpartition", "source"))
 
@@ -228,7 +236,7 @@ df_direct_effect
 
 #------------------------------------------------------------------------------------------------
 #--------------------calculate total effect size of each driver----------------------------------
-exposure_vars <- c("CO2", "TA_gs_t", "P_gs_t", "SW_gs_t", "LE_gs_t", "SWC_gs_t", "Lgs_t", "TA_ngs_t")
+exposure_vars <- c("CO2", "TA_gs_t", "P_gs_t", "SW_gs_t", "LE_gs_t", "SWC_gs_t", "Lgs_t", "TA_ngs_t", "DIST_t")
 for (exposure_var in exposure_vars) {
   r1 <- run_adjusted_model(dag = DAG_cold_evergreen_forest_scaled, exposure = exposure_var, outcome = "NEE_t", 
                            effect_type = "total", data = data_cold_evergreen_forest, 
@@ -309,6 +317,13 @@ DAG_cold_deciduous_forest_scaled <- dagitty("dag {
   TA_ngs_t -> Lgs_t
   
   LE_gs_t -> TA_ngs_t
+  
+  DIST_t -> NEE_t
+  CO2 -> DIST_t
+  TA_gs_t -> DIST_t  
+  DIST_t -> LE_gs_t
+  DIST_t -> Lgs_t
+  DIST_t -> SWC_gs_t
  
 }")
 
@@ -352,7 +367,7 @@ df_direct_effect
 
 #------------------------------------------------------------------------------------------------
 #--------------------calculate total effect size of each driver----------------------------------
-exposure_vars <- c("CO2", "TA_gs_t", "P_gs_t", "SW_gs_t", "LE_gs_t", "SWC_gs_t", "Lgs_t", "TA_ngs_t")
+exposure_vars <- c("CO2", "TA_gs_t", "P_gs_t", "SW_gs_t", "LE_gs_t", "SWC_gs_t", "Lgs_t", "TA_ngs_t", "DIST_t")
 for (exposure_var in exposure_vars) {
   r1 <- run_adjusted_model(dag = DAG_cold_deciduous_forest_scaled, exposure = exposure_var, outcome = "NEE_t", 
                            effect_type = "total", data = data_cold_deciduous_forest, 
@@ -432,6 +447,15 @@ DAG_cold_non_forest_scaled <- dagitty("dag {
   SWC_gs_t -> TA_ngs_t
   TA_ngs_t -> Lgs_t
   
+  DIST_t -> NEE_t
+  CO2 -> DIST_t
+  TA_gs_t -> DIST_t  
+  DIST_t -> LE_gs_t
+  DIST_t -> Lgs_t
+  DIST_t -> SWC_gs_t
+  
+  DIST_t -> TA_ngs_t 
+  
 }")
 
 plot(graphLayout(DAG_cold_non_forest_scaled))
@@ -478,7 +502,7 @@ df_direct_effect
 
 #------------------------------------------------------------------------------------------------
 #--------------------calculate total effect size of each driver----------------------------------
-exposure_vars <- c("CO2", "TA_gs_t", "P_gs_t", "SW_gs_t", "LE_gs_t", "SWC_gs_t", "Lgs_t", "TA_ngs_t")
+exposure_vars <- c("CO2", "TA_gs_t", "P_gs_t", "SW_gs_t", "LE_gs_t", "SWC_gs_t", "Lgs_t", "TA_ngs_t", "DIST_t")
 for (exposure_var in exposure_vars) {
   r1 <- run_adjusted_model(dag = DAG_cold_non_forest_scaled, exposure = exposure_var, outcome = "NEE_t", 
                            effect_type = "total", data = data_cold_non_forest, 
@@ -561,16 +585,27 @@ DAG_dry_scaled <- dagitty("dag {
   P_ngs_t -> SWC_gs_t
   P_ngs_t -> TA_gs_t
   
-  
-  
-  
   LE_gs_t -> Lgs_t
   P_ngs_t -> SW_gs_t
+  P_ngs_t -> P_gs_t
+  
+  DIST_t -> NEE_t
+  CO2 -> DIST_t
+  TA_gs_t -> DIST_t
+  DIST_t -> LE_gs_t
+  DIST_t -> Lgs_t
+  DIST_t -> SWC_gs_t
+  
+  P_gs_t -> DIST_t
+  P_ngs_t -> DIST_t
+  DIST_t  -> TA_ngs_t
   
 }")
 
 plot(graphLayout(DAG_dry_scaled))
 isAcyclic(DAG_dry_scaled)
+
+#
 
 # test data-DAG consistency; 
 #----------------------------------------------
@@ -607,7 +642,7 @@ df_direct_effect
 
 #------------------------------------------------------------------------------------------------
 #--------------------calculate total effect size of each driver----------------------------------
-exposure_vars <- c("CO2", "TA_gs_t", "SWC_gs_t", "SW_gs_t", "P_gs_t", "LE_gs_t", "Lgs_t", "TA_ngs_t", "P_ngs_t")
+exposure_vars <- c("CO2", "TA_gs_t", "SWC_gs_t", "SW_gs_t", "P_gs_t", "LE_gs_t", "Lgs_t", "TA_ngs_t", "P_ngs_t", "DIST_t")
 for (exposure_var in exposure_vars) {
   r1 <- run_adjusted_model(dag = DAG_dry_scaled, exposure = exposure_var, outcome = "NEE_t", 
                            effect_type = "total", data = data_dry, 
@@ -621,6 +656,13 @@ ggplot(data=data_dry, aes(x=CO2, y=NEE_t, col=site_ID)) +
   geom_point() +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
+
+
+ggplot(data=data_dry, aes(x=CO2, y=NEE_t, col=site_ID)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
 
 ggplot(data=data_dry, aes(x=TA_gs_t, y=NEE_t, col=site_ID)) + 
   geom_point() +
@@ -675,6 +717,14 @@ DAG_wet_scaled <- dagitty("dag {
 
   P_t -> TA_t
   
+  DIST_t -> NEE_t
+  CO2 -> DIST_t
+  TA_t -> DIST_t
+  P_t -> DIST_t
+  DIST_t -> LE_t
+  DIST_t -> SWC_t
+  
+  
 }")
 plot(graphLayout(DAG_wet_scaled))
 isAcyclic(DAG_wet_scaled)
@@ -717,7 +767,7 @@ df_direct_effect
 
 #------------------------------------------------------------------------------------------------
 #--------------------calculate total effect size of each driver----------------------------------
-exposure_vars <- c("CO2", "SWC_t", "SW_t", "P_t", "LE_t", "TA_t")
+exposure_vars <- c("CO2", "SWC_t", "SW_t", "P_t", "LE_t", "TA_t", "DIST_t")
 for (exposure_var in exposure_vars) {
   r1 <- run_adjusted_model(dag = DAG_wet_scaled, exposure = exposure_var, outcome = "NEE_t", 
                            effect_type = "total", data = data_wet, 
@@ -727,10 +777,21 @@ for (exposure_var in exposure_vars) {
 df_total_effect
 
 #-------------------------------------------------------------------------------
-ggplot(data=data_wet, aes(x=CO2, y=NEE_at, col = site_ID)) + 
+ggplot(data=data_wet, aes(x=CO2, y=NEE_t, col = site_ID)) + 
   geom_point() +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
+
+ggplot(data=data_wet, aes(x=CO2, y=GPP_t, col = site_ID)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+ggplot(data=data_wet, aes(x=CO2, y=ER_t, col = site_ID)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
 
 ggplot(data=data_wet, aes(x=CO2, y=GPP_at, col = site_ID)) + 
   geom_point() +
@@ -757,7 +818,6 @@ ggplot(data=data_wet, aes(x=SWC_at, y=NEE_at)) +
   geom_point() +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
-
 
 
 mod_brm <- brm(

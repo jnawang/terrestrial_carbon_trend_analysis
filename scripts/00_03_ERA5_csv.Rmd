@@ -248,6 +248,7 @@ for (site in sites_prec_problem) {
   
   if (site == 'US-WCr') { next }
   if (site == 'US-Rls') { next }
+  if (site == 'CA-Ca1') { next }
   
   df_prec <- data.frame()
   df_sub <- subset(df, site_ID == site)
@@ -340,13 +341,26 @@ for (i in 1:length(reynolds_sites)) {
   df_daily_prec <- bind_rows(df_daily_prec, df_output)
 }
 
+# precipitation data for CA-Ca1
+pr <- weather_dl(
+    station_ids = 145,   # example station id 145; 150; 
+    start = "1997-01-01",
+    end = "2010-12-31",
+    interval = "day"
+)
+pr$total_precip[pr$year %in% c(2008:2009)] <- NA
+df_output <- pr[, c('date', 'total_precip')] %>% 
+  rename(P_ERA = total_precip) %>%
+  mutate(site_ID = 'CA-Ca1')
+df_daily_prec <- bind_rows(df_daily_prec, df_output)
+
 # the 12 sites daily precipitation
 write.csv(df_daily_prec, file=file.path("data", "daily_ERA5_prec_12sites.csv"), row.names = F)
 
 # check if MAP is close to reported values. 
-df_daily_prec %>% mutate(year = year(date)) %>% group_by(year, site_ID) %>% summarise(P = sum(P_ERA)) %>% group_by(site_ID) %>% summarise(P= mean(P))
+df_daily_prec %>% mutate(year = year(date)) %>% group_by(year, site_ID) %>% summarise(P = sum(P_ERA)) %>% group_by(site_ID) %>% summarise(P= mean(P, na.rm=T))
 
-# CA-Ca1	2201.9590			# CA-Ca1 is still too high. (check observations)
+# CA-Ca1	1542.3900			# CA-Ca1: missed 2 years; use data from CAMPBELL RIVER;
 # CH-Aws	1483.0178			# not accurate
 # US-EML	610.4139			# not accurate
 # US-KFS	1049.1767			# this is accurate. 
@@ -361,6 +375,28 @@ df_daily_prec %>% mutate(year = year(date)) %>% group_by(year, site_ID) %>% summ
 
 ```
 
+
+```{r download canada precipitation data}
+# install.packages("weathercan",
+#                  repos = c("https://ropensci.r-universe.dev",
+#                            "https://cloud.r-project.org"))
+library(weathercan)
+
+stations <- stations()
+subset(stations, grepl("CAMPBELL RIVER", station_name))    # "CAMPBELL RIVER A" CAMPBELL LAKE  CAMPBELL RIVER
+
+pr <- weather_dl(
+    station_ids = 145,   # example station id 145; 150; 
+    start = "1997-01-01",
+    end = "2010-12-31",
+    interval = "day"
+)
+
+pr %>% group_by(year) %>% summarise(tp = sum(total_precip, na.rm=T))
+
+plot(pr$date, pr$total_precip)
+  
+```
 
 
 

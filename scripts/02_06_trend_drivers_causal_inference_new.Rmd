@@ -179,6 +179,7 @@ DAG_cold_evergreen_forest <- dagitty("dag {
   TA_gs_at -> Lgs_at -> NEE_at
   SWC_gs_at -> Lgs_at
   P_gs_at -> Lgs_at
+  SW_gs_at -> Lgs_at
   
   TA_ngs_at -> NEE_at
   CO2 -> TA_ngs_at
@@ -189,16 +190,23 @@ DAG_cold_evergreen_forest <- dagitty("dag {
   SWC_gs_at -> TA_ngs_at
   TA_ngs_at -> Lgs_at
   
+  DIST_at -> NEE_at
+  CO2 -> DIST_at
+  TA_gs_at -> DIST_at  
+  DIST_at -> LE_gs_at
+  DIST_at -> Lgs_at
+  DIST_at -> SWC_gs_at
+  
 }")
 
 plot(graphLayout(DAG_cold_evergreen_forest))
 
-isAcyclic(DAG_cold_deciduous_forest)
+isAcyclic(DAG_cold_evergreen_forest)
 
 # test data-DAG consistency; 
 #----------------------------------------------
 data_cold_evergreen_forest <- trend_driver %>% 
-  filter(IGBP %in% c('ENF', 'EBF') & category == "cold") 
+  filter(IGBP %in% c('ENF', 'EBF') & category == "cold") %>% filter(!is.na(Lgs_t))
 
 data_cold_evergreen_forest_test <- data_cold_evergreen_forest %>% dplyr::select(-c("site_ID", "IGBP", "Climate.class", "category", "NEEpartition", "source"))
 
@@ -230,7 +238,7 @@ df_direct_effect
 
 #------------------------------------------------------------------------------------------------
 #--------------------calculate total effect size of each driver----------------------------------
-exposure_vars <- c("CO2", "TA_gs_at", "P_gs_at", "SW_gs_at", "LE_gs_at", "SWC_gs_at", "Lgs_at", "TA_ngs_at")
+exposure_vars <- c("CO2", "TA_gs_at", "P_gs_at", "SW_gs_at", "LE_gs_at", "SWC_gs_at", "Lgs_at", "TA_ngs_at", "DIST_at")
 for (exposure_var in exposure_vars) {
   r1 <- run_adjusted_model(dag = DAG_cold_evergreen_forest, exposure = exposure_var, outcome = "NEE_at", 
                            effect_type = "total", data = data_cold_evergreen_forest, 
@@ -309,6 +317,13 @@ DAG_cold_deciduous_forest <- dagitty("dag {
   
   SWC_gs_at -> TA_ngs_at
   TA_ngs_at -> Lgs_at
+  
+  DIST_at -> NEE_at
+  CO2 -> DIST_at
+  TA_gs_at -> DIST_at  
+  DIST_at -> LE_gs_at
+  DIST_at -> Lgs_at
+  DIST_at -> SWC_gs_at
  
 }")
 
@@ -352,7 +367,7 @@ df_direct_effect
 
 #------------------------------------------------------------------------------------------------
 #--------------------calculate total effect size of each driver----------------------------------
-exposure_vars <- c("CO2", "TA_gs_at", "P_gs_at", "SW_gs_at", "LE_gs_at", "SWC_gs_at", "Lgs_at", "TA_ngs_at")
+exposure_vars <- c("CO2", "TA_gs_at", "P_gs_at", "SW_gs_at", "LE_gs_at", "SWC_gs_at", "Lgs_at", "TA_ngs_at", "DIST_at")
 for (exposure_var in exposure_vars) {
   r1 <- run_adjusted_model(dag = DAG_cold_deciduous_forest, exposure = exposure_var, outcome = "NEE_at", 
                            effect_type = "total", data = data_cold_deciduous_forest, 
@@ -432,6 +447,13 @@ DAG_cold_non_forest <- dagitty("dag {
   SWC_gs_at -> TA_ngs_at
   TA_ngs_at -> Lgs_at
   
+  DIST_at -> NEE_at
+  CO2 -> DIST_at
+  TA_gs_at -> DIST_at  
+  DIST_at -> LE_gs_at
+  DIST_at -> Lgs_at
+  DIST_at -> SWC_gs_at
+  
 }")
 
 plot(graphLayout(DAG_cold_non_forest))
@@ -478,7 +500,7 @@ df_direct_effect
 
 #------------------------------------------------------------------------------------------------
 #--------------------calculate total effect size of each driver----------------------------------
-exposure_vars <- c("CO2", "TA_gs_at", "P_gs_at", "SW_gs_at", "LE_gs_at", "SWC_gs_at", "Lgs_at", "TA_ngs_at")
+exposure_vars <- c("CO2", "TA_gs_at", "P_gs_at", "SW_gs_at", "LE_gs_at", "SWC_gs_at", "Lgs_at", "TA_ngs_at", "DIST_at")
 for (exposure_var in exposure_vars) {
   r1 <- run_adjusted_model(dag = DAG_cold_non_forest, exposure = exposure_var, outcome = "NEE_at", 
                            effect_type = "total", data = data_cold_non_forest, 
@@ -503,6 +525,10 @@ ggplot(data=data_cold_non_forest, aes(x=LE_gs_at, y=NEE_at, col = site_ID)) +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
 
+ggplot(data=data_cold_non_forest, aes(x=DIST_at, y=NEE_at, col = site_ID)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
 
 
 
@@ -560,6 +586,18 @@ DAG_dry <- dagitty("dag {
   P_ngs_at -> TA_ngs_at
   P_ngs_at -> SWC_gs_at
   P_ngs_at -> TA_gs_at
+  P_ngs_at -> SW_gs_at
+  
+  DIST_at -> NEE_at
+  CO2 -> DIST_at
+  TA_gs_at -> DIST_at  
+  DIST_at -> LE_gs_at
+  DIST_at -> Lgs_at
+  DIST_at -> SWC_gs_at
+  
+  P_gs_at -> DIST_at
+  P_ngs_at -> DIST_at
+  DIST_at  -> TA_ngs_at
   
 }")
 
@@ -567,6 +605,7 @@ plot(graphLayout(DAG_dry))
 isAcyclic(DAG_dry)
 
 # test data-DAG consistency; 
+
 #----------------------------------------------
 data_dry <- trend_driver %>% 
   filter(category == "dry") %>% dplyr::filter(!is.na(LE_gs_at))
@@ -601,7 +640,7 @@ df_direct_effect
 
 #------------------------------------------------------------------------------------------------
 #--------------------calculate total effect size of each driver----------------------------------
-exposure_vars <- c("CO2", "TA_gs_at", "SWC_gs_at", "SW_gs_at", "P_gs_at", "LE_gs_at", "Lgs_at", "TA_ngs_at", "P_ngs_at")
+exposure_vars <- c("CO2", "TA_gs_at", "SWC_gs_at", "SW_gs_at", "P_gs_at", "LE_gs_at", "Lgs_at", "TA_ngs_at", "P_ngs_at", "DIST_at")
 for (exposure_var in exposure_vars) {
   r1 <- run_adjusted_model(dag = DAG_dry, exposure = exposure_var, outcome = "NEE_at", 
                            effect_type = "total", data = data_dry, 
@@ -669,6 +708,13 @@ DAG_wet <- dagitty("dag {
 
   P_at -> TA_at
   
+  DIST_at -> NEE_at
+  CO2 -> DIST_at
+  TA_at -> DIST_at
+  P_at -> DIST_at
+  DIST_at -> LE_at
+  DIST_at -> SWC_at
+  
 }")
 plot(graphLayout(DAG_wet))
 isAcyclic(DAG_wet)
@@ -716,7 +762,7 @@ df_direct_effect
 
 #------------------------------------------------------------------------------------------------
 #--------------------calculate total effect size of each driver----------------------------------
-exposure_vars <- c("CO2", "SWC_at", "SW_at", "P_at", "LE_at", "TA_at")
+exposure_vars <- c("CO2", "SWC_at", "SW_at", "P_at", "LE_at", "TA_at", "DIST_at")
 for (exposure_var in exposure_vars) {
   r1 <- run_adjusted_model(dag = DAG_wet, exposure = exposure_var, outcome = "NEE_at", 
                            effect_type = "total", data = data_wet, 
