@@ -411,6 +411,7 @@ grow_season_site <- data_grow_season %>%
 trend_driver <- data.frame(site_ID = character(), year_mid=integer(), 
                            year_start = integer(), year_end = integer(),
                      NEE = double(), GPP = double(), ER = double(), 
+                     LE = double(), SW = double(), 
                      NEE_t = double(), NEE_p = double(), NEE_at = double(), # at: actual trend
                      GPP_t = double(), GPP_p = double(), GPP_at = double(), 
                      ER_t = double(), ER_p = double(), ER_at = double(), 
@@ -560,11 +561,12 @@ for (i in 1:nrow(sites_long)) {
       df_yearly <- df_daily_prec_site %>% mutate(year = year(date)) %>% 
         group_by(year) %>% summarise(P_ERA = sum(P_ERA, na.rm=T), .groups = 'drop')
       a_YY <- a_YY %>% select(-P_ERA) %>% left_join(df_yearly, by = c('TIMESTAMP'='year'))
-    } else {
-      ratio = sites_long$MAP[i] / mean(a_YY$P_ERA, na.rm = T)
-      a_YY$P_ERA = a_YY$P_ERA * ratio
-      a_DD$P_ERA = a_DD$P_ERA * ratio
-    }
+      if (site_ID %in% c("CH-Aws", "US-EML")) {
+        ratio = sites_long$MAP[i] / mean(a_YY$P_ERA, na.rm = T)
+        a_YY$P_ERA = a_YY$P_ERA * ratio
+        a_DD$P_ERA = a_DD$P_ERA * ratio        
+      }
+    } 
   }  
   #
   #############start plot figures for data quality check##########
@@ -668,6 +670,9 @@ for (i in 1:nrow(sites_long)) {
         trend_driver[id, 'GPP'] <- mean(a_YY_sub$GPP_DT_VUT_REF, na.rm=T)
         trend_driver[id, 'ER'] <- mean(a_YY_sub$RECO_DT_VUT_REF, na.rm=T)
       }
+      trend_driver[id, 'LE'] <- mean(a_YY_sub$LE_F_MDS, na.rm=T)
+      trend_driver[id, 'SW'] <- mean(a_YY_sub$SW_IN_F_MDS, na.rm=T)
+      #
       trend_driver[id, c('NEE_t', 'NEE_p')] <- cal_sens_slope_scale(a_YY_sub$TIMESTAMP, a_YY_sub$NEE_VUT_REF, a_YY$NEE_VUT_REF)
       trend_driver[id, c('NEE_at')] <- cal_sens_slope(a_YY_sub$TIMESTAMP, a_YY_sub$NEE_VUT_REF)
       
@@ -825,7 +830,7 @@ trend_driver[trend_driver$site_ID == "US-Los" & trend_driver$year_mid < 2011, c(
 
 trend_driver <- trend_driver %>%
   group_by(site_ID, year_mid) %>%
-  slice_max(order_by = year_end - year_start, n = 1, with_ties = F) %>%
+  slice_max(order_by = year_end - year_start, n = 1, with_ties = F) %>% 
   ungroup()
 
 print(paste0('total number of site years with TA outliers is removed: ', TA_site_years_removed))

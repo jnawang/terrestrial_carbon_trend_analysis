@@ -802,9 +802,9 @@ for (i in 1:nrow(sites_selected_BASE1)) {
                         summarise(GPP_NT_VUT_REF=sum(GPP_NT_VUT_REF)*dt*0.0864*12,
                                   RECO_NT_VUT_REF=sum(RECO_NT_VUT_REF)*dt*0.0864*12)
     a_YY <- a_YY %>% left_join(a_YY_NTP, by="TIMESTAMP")
-    # add missing GPP_NT_VUT_REF, if RECO_NT_VUT_REF AND NEE_VUT_REF are available
-    id_GPP_na <- which(is.na(a_YY$GPP_NT_VUT_REF) & !is.na(a_YY$RECO_NT_VUT_REF) & !is.na(a_YY$NEE_VUT_REF))
-    a_YY$GPP_NT_VUT_REF[id_GPP_na] <- a_YY$RECO_NT_VUT_REF[id_GPP_na] - a_YY$NEE_VUT_REF[id_GPP_na]
+    # # add missing GPP_NT_VUT_REF, if RECO_NT_VUT_REF AND NEE_VUT_REF are available
+    # id_GPP_na <- which(is.na(a_YY$GPP_NT_VUT_REF) & !is.na(a_YY$RECO_NT_VUT_REF) & !is.na(a_YY$NEE_VUT_REF))
+    # a_YY$GPP_NT_VUT_REF[id_GPP_na] <- a_YY$RECO_NT_VUT_REF[id_GPP_na] - a_YY$NEE_VUT_REF[id_GPP_na]
   }
   #
   # Separate daytime and nighttime NEE
