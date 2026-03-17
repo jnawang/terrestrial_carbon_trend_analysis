@@ -221,6 +221,12 @@ sites_long <- sites_long %>% mutate(NEEpartition = case_when(
 site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae", "US-Oho", "DE-RuW", "US-Uaf", "US-Esm", "US-Elm", "US-MtB", "US-Prr", "CA-Cbo", "US-PFa", "CN-ARS", "CN-HZZ", "US-Los", "US-Ho1") ~ 'NT',
 TRUE ~ 'DT'))
 
+# make climate class consistent
+sites_long$Climate.class[sites_long$Climate.class == "Bwh"] <- "BWh"
+sites_long$Climate.class[sites_long$Climate.class == "Bwk"] <- "BWk"
+sites_long$Climate.class[sites_long$Climate.class == "Bsh"] <- "BSh"
+sites_long$Climate.class[sites_long$Climate.class == "Bsk"] <- "BSk"
+
 ```
 
 
