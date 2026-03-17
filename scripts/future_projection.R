@@ -73,8 +73,60 @@ sos_eos_group <- sos_eos_group %>% mutate(climate_id = case_when(
   Climate.class == 'Cwa' ~ 11, Climate.class == 'Cwb' ~ 12, Climate.class == 'Cwc' ~ 13))
 
 
+###########################################################
+# 2. get global zonation based on climate and vegetation
+###########################################################
+koppen_climate <- terra::rast(file.path('data', 'koppen_geiger_0p00833333.tif'))
+land_cover <- terra::rast(file.path('data', '968_Land_Cover_Class_0.25degree.nc'))
+#
+# plot(koppen_climate)
+plot(land_cover[[2]]%in% c(4:5))
+# large croplands on earth
+# unify resolution: 0.25 degree
+koppen_climate_0.25 <- terra::resample(koppen_climate, land_cover, method="near")
+# plot(koppen_climate_0.25)
+#
+# a data frame to store zone info
+df_zone <- data.frame(koppen_climate=as.integer(terra::values(koppen_climate_0.25)),
+                      land_cover=as.integer(terra::values(land_cover[[2]])))
+df_zone <- df_zone %>% mutate(group = case_when(
+  koppen_climate %in% c(2, 14, 11:13) & !land_cover %in% c(12,13,15,16,0) ~ "wet",  
+  koppen_climate %in% c(4:10) & !land_cover %in% c(12,13,15,16,0) ~ "dry",  # remove 0water, 12cropland, 13urban, 15ice, 16barren
+  koppen_climate %in% c(15:30) & land_cover %in% c(6:9, 14) ~ "cold_nonforest", 
+  koppen_climate %in% c(15:30) & land_cover %in% c(10) ~ "cold_nonforest", 
+  koppen_climate %in% c(15:30) & land_cover %in% c(11) ~ "cold_nonforest", 
+  koppen_climate %in% c(15:30) & land_cover %in% c(1:3) ~ "cold_ENF",
+  koppen_climate %in% c(15:30) & land_cover %in% c(4:5) ~ "cold_DBF"))
+# %>% mutate(grow_season_id = ifelse(is.na(koppen_climate) | is.na(group), NA, paste(group, koppen_climate, sep='-')))
 
+zone_grow_season <- koppen_climate_0.25
+terra::values(zone_grow_season)[!df_zone$koppen_climate %in% sos_eos_group$climate_id] <- NA   
+plot(zone_grow_season)
+# why there are so many missing points? these are water areas. 
+# we have 20 climate zones, missing Aw, Am, Af, and Dsa, Dsb, Dsc, Dsd
 
+# zone for climate-vegetation groups
+zone_group <- koppen_climate_0.25
+terra::values(zone_group) <- NA
+terra::values(zone_group) <- df_zone$group
+plot(zone_group)
+writeRaster(zone_group, filename = 'data/zones_climate_vegetation_group.tif', overwrite=TRUE)
+
+#------------------------------------
+# calculate zone_grow_season masks
+zone_masks <- rast()
+for (i in 1:nrow(sos_eos_group)) {
+  m <- zone_grow_season == sos_eos_group$climate_id[i]
+  terra::values(m)[!terra::values(m)] <- NA
+  names(m) <- paste0("zone_", sos_eos_group$climate_id[i])
+  zone_masks <- c(zone_masks, m)
+}
+
+north_hemispher <- init(zone_masks[[1]], "y") > 0
+south_hemispher <- init(zone_masks[[1]], "y") <= 0
+
+zone_masks_north <- mask(zone_masks, north_hemispher, maskvalues=0)
+zone_masks_south <- mask(zone_masks, south_hemispher, maskvalues=0)
 
 
 
