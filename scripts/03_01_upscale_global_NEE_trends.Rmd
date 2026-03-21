@@ -572,6 +572,7 @@ writeRaster(et_slope_model_past_fut_change, filename = 'data/et_slope_past_fut_c
 # 
 ```
 
+
 ```{r predict for future NEE trend}
 t2m_gs <- terra::rast('data/tas_gs_2026_2050.tif')
 tp_gs <- terra::rast('data/pr_gs_2026_2050.tif')

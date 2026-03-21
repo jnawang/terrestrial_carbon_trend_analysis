@@ -663,16 +663,17 @@ for (i in 1:nrow(sites_long)) {
       trend_driver[id, 'year_mid'] <- round(mean(a_YY_sub$TIMESTAMP, na.rm=T))
       trend_driver[id, 'year_start'] <- min(a_YY_sub$TIMESTAMP, na.rm=T)
       trend_driver[id, 'year_end'] <- max(a_YY_sub$TIMESTAMP, na.rm=T)
+      # these carbon characteristics are site-specific and do not change with moving window
       trend_driver[id, 'NEE'] <- mean(a_YY_sub$NEE_VUT_REF, na.rm=T)
       if (sites_long$NEEpartition[i] == 'NT') {
-        trend_driver[id, 'GPP'] <- mean(a_YY_sub$GPP_NT_VUT_REF, na.rm=T)
-        trend_driver[id, 'ER'] <- mean(a_YY_sub$RECO_NT_VUT_REF, na.rm=T)        
+        trend_driver[id, 'GPP'] <- mean(a_YY$GPP_NT_VUT_REF, na.rm=T)
+        trend_driver[id, 'ER'] <- mean(a_YY$RECO_NT_VUT_REF, na.rm=T)        
       } else {
-        trend_driver[id, 'GPP'] <- mean(a_YY_sub$GPP_DT_VUT_REF, na.rm=T)
-        trend_driver[id, 'ER'] <- mean(a_YY_sub$RECO_DT_VUT_REF, na.rm=T)
+        trend_driver[id, 'GPP'] <- mean(a_YY$GPP_DT_VUT_REF, na.rm=T)
+        trend_driver[id, 'ER'] <- mean(a_YY$RECO_DT_VUT_REF, na.rm=T)
       }
-      trend_driver[id, 'LE'] <- mean(a_YY_sub$LE_F_MDS, na.rm=T)
-      trend_driver[id, 'SW'] <- mean(a_YY_sub$SW_IN_F_MDS, na.rm=T)
+      trend_driver[id, 'LE'] <- mean(a_YY$LE_F_MDS, na.rm=T)
+      trend_driver[id, 'SW'] <- mean(a_YY$SW_IN_F_MDS, na.rm=T)
       #
       trend_driver[id, c('NEE_t', 'NEE_p')] <- cal_sens_slope_scale(a_YY_sub$TIMESTAMP, a_YY_sub$NEE_VUT_REF, a_YY$NEE_VUT_REF)
       trend_driver[id, c('NEE_at')] <- cal_sens_slope(a_YY_sub$TIMESTAMP, a_YY_sub$NEE_VUT_REF)

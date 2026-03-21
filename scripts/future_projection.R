@@ -8,8 +8,8 @@
 
 rm(list=ls())
 # change this location where the raw data will be saved accordingly
-# dir_rawdata <- '/Users/jw2946/Documents/stability_project/SiteData/'
-dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
+dir_rawdata <- '/Volumes/WZZ_disk'
+# dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 #
 library(librarian)
 shelf(tidyverse, ggpubr, terra, ncdf4, future.apply, trend)
@@ -97,12 +97,22 @@ land_cover <- terra::rast(file.path('data', '968_Land_Cover_Class_0.25degree_lay
 # unify resolution: 0.25 degree
 koppen_climate_0.25 <- terra::resample(koppen_climate, land_cover, method="near")
 # plot(koppen_climate_0.25)
+
+# aridity index
+AI_0.25 <- terra::rast(file.path('data', 'Global-AI.tif'))
+AI_0.25 <- terra::resample(AI_0.25, land_cover) / 10000       # values are enlarged by 10000
+# Zomer, R.J., Xu, J. & Trabucco, A. Version 3 of the Global Aridity Index and Potential Evapotranspiration Database. Sci Data 9, 409 (2022). https://doi.org/10.1038/s41597-022-01493-1
 #
 # a data frame to store zone info
 df_zone <- data.frame(koppen_climate=as.integer(terra::values(koppen_climate_0.25)),
-                      land_cover=as.integer(terra::values(land_cover)))
+                      land_cover=as.integer(terra::values(land_cover)),
+                      AI = terra::values(AI_0.25))
+names(df_zone)[3] <- "AI"
+
+# the classification of dry and wet in tropics should based on aridity index. 
 df_zone <- df_zone %>% mutate(group = case_when(
-  koppen_climate %in% c(1:3, 11, 14) & !land_cover %in% c(12,13,15,16,0) ~ "wet",  
+  koppen_climate %in% c(1:3, 11, 14) & !land_cover %in% c(12,13,15,16,0) & AI > 0.5 ~ "wet", 
+  koppen_climate %in% c(1:3, 11, 14) & !land_cover %in% c(12,13,15,16,0) & AI < 0.5 ~ "dry", 
   koppen_climate %in% c(4:10) & !land_cover %in% c(12,13,15,16,0) ~ "dry",  # remove 0water, 12cropland, 13urban, 15ice, 16barren
   koppen_climate %in% c(12:13, 15:30) & land_cover %in% c(6:9, 14) ~ "cold_nonforest", 
   koppen_climate %in% c(12:13, 15:30) & land_cover %in% c(10) ~ "cold_nonforest", 
@@ -110,7 +120,6 @@ df_zone <- df_zone %>% mutate(group = case_when(
   koppen_climate %in% c(12:13, 15:30) & land_cover %in% c(1:2) ~ "cold_ENF",
   koppen_climate %in% c(12:13, 15:30) & land_cover %in% c(3:5) ~ "cold_DBF"))
 
-# the classification of dry and wet in tropics should based on aridity index. 
 
 zone_grow_season <- koppen_climate_0.25
 
@@ -193,9 +202,9 @@ process_one_year <- function(r, zone_masks_north, zone_masks_south, sos_eos_grou
   return(output)
 }
 
-###########################################################
-# 4. read data for calculating growing season mean each year
-###########################################################
+################################################################################
+# 4. read daily climate data and calculate growing season mean for each year
+################################################################################
 met_files <- list.files(file.path(dir_rawdata, '/ScaleUp_Global/met_day_2005_2023/'), pattern='.nc$', full.names = T)
 #
 sw_data <- list()
@@ -216,122 +225,104 @@ for (i in 1:length(met_files)) {
 }
 df_file_info <- df_file_info %>% arrange(var, year)
 
-# it takes 3-4 hours to rotate these rasters.
+# it takes 7-8 hours to rotate these rasters.
 # work on t2m
-t2m_data <- list()
+# t2m_data <- list()
+t2m_gs <- rast()
+t2m_ngs <- rast()
 df_file_info_subset <- subset(df_file_info, var=='t2m')    # nrow(df_file_info_subset)
 for (i in 1:nrow(df_file_info_subset)) {
-  print(i)
+  print( paste(i, df_file_info_subset$var[i], df_file_info_subset$year[i], sep = '-') )
   met_data <- terra::rast(df_file_info_subset$file[i])
   met_data <- terra::rotate(met_data)
-  t2m_data <- c(t2m_data, met_data)
-}
-
-tp_data <- list()
-df_file_info_subset <- subset(df_file_info, var=='tp')
-for (i in 1:nrow(df_file_info_subset)) {
-  print(i)
-  met_data <- terra::rast(df_file_info_subset$file[i])
-  met_data <- terra::rotate(met_data)
-  tp_data <- c(tp_data, met_data)
-}
-
-ssrd_data <- list()
-df_file_info_subset <- subset(df_file_info, var=='ssrd')
-for (i in 1:nrow(df_file_info_subset)) {
-  print(i)
-  met_data <- terra::rast(df_file_info_subset$file[i])
-  met_data <- terra::rotate(met_data)
-  ssrd_data <- c(ssrd_data, met_data)
-}
-
-###########################################################
-# 5. call function to calculate growing season mean
-###########################################################
-# call function: this will take 3-4 hours
-# test <- process_one_year(t2m_data[[1]], zone_masks_north, zone_masks_south, sos_eos_group)
-#
-# resample masks to be consistent with nc data
-zone_masks_north <- terra::resample(zone_masks_north, t2m_data[[1]], method = "near")
-zone_masks_south <- terra::resample(zone_masks_south, t2m_data[[1]], method = "near")
-
-
-t2m_gs <- rast()  # length(t2m_data)
-for (i in 1:length(t2m_data)) {
-  test <- process_one_year(t2m_data[[i]], zone_masks_north, zone_masks_south, sos_eos_group, gs=TRUE)
+  # t2m_data <- c(t2m_data, met_data)
+  if (i == 1) {
+    # resample masks to be consistent with nc data
+    zone_masks_north <- terra::resample(zone_masks_north, met_data, method = "near")
+    zone_masks_south <- terra::resample(zone_masks_south, met_data, method = "near")
+  }
+  test <- process_one_year(met_data, zone_masks_north, zone_masks_south, sos_eos_group, gs=TRUE)
   t2m_gs <- c(t2m_gs, test)
-  print(i)
-}
-#
-writeRaster(t2m_gs, filename = file.path('data', 't2m_gs_2005_2023.tif'), overwrite=TRUE)
-
-# non-growing season
-t2m_ngs <- rast()
-for (i in 1:length(t2m_data)) {
-  test <- process_one_year(t2m_data[[i]], zone_masks_north, zone_masks_south, sos_eos_group, gs=FALSE)
+  
+  test <- process_one_year(met_data, zone_masks_north, zone_masks_south, sos_eos_group, gs=FALSE)
   t2m_ngs <- c(t2m_ngs, test)
-  print(i)
+  
+  rm(met_data)
+  gc()
+  terra::tmpFiles(remove = TRUE)
 }
-#
+writeRaster(t2m_gs, filename = file.path('data', 't2m_gs_2005_2023.tif'), overwrite=TRUE)
 writeRaster(t2m_ngs, filename = file.path('data', 't2m_ngs_2005_2023.tif'), overwrite=TRUE)
 
-#--------------
+#-----------------------------------
+# tp_data <- list()
 tp_gs <- rast()
-for (i in 1:length(tp_data)) {
-  test <- process_one_year(tp_data[[i]], zone_masks_north, zone_masks_south, sos_eos_group, gs=TRUE)
-  tp_gs <- c(tp_gs, test)
-  print(i)
-}
-#
-writeRaster(tp_gs, filename = file.path('data', 'tp_gs_2005_2023.tif'), overwrite=TRUE)
-
-# non-growing season
 tp_ngs <- rast()
-for (i in 1:length(tp_data)) {
-  test <- process_one_year(tp_data[[i]], zone_masks_north, zone_masks_south, sos_eos_group, gs=FALSE)
+df_file_info_subset <- subset(df_file_info, var=='tp')
+for (i in 1:nrow(df_file_info_subset)) {
+  print( paste(i, df_file_info_subset$var[i], df_file_info_subset$year[i], sep = '-') )
+  met_data <- terra::rast(df_file_info_subset$file[i])
+  met_data <- terra::rotate(met_data)
+  # tp_data <- c(tp_data, met_data)
+  test <- process_one_year(met_data, zone_masks_north, zone_masks_south, sos_eos_group, gs=TRUE)
+  tp_gs <- c(tp_gs, test)
+  
+  test <- process_one_year(met_data, zone_masks_north, zone_masks_south, sos_eos_group, gs=FALSE)
   tp_ngs <- c(tp_ngs, test)
-  print(i)
+  
+  rm(met_data)
+  gc()
+  terra::tmpFiles(remove = TRUE)
 }
-#
+writeRaster(tp_gs, filename = file.path('data', 'tp_gs_2005_2023.tif'), overwrite=TRUE)
 writeRaster(tp_ngs, filename = file.path('data', 'tp_ngs_2005_2023.tif'), overwrite=TRUE)
 
-
+#-----------------------------------
+# ssrd_data <- list()
 ssrd_gs <- rast()
-for (i in 1:length(tp_data)) {
-  test <- process_one_year(ssrd_data[[i]], zone_masks_north, zone_masks_south, sos_eos_group, gs=TRUE)
+df_file_info_subset <- subset(df_file_info, var=='ssrd')
+for (i in 1:nrow(df_file_info_subset)) {
+  print( paste(i, df_file_info_subset$var[i], df_file_info_subset$year[i], sep = '-') )
+  met_data <- terra::rast(df_file_info_subset$file[i])
+  met_data <- terra::rotate(met_data)
+  # ssrd_data <- c(ssrd_data, met_data)
+
+  test <- process_one_year(met_data, zone_masks_north, zone_masks_south, sos_eos_group, gs=TRUE)
   ssrd_gs <- c(ssrd_gs, test)
-  print(i)
+
+  rm(met_data)
+  gc()
+  terra::tmpFiles(remove = TRUE)
 }
-#
 writeRaster(ssrd_gs, filename = file.path('data', 'ssrd_gs_2005_2023.tif'), overwrite=TRUE)
 
 ###########################################################
-# 6. deal with ET data from FLUXCOM in the past
+# 5. process ET data from FLUXCOM in the past
 ###########################################################
 ET_files <- list.files(file.path(dir_rawdata, '/ScaleUp_Global/et_day_2005_2021/'), pattern='.nc$', full.names = T)
-et_data <- list()
+
+et_gs <- rast()
 for (i in 1:length(ET_files)) {
   print(i)
   met_data <- terra::rast(ET_files[i])
   # plot(met_data)
-  et_data <- c(et_data, met_data)
-}
-
-# resample masks to be consistent with nc data
-zone_masks_north <- resample(zone_masks_north, met_data, method = "near")
-zone_masks_south <- resample(zone_masks_south, met_data, method = "near")
-
-# calculate growing season average;
-et_gs <- rast()  # length(t2m_data)
-for (i in 1:length(et_data)) {
-  test <- process_one_year(et_data[[i]], zone_masks_north, zone_masks_south, sos_eos_group)
+  if (i == 1) {
+    # resample masks to be consistent with nc data
+    zone_masks_north <- resample(zone_masks_north, met_data, method = "near")
+    zone_masks_south <- resample(zone_masks_south, met_data, method = "near")
+  }
+  #
+  test <- process_one_year(met_data, zone_masks_north, zone_masks_south, sos_eos_group)
   et_gs <- c(et_gs, test)
-  print(i)
+  
+  rm(met_data)
+  gc()
+  terra::tmpFiles(remove = TRUE)
 }
 writeRaster(et_gs, filename = file.path('data', 'et_gs_2005_2023.tif'), overwrite=TRUE)
 
 ######################################################################
-# 7. get future climate average during growing and non-growing season
+# 6. get future climate average during growing and non-growing season
 ######################################################################
 # get the average of the three global circulation models: GFDL, MICRO6, and MPI-ESM
 vars <- c('pr', 'rsds', 'tas')
@@ -382,7 +373,7 @@ for (var in vars) {
 }
 
 ######################################################################
-# 8. get change of ET from coarse global climate models
+# 7. get change of ET from coarse global climate models
 ######################################################################
 # I want to get the change of ET from 2015-2025 to 2026-2050. 
 # assuming growing season is 5-9; 
@@ -422,6 +413,23 @@ for (imodel in 1:nmodels) {
   et_slope_model_fut[[imodel]] <- terra::rotate(et_slope_model_fut[[imodel]])
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Compare the past ET trends from FLUXCOM with the current ET trends from climate models
 et_gs_slope_FLUXCOM <- terra::rast('data/et_gs_slope_FLUXCOM_2005_2023.tif')
 plot(et_gs_slope_FLUXCOM)
@@ -446,6 +454,21 @@ et_slope_model_past_fut_change <- et_slope_model_fut - et_slope_model_past
 plot(et_slope_model_past_fut_change)
 #
 writeRaster(et_slope_model_past_fut_change, filename = file.path('data', 'et_slope_past_fut_change.tif'), overwrite=TRUE)
+
+##################################
+# 8. calculate past NEE trends
+##################################
+
+
+
+
+##################################
+# 10. predict for future NEE trend
+##################################
+
+
+
+
 
 
 

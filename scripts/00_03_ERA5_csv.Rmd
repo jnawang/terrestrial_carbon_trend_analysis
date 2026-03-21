@@ -249,6 +249,8 @@ for (site in sites_prec_problem) {
   if (site == 'US-WCr') { next }
   if (site == 'US-Rls') { next }
   if (site == 'CA-Ca1') { next }
+  if (site == 'US-EML') { next }
+  if (site == 'CH-Aws') { next }
   
   df_prec <- data.frame()
   df_sub <- subset(df, site_ID == site)
@@ -354,18 +356,45 @@ df_output <- pr[, c('date', 'total_precip')] %>%
   mutate(site_ID = 'CA-Ca1')
 df_daily_prec <- bind_rows(df_daily_prec, df_output)
 
+
+# precipitation data for US-EML: https://www.ncei.noaa.gov/cdo-web/review
+# MCKINLEY PARK, AK US (Station ID: GHCND:USC00505778)
+
+# df_daily_prec <- read.csv(file.path("data", "daily_ERA5_prec_12sites.csv"))
+# df_daily_prec <- df_daily_prec %>% filter(!site_ID %in% c('US-EML', 'CH-Aws')) %>%
+#   mutate(date = ymd(date))
+
+data.folder <- '/Users/junnawang/YaleLab/data_server/carbon_trend_project/'
+df_output <- read.csv(file.path(data.folder, "us-eml_tp_2008_2025.csv"))
+df_output <- df_output %>% mutate(date = ymd(DATE), P_ERA = PRCP * 25.4) %>%
+  # group_by(year) %>% summarise(P_ERA = sum(PRCP, na.rm=T) * 25.4)  %>% # convert inch to mm. 
+  select(date, P_ERA) %>%
+  mutate(site_ID = "US-EML")
+df_daily_prec <- bind_rows(df_daily_prec, df_output)
+
+
+# precipitation data for CH-Aws: https://www.meteoswiss.admin.ch/services-and-publications/applications/ext/download-data-without-coding-skills.html#lang=en&mdt=normal&pgid=Precipitation&sid=SAM&col=ch.meteoschweiz.ogd-nime&di=daily&tr=historical&hdr=
+data.folder <- '/Users/junnawang/YaleLab/data_server/carbon_trend_project/'
+df_output <- read.csv(file.path(data.folder, "ogd-nime_sam_d_historical.csv"), sep = ";")
+df_output <- df_output %>% mutate(date = as.Date(dmy_hm(reference_timestamp)), P_ERA = rre150d0) %>% 
+  mutate(year = year(date)) %>% 
+  filter(year >= 2006) %>% 
+  select(date, P_ERA) %>%
+  mutate(site_ID = "CH-Aws")
+df_daily_prec <- bind_rows(df_daily_prec, df_output)
+
 # the 12 sites daily precipitation
 write.csv(df_daily_prec, file=file.path("data", "daily_ERA5_prec_12sites.csv"), row.names = F)
 
 # check if MAP is close to reported values. 
-df_daily_prec %>% mutate(year = year(date)) %>% group_by(year, site_ID) %>% summarise(P = sum(P_ERA)) %>% group_by(site_ID) %>% summarise(P= mean(P, na.rm=T))
+df_daily_prec %>% mutate(year = year(date)) %>% group_by(year, site_ID) %>% summarise(P = sum(P_ERA)) %>% group_by(site_ID) %>% summarise(P= mean(P, na.rm=T)) 
 
 # CA-Ca1	1542.3900			# CA-Ca1: missed 2 years; use data from CAMPBELL RIVER;
-# CH-Aws	1483.0178			# not accurate
-# US-EML	610.4139			# not accurate
+# CH-Aws	708.4150			# slightly lower than reported value ~918 mm
+# US-EML	412.3605      # this is accurate.
 # US-KFS	1049.1767			# this is accurate. 
 # US-Rls	346.4937			# this is accurate. 
-# US-Rws	297.4000      # this is accurate. 
+# US-Rws	297.4000      # this is accurate.
 # US-Rms	874.0962      # this is accurate. 
 # US-SP1	1037.3135			# this is fine. 
 # US-Syv	886.0491			# this is accurate. 
