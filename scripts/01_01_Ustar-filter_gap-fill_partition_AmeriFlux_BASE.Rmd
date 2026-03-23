@@ -48,7 +48,7 @@ sites_selected <- sites %>% filter(!Vegetation.Abbreviation..IGBP. %in% c("CRO",
 ## US-Fo1: data paused for a while, only measured during campaigns
 sites_selected_BASE <- sites_selected %>% filter(AmeriFlux.BASE.Data.End - AmeriFlux.BASE.Data.Start >= 9) %>% filter(AmeriFlux.FLUXNET.Data == "No") %>% filter(!Site.ID %in% c("US-Ho3", "CA-SJ2", "CA-SJ1", "US-An1", "US-An2", "US-SP2", "US-UiD", "CA-Qcu", "US-Fo1"))
 ##
-sites_selected_BASE <- rbind(sites_selected_BASE, sites_selected[sites_selected$Site.ID %in%  c('CA-Cbo', 'US-Ho1'), ])
+sites_selected_BASE <- rbind(sites_selected_BASE, sites_selected[sites_selected$Site.ID %in%  c('CA-Cbo', 'US-Ho1', 'US-Me2', 'US-Ton', "US-UMB"), ])
 ## sites I should work on: "BR-Ma2" "US-An3" "US-Aud" "US-Blo" "US-ChR" "US-Cwt" "US-Ha2" "US-IB2" "US-KL2" "US-KL3"
 ## "US-KM2" "US-KM3" "US-KM4" "US-LA2" "US-MBP" "US-Me4" "US-NR3" "US-NR4" "US-Vcs" "US-Wrc"
 
@@ -414,9 +414,9 @@ for (i in 1:nrow(sites_selected_BASE1)) {
   
   name_site <- sites_selected_BASE1$Site.ID[i]
   print(name_site)
-  # if (!name_site %in% c("US-WCr")) {
-  #   next
-  # }
+  if (!name_site %in% c("US-Me2", "US-UMB", "US-Ton")) {
+    next
+  }
   
   # the site US-PFa should be processed separately, so skip it now. 
   if (name_site == "US-PFa") { next }
@@ -438,6 +438,13 @@ for (i in 1:nrow(sites_selected_BASE1)) {
     data_BASE <- data_BASE %>% filter(year(ymd_hm(data_BASE$TIMESTAMP_START)) <= 2016)
   } else if (name_site %in% c('US-NC2')) {
     data_BASE <- data_BASE %>% filter(year(ymd_hm(data_BASE$TIMESTAMP_START)) <= 2021)
+  } else if (name_site %in% c('US-Me2')) {
+    data_BASE$TA_1_1_1 <- data_BASE$TA_1_1_3   # no TA in 2002 in TA_1_1_1, so we used TA_1_1_3. 
+    # data lasted to 2022, but a fire occured in August 2020, making data after 2020 useless
+    data_BASE <- data_BASE %>% filter(year(ymd_hm(data_BASE$TIMESTAMP_START)) < 2020)
+  } else if (name_site %in% c('US-UMB')) {
+    # data lasted to 2025, but data after 2023 is likely wrong 
+    data_BASE <- data_BASE %>% filter(year(ymd_hm(data_BASE$TIMESTAMP_START)) < 2024)
   }
   #
   var_names <- names(data_BASE)

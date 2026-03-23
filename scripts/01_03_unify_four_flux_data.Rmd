@@ -30,8 +30,8 @@ files_Ameri <- list.files(path =  file.path(dir_rawdata, "Ameriflux_FLUXNET"), p
 data_length <- unlist(lapply(files_Ameri, function(x) (-as.numeric(substring(x, 28, 31))) + as.numeric(substring(x, 33, 36)) + 1))
 sites_Ameri <- unlist(lapply(files_Ameri, function(x) substring(x, 5, 10)))
 sites_Ameri <- sites_Ameri[data_length >= data_length_thresh]
-# site: "CA-Cbo" and US-Ho1, AmeriFlux FLUXNET data has problems. use partitioned data by ReddyProc
-sites_Ameri <- sites_Ameri[-which(sites_Ameri %in% c("CA-Cbo", "US-Ho1"))]
+# site: CA-Cbo, US-Ho1, US-Me2, US-Ton, US-UMB, AmeriFlux FLUXNET data has problems. use partitioned data by ReddyProc
+sites_Ameri <- sites_Ameri[-which(sites_Ameri %in% c("CA-Cbo", "US-Ho1", "US-Me2", "US-UMB", "US-Ton"))]
 #
 # sites in FLUXNET2020 and also in ICOS FLUXNET
 files_FLUXNET2020_ICOS <- list.files(path =  file.path(dir_rawdata, "ICOS_FLUXNET2025-1", "unzip_connect2020"), pattern = "_FLUXNET_HH_L2.csv$")
@@ -214,11 +214,12 @@ sites_long$Climate.class[sites_long$site_ID %in% c("US-Akn")] <- "Cfa"
 ## IT-Lav and IT-TrF: nighttime NEEs have problems at the two sites. 
 ## the US-Akn measurements actually started from 2016; removed
 ## ZM-Mon: too few years of good data
-sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6', 'US-Myb', "CA-Ca2", "US-KLS", "US-NC1", "US-NC3", "US-Tw4", "US-SP2", "CL-SDP", "DE-Hzd", "US-Blo", "US-NR3", "US-NR4", "IT-Lav", "IT-TrF", "US-Akn", "ZM-Mon"))
+## US-UMd: disturbance site
+sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6', 'US-Myb', "CA-Ca2", "US-KLS", "US-NC1", "US-NC3", "US-Tw4", "US-SP2", "CL-SDP", "DE-Hzd", "US-Blo", "US-NR3", "US-NR4", "IT-Lav", "IT-TrF", "US-Akn", "ZM-Mon", "US-UMd"))
 #
 # Add NEE partition method
 sites_long <- sites_long %>% mutate(NEEpartition = case_when( 
-site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae", "US-Oho", "DE-RuW", "US-Uaf", "US-Esm", "US-Elm", "US-MtB", "US-Prr", "CA-Cbo", "US-PFa", "CN-ARS", "CN-HZZ", "US-Los", "US-Ho1") ~ 'NT',
+site_ID %in% c("BR-Sa1", "US-NC2", "US-SP3", "US-WCr", "US-Ho2", "US-NC4", "US-Kon", "US-MOz", "CH-Lae", "US-Oho", "DE-RuW", "US-Uaf", "US-Esm", "US-Elm", "US-MtB", "US-Prr", "CA-Cbo", "US-PFa", "CN-ARS", "CN-HZZ", "US-Los", "US-Ho1", "US-UMB", "US-Ton") ~ 'NT',
 TRUE ~ 'DT'))
 
 # make climate class consistent
@@ -554,6 +555,7 @@ sites_long <- sites_long %>%
 # sites_long$category[is.na(sites_long$category) & sites_long$Climate.class %in% c('Csa')] <- 'dry'
 #
 sites_long$category[sites_long$site_ID %in% c('US-Mpj', 'US-Ton')] <- 'dry'
+# The two are dry sites based on literature. 
 sites_long$category[sites_long$site_ID %in% c('US-Me2')] <- 'cold'
 # US-Me2 is an Alpine ENF, MAT = 6C, seasonal GPP pattern is close to ENF in cold climate. 
 
@@ -564,7 +566,7 @@ sum(sites_long$category=='dry', na.rm = T)
 sum(sites_long$category=='wet', na.rm = T)
 # we have 35 wet sites.
 sum(sites_long$category=='cold', na.rm = T)
-# we have 96 cold sites. 
+# we have 95 cold sites. 
 write.csv(sites_long, file = file.path('data', 'long_term_ec_sites.csv'), row.names = F)
 
 ```

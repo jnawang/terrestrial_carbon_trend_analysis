@@ -3,7 +3,7 @@ title: "download_Ameriflux"
 output: pdf_document
 date: "2025-01-07"
 editor_options: 
-  chunk_output_type: inline
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -120,32 +120,37 @@ for (i in 1:nrow(sites_long)) {
   a_YY <- a_YY %>% filter(!TIMESTAMP %in% rm_years$years[rm_years$site_ID==site_ID])
   a_DD <- a_DD %>% filter(!YEAR %in% rm_years$years[rm_years$site_ID==site_ID])
   #
-#   par(mfrow = c(2, 4))
-# #  par(mar=c(3, 3, 3, 3))
-#   plot(a_YY$TIMESTAMP, a_YY$NEE_VUT_REF)
-#   #
-#   if (sites_long$NEEpartition[i] == 'DT') {
-#     plot(a_YY$TIMESTAMP, a_YY$GPP_DT_VUT_REF)
-#     plot(a_YY$TIMESTAMP, a_YY$RECO_DT_VUT_REF)
-#   } else {
-#     plot(a_YY$TIMESTAMP, a_YY$GPP_NT_VUT_REF)
-#     plot(a_YY$TIMESTAMP, a_YY$RECO_NT_VUT_REF)
-#   }
-#   #
-#   plot(a_YY$TIMESTAMP, a_YY$TA_F_MDS)
-#   plot(a_YY$TIMESTAMP, a_YY$VPD_F_MDS)
-#   plot(a_YY$TIMESTAMP, a_YY$SW_IN_F_MDS)
-#   plot(a_YY$TIMESTAMP, a_YY$P_F)
-#   plot(a_YY$TIMESTAMP, a_YY$CO2_F_MDS, main = site_ID)
-#   #
-#   par(mfrow = c(2, 1))
-#   if (sites_long$NEEpartition[i] == 'DT') {
-#     plot(a_DD$TIMESTAMP, a_DD$GPP_DT_VUT_REF, ylab='GPP_DT', main = site_ID)
-#   } else {
-#     plot(a_DD$TIMESTAMP, a_DD$GPP_NT_VUT_REF, ylab='GPP_NT', main = site_ID)
-#   }
-#   #
-#   plot(a_DD$TIMESTAMP, a_DD$NEE_VUT_REF, ylab='NEE', main = site_ID)
+  par(mfrow = c(2, 4))
+#  par(mar=c(3, 3, 3, 3))
+  plot(a_YY$TIMESTAMP, a_YY$NEE_VUT_REF)
+  #
+  if (sites_long$NEEpartition[i] == 'DT') {
+    plot(a_YY$TIMESTAMP, a_YY$GPP_DT_VUT_REF)
+    plot(a_YY$TIMESTAMP, a_YY$RECO_DT_VUT_REF)
+  } else {
+    plot(a_YY$TIMESTAMP, a_YY$GPP_NT_VUT_REF)
+    plot(a_YY$TIMESTAMP, a_YY$RECO_NT_VUT_REF)
+  }
+  #
+  plot(a_YY$TIMESTAMP, a_YY$TA_F_MDS)
+  plot(a_YY$TIMESTAMP, a_YY$VPD_F_MDS)
+  plot(a_YY$TIMESTAMP, a_YY$SW_IN_F_MDS)
+  plot(a_YY$TIMESTAMP, a_YY$P_F)
+  plot(a_YY$TIMESTAMP, a_YY$CO2_F_MDS, main = site_ID)
+  #
+  par(mfrow = c(2, 1))
+  if (sites_long$NEEpartition[i] == 'DT') {
+    plot(a_DD$TIMESTAMP, a_DD$GPP_DT_VUT_REF, ylab='GPP_DT', main = site_ID)
+  } else {
+    plot(a_DD$TIMESTAMP, a_DD$GPP_NT_VUT_REF, ylab='GPP_NT', main = site_ID)
+  }
+  #
+  plot(a_DD$TIMESTAMP, a_DD$NEE_VUT_REF, ylab='NEE', main = site_ID)
+  
+  # check disturbance effect
+  par(mfrow = c(2, 1))
+  plot(a_DD$TIMESTAMP[a_DD$YEAR==2022], a_DD$SWC_F_MDS_1[a_DD$YEAR==2022], main = site_ID)
+  plot(a_DD$TIMESTAMP[a_DD$YEAR==2022], a_DD$VPD_F_MDS[a_DD$YEAR==2022], main = site_ID)
   
   # par(mfrow = c(1, 1))
   # plot(a_DD$TIMESTAMP, a_DD$CO2_F_MDS, ylab='CO2 (ppm)', main = site_ID)
