@@ -228,7 +228,7 @@ cal_sens_slope_scale <- function(time, y, yall) {
 
 ```{r calculate disturbance effects}
 # merge 4-day LAI data
-dir_rawdata <- "/Users/junnawang/YaleLab/data_server/carbon_trend_project"
+# dir_rawdata <- "/Users/junnawang/YaleLab/data_server/carbon_trend_project"
 
 data_LAI <- read.csv(file.path(dir_rawdata, 'Trend022026-MCD15A3H-061-results.csv'))
 data_LAI_DE_Akm <- read.csv(file.path(dir_rawdata, 'trend-DE-Akm-MCD15A3H-061-results.csv'))
