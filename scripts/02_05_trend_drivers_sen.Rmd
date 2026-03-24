@@ -707,7 +707,7 @@ for (i in 1:nrow(sites_long)) {
       trend_driver[id, 'year_start'] <- min(a_YY_sub$TIMESTAMP, na.rm=T)
       trend_driver[id, 'year_end'] <- max(a_YY_sub$TIMESTAMP, na.rm=T)
       # these carbon characteristics are site-specific and do not change with moving window
-      trend_driver[id, 'NEE'] <- mean(a_YY_sub$NEE_VUT_REF, na.rm=T)
+      trend_driver[id, 'NEE'] <- mean(a_YY$NEE_VUT_REF, na.rm=T)
       if (sites_long$NEEpartition[i] == 'NT') {
         trend_driver[id, 'GPP'] <- mean(a_YY$GPP_NT_VUT_REF, na.rm=T)
         trend_driver[id, 'ER'] <- mean(a_YY$RECO_NT_VUT_REF, na.rm=T)        
