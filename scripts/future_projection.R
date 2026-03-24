@@ -8,8 +8,8 @@
 
 rm(list=ls())
 # change this location where the raw data will be saved accordingly
-dir_rawdata <- '/Volumes/WZZ_disk'
-# dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
+# dir_rawdata <- '/Volumes/WZZ_disk'
+dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 #
 library(librarian)
 shelf(tidyverse, ggpubr, terra, ncdf4, future.apply, trend)

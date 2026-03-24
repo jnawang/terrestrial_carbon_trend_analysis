@@ -149,8 +149,11 @@ for (i in 1:nrow(sites_long)) {
   
   # check disturbance effect
   par(mfrow = c(2, 1))
-  plot(a_DD$TIMESTAMP[a_DD$YEAR==2022], a_DD$SWC_F_MDS_1[a_DD$YEAR==2022], main = site_ID)
-  plot(a_DD$TIMESTAMP[a_DD$YEAR==2022], a_DD$VPD_F_MDS[a_DD$YEAR==2022], main = site_ID)
+  year = 2007
+  plot(a_DD$TIMESTAMP[a_DD$YEAR==year], a_DD$SWC_F_MDS_1[a_DD$YEAR==year], main = site_ID)
+  plot(a_DD$TIMESTAMP[a_DD$YEAR==year], a_DD$VPD_F_MDS[a_DD$YEAR==year], main = site_ID)
+  plot(a_DD$TIMESTAMP[a_DD$YEAR==year], a_DD$GPP_DT_VUT_REF[a_DD$YEAR==year], main = site_ID)
+  plot(a_DD$TIMESTAMP[a_DD$YEAR==year], a_DD$RECO_DT_VUT_REF[a_DD$YEAR==year], main = site_ID)
   
   # par(mfrow = c(1, 1))
   # plot(a_DD$TIMESTAMP, a_DD$CO2_F_MDS, ylab='CO2 (ppm)', main = site_ID)
