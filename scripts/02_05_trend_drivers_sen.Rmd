@@ -292,21 +292,20 @@ grow_season_site <- data_grow_season %>%
   summarise(sos=floor((mean(sos_DER) + mean(sos_TRS)) / 2), 
             eos=ceiling((mean(eos_DER) + mean(eos_TRS)) / 2))
 
+source(file.path("scripts", "00_functions.R"))
+grow_season_site <- bind_rows(grow_season_site, data.frame(site_ID = sites_grow_yearlong, sos = 1, eos = 365))
+
 #
-sites_all <- unique(LAI_seasonal_pattern$ID)
+sites_all <- unique(sites_long$site_ID)
 LAI_seasonal_pattern_smooth <- data.frame(site_ID = character(), doy = integer(), LAI_gam = double())
 for (site in sites_all) {
   tmp <- LAI_seasonal_pattern %>% filter(ID == site) 
   plot(tmp$doy, tmp$LAI, main = site)
   # adding lines of growing season
-  sos <- 1
-  eos <- 366
-  if (sum(grow_season_site$site_ID == site)) {
-    sos <- grow_season_site$sos[grow_season_site$site_ID == site]
-    eos <- grow_season_site$eos[grow_season_site$site_ID == site]
-    points(x = c(sos, eos), 
-           y = c(mean(tmp$LAI, na.rm=T), mean(tmp$LAI, na.rm=T)), col = 'red', pch = 19)
-  }
+  sos <- grow_season_site$sos[grow_season_site$site_ID == site]
+  eos <- grow_season_site$eos[grow_season_site$site_ID == site]
+  points(x = c(sos, eos), 
+         y = c(mean(tmp$LAI, na.rm=T), mean(tmp$LAI, na.rm=T)), col = 'red', pch = 19)
   
   # smooth the seasonal pattern (losses, or gam)
   loess_model <- loess(LAI ~ doy, data = tmp)
@@ -314,7 +313,8 @@ for (site in sites_all) {
   #
   df <- data.frame(site_ID = site, doy = sos:eos)
   df$LAI_loess <- predict(loess_model, newdata = df)
-  df$LAI_gam <- predict(gam_model, newdata = df)
+  pred <- predict(gam_model, newdata = df, se.fit = TRUE)
+  df$LAI_gam <- pred$fit - pred$se.fit  # consider noise effects
   # we finally decided to use LAI_gam, because it matches seasonal pattern better. 
   #
   lines(df$doy, df$LAI_loess, col = 'yellow')
@@ -340,19 +340,51 @@ df_disturbance <- data.frame()
 for (site in sites_all) {
   # site = 'CA-Cbo'
   print(site)
-  LAI_seasonal_pattern_smooth_site <- LAI_seasonal_pattern_smooth %>% filter(site_ID == site)
-  data_LAI_site <- data_LAI %>% filter(ID == site)
-  # deal with NA values, which will not be used in curve fitting
-  data_LAI_site$LAI[is.na(data_LAI_site$LAI)] <- 0
-  data_LAI_site$weight[is.na(data_LAI_site$LAI)] <- 0
+  #
+  data_LAI_site <- data_LAI %>% filter(ID == site) 
+  # interpolate missing points
+  data_LAI_site$LAI_intp <- data_LAI_site$LAI
+  data_LAI_site$LAI_intp[data_LAI_site$weight == 0] <- NA
+  data_LAI_site$LAI_intp <- approx(
+    x = as.numeric(data_LAI_site$Date),    # time axis as numeric
+    y = data_LAI_site$LAI_intp,            # values to interpolate
+    xout = as.numeric(data_LAI_site$Date), # points where we want the output
+    method = "linear",
+    rule = 2                               # optional: extrapolate endpoints
+  )$y
 
-  # smooth out data_LAI_site
+  #
+  # get trend of growing-season LAI
+  sos <- grow_season_site$sos[grow_season_site$site_ID == site]
+  eos <- grow_season_site$eos[grow_season_site$site_ID == site]
+  yearly_LAI_site <- data_LAI_site %>% filter(between(doy, sos, eos)) %>%
+    group_by(year) %>% summarise(LAI_gs = mean(LAI_intp, na.rm=T), .groups = "drop")
+  
+  # correct trend's effect  
+  fit <- lm(data = yearly_LAI_site, LAI_gs ~ year)
+  summary(fit)
+  
+  if (summary(fit)$coefficients["year", "Pr(>|t|)"] < 0.05) {
+    trend_annual <- fitted(fit)
+    data_LAI_site <- data_LAI_site %>% left_join(data.frame(year = yearly_LAI_site$year, trend = trend_annual), by = "year")
+    data_LAI_site$LAI_intp_detrend <- data_LAI_site$LAI_intp - data_LAI_site$trend + mean(data_LAI_site$trend)
+    # plot(data_LAI_site$LAI_intp_detrend)
+    # plot(data_LAI_site$LAI_intp)
+  } else {
+    data_LAI_site$LAI_intp_detrend <- data_LAI_site$LAI_intp
+  }
+  
+  # deal with NA values, which will not be used in curve fitting
+  # data_LAI_site$LAI[is.na(data_LAI_site$LAI)] <- 0
+  # data_LAI_site$weight[is.na(data_LAI_site$LAI)] <- 0
+  
+  # smooth out data_LAI_site; we do not need this any more. 
   # INPUT <- check_input(t = data_LAI_site$Date, y = data_LAI_site$LAI, w = data_LAI_site$weight, nptperyear = 92)
   # fit <- smooth_wSG(as.numeric(INPUT$t), INPUT$y, INPUT$w, nptperyear = 92)
-  fit_whit <- smooth_wWHIT(t = as.numeric(data_LAI_site$Date), 
-                    y = data_LAI_site$LAI, ylu = 0,
-                    w = data_LAI_site$weight, lambda = 50, 
-                    nptperyear = 92)
+  # fit_whit <- smooth_wWHIT(t = as.numeric(data_LAI_site$Date), 
+  #                   y = data_LAI_site$LAI, ylu = 0,
+  #                   w = data_LAI_site$weight, lambda = 50, 
+  #                   nptperyear = 92)
   #
   # fit <- smooth_wSG(t = as.numeric(data_LAI_site$Date), 
   #                   y = data_LAI_site$LAI,
@@ -364,49 +396,29 @@ for (site in sites_all) {
   # lines(data_LAI_site$Date, fit_whit$zs$ziter1, col = "yellow", lwd = 2)
   # lines(data_LAI_site$Date, data_LAI_site$LAI_gam, col = "red", lwd = 1)
   
-  data_LAI_site$LAI_whit =  fit_whit$zs$ziter1
+  # data_LAI_site$LAI_whit =  fit_whit$zs$ziter1
   # data_LAI_site$LAI_sg =  fit$zs$ziter2
   
-  # interpolate missing points
-  data_LAI_site$LAI_intp <- data_LAI_site$LAI
-  data_LAI_site$LAI_intp[data_LAI_site$weight == 0] <- NA
-  data_LAI_site$LAI_intp <- approx(
-    x = as.numeric(data_LAI_site$Date),    # time axis as numeric
-    y = data_LAI_site$LAI_intp,                 # values to interpolate
-    xout = as.numeric(data_LAI_site$Date), # points where we want the output
-    method = "linear",
-    rule = 2                               # optional: extrapolate endpoints
-  )$y
-   
-  
-  # check disturbance data of a year
-  data_LAI_site %>% filter(year %in% c(2014:2021)) %>%
-    mutate(month = month(Date)) %>% filter(between(month, 1, 12)) %>%
-  ggplot() +
-    geom_line(aes(x = Date, y = LAI_gam), col = 'red') +
-    geom_line(aes(x = Date, y = LAI_intp), col = 'black') +
-    # geom_line(aes(x = Date, y = LAI_whit), col = 'blue') +
-    labs(title = site)
-  
-  
-  # calculate disturbance effects 
-  df <- data_LAI_site %>% filter(between(doy, min(LAI_seasonal_pattern_smooth_site$doy), max(LAI_seasonal_pattern_smooth_site$doy))) %>%
-    mutate(deficit_obs = pmax(LAI_gam - LAI_intp, 0), 
-           # deficit_sg = pmax(LAI_gam - LAI_sg, 0), 
-           deficit_whit = pmax(LAI_gam - LAI_whit, 0)) %>%
+  # check disturbance data of a year, only used during debugging. 
+  # data_LAI_site %>% filter(year %in% c(2018)) %>%
+  #   mutate(month = month(Date)) %>% filter(between(month, 1, 12)) %>%
+  # ggplot() +
+  #   geom_line(aes(x = Date, y = LAI_gam), col = 'red') +
+  #   # geom_line(aes(x = Date, y = LAI_intp), col = 'black') +
+  #   geom_line(aes(x = Date, y = LAI_intp_detrend), col = 'blue') +
+  #   labs(title = site)
+
+  # calculate disturbance effects
+  df <- data_LAI_site %>% filter(between(doy, sos, eos)) %>%
+    mutate(deficit_obs = pmax(LAI_gam - LAI_intp_detrend, 0)) %>%
     group_by(ID, year) %>%
-    summarise(deficit_obs = sum(deficit_obs, na.rm=T),
-              # deficit_sg = sum(deficit_sg, na.rm=T), 
-              deficit_whit = sum(deficit_whit, na.rm=T), .groups = 'drop') 
+    summarise(deficit_obs = sum(deficit_obs, na.rm=T), .groups = 'drop') 
+  
+  plot(df$year, df$deficit_obs, main = site)
     
   df_disturbance <- bind_rows(df_disturbance, df)
 }
 
-
-
-
-# d_cor = df_disturbance %>% group_by(ID) %>% summarise(cor = cor(deficit_obs, deficit_whit))
-# mean(d_cor$cor)   # lambda = 50 ~ 0.9 ; lambda = 5 ~ 0.93; lambda = 10 ~ 0.92
 
 ```
 
