@@ -11,7 +11,7 @@ import os
 
 # Set the API credentials as environment variables
 os.environ['CDSAPI_URL'] = 'https://cds.climate.copernicus.eu/api'
-os.environ['CDSAPI_KEY'] = '47eed9ac-8876-4a98-93b1-d0a00c32e849'  # get that key from your CDS account; Junna's account
+os.environ['CDSAPI_KEY'] = '875ecf10-c679-4f50-bcff-4ff435c06c66'  # get that key from your CDS account; Junna's account
 # Junna: '47eed9ac-8876-4a98-93b1-d0a00c32e849'
 # weiming: '875ecf10-c679-4f50-bcff-4ff435c06c66'
 # os.environ['CDSAPI_KEY'] = '8938d21f-2336-42c4-8fe5-5783996193b0'  # this is David's account
@@ -38,7 +38,7 @@ request = {
         "total_precipitation"
     ],
     "year": [
-        "2019", "2020"
+        "2025"
     ],
     "month": [
         "01", "02", "03",
@@ -71,7 +71,7 @@ request = {
     ],
     "data_format": "netcdf",
     "download_format": "unarchived",
-    "area": [38.24, -121.78, 37.98, -121.53]
+    "area": [38.56, -121.1, 38.3, -120.84]
 }
 
 client = cdsapi.Client()

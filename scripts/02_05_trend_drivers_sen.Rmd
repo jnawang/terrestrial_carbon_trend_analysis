@@ -228,6 +228,8 @@ cal_sens_slope_scale <- function(time, y, yall) {
 
 ```{r calculate disturbance effects}
 # merge 4-day LAI data
+dir_rawdata <- "/Users/junnawang/YaleLab/data_server/carbon_trend_project"
+
 data_LAI <- read.csv(file.path(dir_rawdata, 'Trend022026-MCD15A3H-061-results.csv'))
 data_LAI_DE_Akm <- read.csv(file.path(dir_rawdata, 'trend-DE-Akm-MCD15A3H-061-results.csv'))
 #
@@ -247,7 +249,11 @@ data_LAI_north <- data_LAI %>%
   mutate(Date = ymd(Date)) %>%
   mutate(year = year(Date), doy = yday(Date)) %>%
   # filter(MCD15A3H_061_FparLai_QC_CloudState == '0b00') %>%  # MCD15A3H_061_FparLai_QC_MODLAND == '0b0' & 
-  select(ID, Date, year, doy, MCD15A3H_061_Lai_500m, MCD15A3H_061_FparLai_QC_MODLAND, MCD15A3H_061_FparLai_QC_CloudState) %>%
+  # MCD15A3H_061_FparExtra_QC_Aerosol == "0b0"; MCD15A3H_061_FparExtra_QC_Cloud_Shadow == "0b0"
+  # MCD15A3H_061_FparExtra_QC_Internal_CloudMask == '0b0'
+  select(ID, Date, year, doy, MCD15A3H_061_Lai_500m, MCD15A3H_061_FparLai_QC_MODLAND, 
+         MCD15A3H_061_FparLai_QC_CloudState, MCD15A3H_061_FparExtra_QC_Aerosol, 
+         MCD15A3H_061_FparExtra_QC_Cloud_Shadow, MCD15A3H_061_FparExtra_QC_Internal_CloudMask) %>%
   rename(LAI = MCD15A3H_061_Lai_500m) %>%
   arrange(ID, year, doy)
 
@@ -259,11 +265,12 @@ data_LAI_south <- data_LAI %>%
                          !leap_year(year) & month(ymd(Date)) < 7 ~ yday(Date) - 181 + 365, 
                          !leap_year(year) & month(ymd(Date)) >= 7 ~ yday(Date) - 181)) %>%
   # filter(MCD15A3H_061_FparLai_QC_CloudState == '0b00') %>%
-  select(ID, Date, year, doy, MCD15A3H_061_Lai_500m, MCD15A3H_061_FparLai_QC_MODLAND, MCD15A3H_061_FparLai_QC_CloudState) %>%
+  select(ID, Date, year, doy, MCD15A3H_061_Lai_500m, MCD15A3H_061_FparLai_QC_MODLAND, 
+         MCD15A3H_061_FparLai_QC_CloudState, MCD15A3H_061_FparExtra_QC_Aerosol, 
+         MCD15A3H_061_FparExtra_QC_Cloud_Shadow, MCD15A3H_061_FparExtra_QC_Internal_CloudMask) %>%
     rename(LAI = MCD15A3H_061_Lai_500m) %>%
     arrange(ID, year, doy)
   
-
 data_LAI <- bind_rows(data_LAI_north, data_LAI_south)
 
 # write.csv(data_LAI, file.path("data", 'modis_LAI.csv'), row.names = F)
@@ -271,6 +278,9 @@ data_LAI <- bind_rows(data_LAI_north, data_LAI_south)
 
 LAI_seasonal_pattern <- data_LAI %>% 
   filter(MCD15A3H_061_FparLai_QC_CloudState == '0b00') %>% 
+  filter(MCD15A3H_061_FparExtra_QC_Aerosol == '0b0') %>% 
+  filter(MCD15A3H_061_FparExtra_QC_Cloud_Shadow == '0b0') %>% 
+  filter(MCD15A3H_061_FparExtra_QC_Internal_CloudMask == '0b0') %>% 
   # filter(MCD15A3H_061_FparLai_QC_MODLAND == '0b0') %>%
   group_by(ID, doy) %>% 
   summarise(LAI = mean(LAI, na.rm = T), .groups = "drop") 
@@ -305,6 +315,7 @@ for (site in sites_all) {
   df <- data.frame(site_ID = site, doy = sos:eos)
   df$LAI_loess <- predict(loess_model, newdata = df)
   df$LAI_gam <- predict(gam_model, newdata = df)
+  # we finally decided to use LAI_gam, because it matches seasonal pattern better. 
   #
   lines(df$doy, df$LAI_loess, col = 'yellow')
   lines(df$doy, df$LAI_gam, col = 'blue')
@@ -316,9 +327,13 @@ for (site in sites_all) {
 # How many site-years have been missing in the data?
 data_LAI <- data_LAI %>%
   mutate(weight = case_when(
-    MCD15A3H_061_FparLai_QC_CloudState == '0b00' & MCD15A3H_061_FparLai_QC_MODLAND == '0b0' ~ 1,
-    MCD15A3H_061_FparLai_QC_CloudState == '0b00' & MCD15A3H_061_FparLai_QC_MODLAND != '0b0' ~ 0.5,
-    MCD15A3H_061_FparLai_QC_CloudState != '0b00' ~ 0)) %>%
+    MCD15A3H_061_FparLai_QC_CloudState == '0b00' & MCD15A3H_061_FparExtra_QC_Aerosol == '0b0' &
+    MCD15A3H_061_FparExtra_QC_Cloud_Shadow == '0b0' & MCD15A3H_061_FparExtra_QC_Internal_CloudMask == '0b0' &
+    MCD15A3H_061_FparLai_QC_MODLAND == '0b0' ~ 1,
+    MCD15A3H_061_FparLai_QC_CloudState == '0b00' & MCD15A3H_061_FparExtra_QC_Aerosol == '0b0' &
+    MCD15A3H_061_FparExtra_QC_Cloud_Shadow == '0b0' & MCD15A3H_061_FparExtra_QC_Internal_CloudMask == '0b0' &
+    MCD15A3H_061_FparLai_QC_MODLAND != '0b0' ~ 0.5,
+    TRUE ~ 0)) %>%
   left_join(LAI_seasonal_pattern_smooth, by = c("ID" = "site_ID", "doy"))
   
 df_disturbance <- data.frame()
@@ -326,9 +341,11 @@ for (site in sites_all) {
   # site = 'CA-Cbo'
   print(site)
   LAI_seasonal_pattern_smooth_site <- LAI_seasonal_pattern_smooth %>% filter(site_ID == site)
-  data_LAI_site  <- data_LAI %>% filter(ID == site)
+  data_LAI_site <- data_LAI %>% filter(ID == site)
+  # deal with NA values, which will not be used in curve fitting
   data_LAI_site$LAI[is.na(data_LAI_site$LAI)] <- 0
   data_LAI_site$weight[is.na(data_LAI_site$LAI)] <- 0
+
   # smooth out data_LAI_site
   # INPUT <- check_input(t = data_LAI_site$Date, y = data_LAI_site$LAI, w = data_LAI_site$weight, nptperyear = 92)
   # fit <- smooth_wSG(as.numeric(INPUT$t), INPUT$y, INPUT$w, nptperyear = 92)
@@ -361,6 +378,17 @@ for (site in sites_all) {
     rule = 2                               # optional: extrapolate endpoints
   )$y
    
+  
+  # check disturbance data of a year
+  data_LAI_site %>% filter(year %in% c(2014:2021)) %>%
+    mutate(month = month(Date)) %>% filter(between(month, 1, 12)) %>%
+  ggplot() +
+    geom_line(aes(x = Date, y = LAI_gam), col = 'red') +
+    geom_line(aes(x = Date, y = LAI_intp), col = 'black') +
+    # geom_line(aes(x = Date, y = LAI_whit), col = 'blue') +
+    labs(title = site)
+  
+  
   # calculate disturbance effects 
   df <- data_LAI_site %>% filter(between(doy, min(LAI_seasonal_pattern_smooth_site$doy), max(LAI_seasonal_pattern_smooth_site$doy))) %>%
     mutate(deficit_obs = pmax(LAI_gam - LAI_intp, 0), 
@@ -373,6 +401,9 @@ for (site in sites_all) {
     
   df_disturbance <- bind_rows(df_disturbance, df)
 }
+
+
+
 
 # d_cor = df_disturbance %>% group_by(ID) %>% summarise(cor = cor(deficit_obs, deficit_whit))
 # mean(d_cor$cor)   # lambda = 50 ~ 0.9 ; lambda = 5 ~ 0.93; lambda = 10 ~ 0.92

@@ -236,6 +236,10 @@ for (i in 1:length(nc_files)) {
     df$site_ID[i] <- id[1]
     print(paste0('find', id[1]))
     print(id)    
+  } else if (length(id) > 1 & id[1] == "US-Ton") {
+    df$site_ID[i] <- id[1]
+    print(paste0('find', id[1]))
+    print(id)    
   } 
 }
 #######
@@ -305,13 +309,13 @@ for (site in sites_prec_problem) {
   # # convert date time to numbers
   # df_output$time <- format(df_output$time, "%Y%m%d%H%M")
   # 
-  # # save to csv files: site_ID, var, year_start, year_end; 
+  # # save to csv files: site_ID, var, year_start, year_end;
   # write.csv(df_output, file=file.path(data.folder, paste0(site, "_", df_sub$Var[1], "_", year_start, "_", year_end, ".csv")), row.names = F)
   
   # I need daily time series this time.
-  df_daily_prec <- bind_rows(df_daily_prec, 
+  df_daily_prec <- bind_rows(df_daily_prec,
                              df_output %>% mutate(date = as.Date(time)) %>%
-    group_by(date) %>% 
+    group_by(date) %>%
     summarise(P_ERA = sum(P_ERA, na.rm = T), .groups = "drop") %>%
     mutate(site_ID = site))
   
@@ -682,19 +686,17 @@ for(i in 1:nrow(df.sitemetadata)){
 
 
 ```{r convert ERA5 nc to csv}
-cat(paste0('"', 1997:2010, '"', collapse = ", "))
+cat(paste0('"', 2022:2025, '"', collapse = ", "))
 
-coor <- round(c(38.1074,	-121.6469), 2)
+coor <- round(c(38.4309, -120.966), 2)
 
 # paste(as.character(round(c(coor[1] + 0.01, coor[2] - 0.01, coor[1] - 0.01, coor[2] + 0.01), 2)), collapse = ", ")
 paste(as.character(round(c(coor[1] + 0.125, coor[2] - 0.125, coor[1] - 0.125, coor[2] + 0.125), 2)), collapse = ", ")
 
 # "US-Rls" (2014-2023), "US-SP1" (2000-2020) , "CH-Aws" (2006-2020), "US-UMd" (2007-2025), "US-Tw1" (2011-2023), "US-Syv" (2001-2025)done, "US-Rws" (2014-2023), "US-Rms" (2014-2023)done, "US-KFS" (2007-2019), "US-EML" (2008-2023), "CA-TP3" (2002-2023; can we use CA-TP4's tp data?), "CA-Ca1" (1997-2010). 
 
-# interval could be 0.0625
+# interval could be 0.0625; 0.125; 
 # submit more requests. 
 
 ```
-
-
 
