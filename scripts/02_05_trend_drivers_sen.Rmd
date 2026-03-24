@@ -846,10 +846,10 @@ for (i in 1:nrow(sites_long)) {
       # disturbance conditions
       df_disturbance_site <- df_disturbance[df_disturbance$ID==site_ID, ]
       subdata_disturbance <- df_disturbance_site %>% filter(year %in% years_window)
-      if (sum(!is.na(subdata_disturbance$deficit_whit)) >= 5) {
+      if (sum(!is.na(subdata_disturbance$deficit_obs)) >= 5) {
         # we need at least 5-year data to get a reliable trend. 
-        trend_driver[id, c("DIST_t", "DIST_p")] <- cal_sens_slope_scale(subdata_disturbance$year, subdata_disturbance$deficit_whit, df_disturbance_site$deficit_whit) # deficit_obs
-        trend_driver[id, c("DIST_at")] <- cal_sens_slope(subdata_disturbance$year, subdata_disturbance$deficit_whit)
+        trend_driver[id, c("DIST_t", "DIST_p")] <- cal_sens_slope_scale(subdata_disturbance$year, subdata_disturbance$deficit_obs, df_disturbance_site$deficit_obs) # deficit_obs
+        trend_driver[id, c("DIST_at")] <- cal_sens_slope(subdata_disturbance$year, subdata_disturbance$deficit_obs)
       } else {
         trend_driver[id, c("DIST_t", "DIST_p")] <- NA
         trend_driver[id, c("DIST_at")] <- NA
