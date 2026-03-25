@@ -192,9 +192,14 @@ DAG_cold_evergreen_forest <- dagitty("dag {
   DIST_at -> NEE_at
   CO2 -> DIST_at
   TA_gs_at -> DIST_at  
+  SW_gs_at -> DIST_at
+  P_gs_at -> DIST_at
+  
   DIST_at -> LE_gs_at
   DIST_at -> Lgs_at
   DIST_at -> SWC_gs_at
+  
+  DIST_at -> TA_ngs_at
   
 }")
 
@@ -334,9 +339,6 @@ ggplot(data=data_cold_evergreen_forest, aes(x=SW_gs_at, y=NEE_at)) +
   cor.test(pred$predictions, data_cold_evergreen_forest$NEE_at)
   importance(rf_model)
   
-  
-  
-  
     
 
 ```
@@ -391,10 +393,14 @@ DAG_cold_deciduous_forest <- dagitty("dag {
   DIST_at -> NEE_at
   CO2 -> DIST_at
   TA_gs_at -> DIST_at  
+  SW_gs_at -> DIST_at
+  P_gs_at -> DIST_at  
   DIST_at -> LE_gs_at
   DIST_at -> Lgs_at
   DIST_at -> SWC_gs_at
- 
+  
+  DIST_at -> TA_ngs_at 
+  
 }")
 
 plot(graphLayout(DAG_cold_deciduous_forest))
@@ -560,10 +566,14 @@ DAG_cold_non_forest <- dagitty("dag {
   
   DIST_at -> NEE_at
   CO2 -> DIST_at
-  TA_gs_at -> DIST_at  
+  TA_gs_at -> DIST_at 
+  SW_gs_at -> DIST_at
+  P_gs_at -> DIST_at  
   DIST_at -> LE_gs_at
   DIST_at -> Lgs_at
   DIST_at -> SWC_gs_at
+  
+  DIST_at -> TA_ngs_at
   
 }")
 
@@ -743,13 +753,13 @@ DAG_dry <- dagitty("dag {
   
   DIST_at -> NEE_at
   CO2 -> DIST_at
-  TA_gs_at -> DIST_at  
+  TA_gs_at -> DIST_at
+  P_gs_at -> DIST_at
+  P_ngs_at -> DIST_at
   DIST_at -> LE_gs_at
   DIST_at -> Lgs_at
   DIST_at -> SWC_gs_at
-  
-  P_gs_at -> DIST_at
-  P_ngs_at -> DIST_at
+
   DIST_at  -> TA_ngs_at
   
 }")
@@ -905,6 +915,7 @@ DAG_wet <- dagitty("dag {
   CO2 -> DIST_at
   TA_at -> DIST_at
   P_at -> DIST_at
+  SW_at -> DIST_at  
   DIST_at -> LE_at
   DIST_at -> SWC_at
   
@@ -1012,8 +1023,8 @@ mod_brm <- brm(
 summary(mod_brm)
 
 
-# write.csv(row.names = F, df_total_effect, 'data/total_effect_NEE_trend_driver_sen.csv')
-# write.csv(row.names = F, df_direct_effect, 'data/direct_effect_NEE_trend_driver_sen.csv')
+# write.csv(row.names = F, df_total_effect, file.path('data', 'total_effect_NEE_trend_driver_sen.csv'))
+# write.csv(row.names = F, df_direct_effect, file.path('data', 'direct_effect_NEE_trend_driver_sen.csv'))
 
 #---------------------------------------------------------
   fit <- brm(
