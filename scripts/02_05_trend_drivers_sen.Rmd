@@ -409,10 +409,11 @@ for (site in sites_all) {
   #   labs(title = site)
 
   # calculate disturbance effects
+  LAI_gs <- mean(data_LAI_site$LAI_gam[between(data_LAI_site$doy, sos, eos)], na.rm = T) * (eos - sos + 1)
   df <- data_LAI_site %>% filter(between(doy, sos, eos)) %>%
     mutate(deficit_obs = pmax(LAI_gam - LAI_intp_detrend, 0)) %>%
     group_by(ID, year) %>%
-    summarise(deficit_obs = sum(deficit_obs, na.rm=T), .groups = 'drop') 
+    summarise(deficit_obs = sum(deficit_obs, na.rm=T) / LAI_gs, .groups = 'drop') 
   
   plot(df$year, df$deficit_obs, main = site)
     
