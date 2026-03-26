@@ -232,7 +232,7 @@ for (site in sites_all) {
   df <- data.frame(site_ID = site, doy = sos:eos)
   df$LAI_loess <- predict(loess_model, newdata = df)
   pred <- predict(gam_model, newdata = df, se.fit = TRUE)
-  df$LAI_gam <- pred$fit - pred$se.fit  # consider noise effects
+  df$LAI_gam <- pred$fit - pred$se.fit * 1.96 # consider noise effects
   # we finally decided to use LAI_gam, because it matches seasonal pattern better. 
   #
   lines(df$doy, df$LAI_loess, col = 'yellow')
@@ -260,9 +260,18 @@ for (site in sites_all) {
   print(site)
   #
   data_LAI_site <- data_LAI %>% filter(ID == site) 
+  
+  f_good_data <- data_LAI_site %>% group_by(year) %>% summarise(f = sum(weight == 1) / n()) 
+  # remove a year if it has < 50% of average data
+  bad_years <- f_good_data %>% filter(f < mean(f_good_data$f, na.rm=T) * 0.5) %>% pull(year)
+  if (length(bad_years) > 0) {
+    data_LAI_site <- data_LAI_site %>% filter(!year %in% bad_years)
+  }
+  
   # interpolate missing points
   data_LAI_site$LAI_intp <- data_LAI_site$LAI
   data_LAI_site$LAI_intp[data_LAI_site$weight == 0] <- NA
+  data_LAI_site$LAI_intp[data_LAI_site$weight == 0.5 & data_LAI_site$LAI_intp < 0.5 * data_LAI_site$LAI_gam] <- NA
   data_LAI_site$LAI_intp <- approx(
     x = as.numeric(data_LAI_site$Date),    # time axis as numeric
     y = data_LAI_site$LAI_intp,            # values to interpolate
@@ -318,7 +327,7 @@ for (site in sites_all) {
   # data_LAI_site$LAI_sg =  fit$zs$ziter2
   
   # check disturbance data of a year, only used during debugging. 
-  # data_LAI_site %>% filter(year %in% c(2018)) %>%
+  # data_LAI_site %>% filter(year %in% c(2011:2023)) %>%
   #   mutate(month = month(Date)) %>% filter(between(month, 1, 12)) %>%
   # ggplot() +
   #   geom_line(aes(x = Date, y = LAI_gam), col = 'red') +
@@ -331,7 +340,7 @@ for (site in sites_all) {
   df <- data_LAI_site %>% filter(between(doy, sos, eos)) %>%
     mutate(deficit_obs = pmax(LAI_gam - LAI_intp_detrend, 0)) %>%
     group_by(ID, year) %>%
-    summarise(deficit_obs = sum(deficit_obs, na.rm=T) / LAI_gs, .groups = 'drop') 
+    summarise(deficit_obs = sum(deficit_obs, na.rm=T) * 4 / LAI_gs, .groups = 'drop') 
   
   plot(df$year, df$deficit_obs, main = site)
     
