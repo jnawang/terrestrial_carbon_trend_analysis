@@ -272,76 +272,8 @@ ggplot(data=data_cold_evergreen_forest, aes(x=SW_gs_at, y=NEE_at)) +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
 
-
-# prediction models
-  # fit <- brm(
-  #   bf(
-  #   formula = NEE_at ~ CO2 + LE_gs_at + DIST_at + TA_ngs_at + (1 | site_ID) + (1 | IGBP) + (1 | Climate.class) + (1 | source),
-  #   autocor = cor_ar(~ year_mid | site_ID, p = 1)
-  #   ),
-  #   data = data_cold_evergreen_forest,
-  #   backend = "cmdstanr",
-  #   iter = 4000,
-  #   control = list(adapt_delta = 0.99, max_treedepth = 15),
-  #   silent = TRUE
-  # )
-  # summary(fit)
-
-  fit <- brm(
-    bf(
-    formula = NEE_at ~ CO2 + LE_gs_at + DIST_at + TA_ngs_at + MAP + MAT + NEE + GPP + LE + ER + (1 | IGBP) + (1 | Climate.class) + (1 | source),
-    autocor = cor_ar(~ year_mid | site_ID, p = 1)
-    ),
-    data = data_cold_evergreen_forest,
-    backend = "cmdstanr",
-    iter = 4000,
-    control = list(adapt_delta = 0.99, max_treedepth = 15),
-    silent = TRUE
-  )
-  summary(fit)
-
-  # fitted_values <- fitted(fit, summary = TRUE)[, "Estimate"]
-  # residuals_brms <- data_cold_evergreen_forest$NEE_at - fitted_values
-  
-#-------------------------------------------------------------------------------  
-  
-  data_new <- data_cold_evergreen_forest
-  # ep <- posterior_epred(fit, newdata = data_new)
-  
-  data_new$site_ID = 'CA-Man'
-  ep <- posterior_epred(fit, newdata = data_new, allow_new_levels = TRUE, incl_autocor = FALSE)
-  #
-  # 
-  mean_pred <- apply(ep, 2, mean)
-  plot(mean_pred, data_cold_evergreen_forest$NEE_at)
-  cor.test(mean_pred, data_cold_evergreen_forest$NEE_at)
-  
-
-# How about RF models?  
-  library(ranger, caret)
-  
-  # lags do not work, because no future lag info
-  # data_cold_evergreen_forest_lag <- data_cold_evergreen_forest %>%
-  #   arrange(site_ID, year_mid) %>%
-  #   group_by(site_ID) %>%
-  #   mutate(NEE_at_lag1 = lag(NEE_at, 1)) %>%
-  #   ungroup()
-
-  #----------------------------------Random forests only------------------------  
-  # year_mid + 
-  rf_model <- ranger(
-    NEE_at ~ CO2 + LE_gs_at + DIST_at + TA_ngs_at + MAP + MAT + NEE + GPP + LE + ER + IGBP + Climate.class + source, 
-    importance = 'permutation',
-    data = data_cold_evergreen_forest
-      )
-  pred <- predict(rf_model, data = data_cold_evergreen_forest)
-  plot(pred$predictions, data_cold_evergreen_forest$NEE_at)
-  cor.test(pred$predictions, data_cold_evergreen_forest$NEE_at)
-  importance(rf_model)
-  
-    
-
 ```
+
 
 ```{r DAGs of deciduous forests in cold climate}
 # 
@@ -473,47 +405,6 @@ ggplot(data=data_cold_deciduous_forest, aes(x=Lgs_at, y=NEE_at, col = site_ID)) 
   geom_smooth(method = lm) +
   stat_cor(color='purple')
 
-
-#---------------------------------------------------------
-  fit <- brm(
-    bf(
-    formula = NEE_at ~ CO2 + SW_gs_at + Lgs_at + TA_ngs_at + MAP + MAT + NEE + GPP + LE + ER + (1 | IGBP) + (1 | Climate.class) + (1 | source),
-    autocor = cor_ar(~ year_mid | site_ID, p = 1)
-    ),
-    data = data_cold_deciduous_forest,
-    backend = "cmdstanr",
-    iter = 4000,
-    control = list(adapt_delta = 0.99, max_treedepth = 15),
-    silent = TRUE
-  )
-  summary(fit)
-  
-#-------------------------------------------------------------------------------  
-  
-  data_new <- data_cold_deciduous_forest
-  # ep <- posterior_epred(fit, newdata = data_new)
-  
-  data_new$site_ID = 'BE-Bra'
-  ep <- posterior_epred(fit, newdata = data_new, allow_new_levels = TRUE, incl_autocor = FALSE)
-  #
-  # 
-  mean_pred <- apply(ep, 2, mean)
-  plot(mean_pred, data_cold_deciduous_forest$NEE_at)
-  cor.test(mean_pred, data_cold_deciduous_forest$NEE_at)
-  
-
-  #----------------------------------Random forests only------------------------
-  library(ranger, caret)
-  # year_mid + 
-  rf_model <- ranger(
-    NEE_at ~ CO2 + LE_gs_at + DIST_at + TA_ngs_at + MAP + MAT + NEE + GPP + LE + ER + IGBP + Climate.class + source, 
-    importance = 'permutation',
-    data = data_cold_deciduous_forest
-      )
-  pred <- predict(rf_model, data = data_cold_deciduous_forest)
-  plot(pred$predictions, data_cold_deciduous_forest$NEE_at)
-  cor.test(pred$predictions, data_cold_deciduous_forest$NEE_at)
-  importance(rf_model)
 
 ```
 
@@ -650,49 +541,6 @@ ggplot(data=data_cold_non_forest, aes(x=DIST_at, y=NEE_at, col = site_ID)) +
   geom_point() +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
-
-
-
-#---------------------------------------------------------
-  fit <- brm(
-    bf(
-    formula = NEE_at ~ CO2 + P_gs_at + DIST_at + MAP + MAT + NEE + GPP + LE + ER + (1 | IGBP) + (1 | Climate.class) + (1 | source),
-    autocor = cor_ar(~ year_mid | site_ID, p = 1)
-    ),
-    data = data_cold_non_forest,
-    backend = "cmdstanr",
-    iter = 4000,
-    control = list(adapt_delta = 0.99, max_treedepth = 15),
-    silent = TRUE
-  )
-  summary(fit)
-  
-#-------------------------------------------------------------------------------  
-  
-  data_new <- data_cold_non_forest
-  # ep <- posterior_epred(fit, newdata = data_new)
-  
-  data_new$site_ID = 'AT-Neu'
-  ep <- posterior_epred(fit, newdata = data_new, allow_new_levels = TRUE, incl_autocor = FALSE)
-  #
-  # 
-  mean_pred <- apply(ep, 2, mean)
-  plot(mean_pred, data_cold_non_forest$NEE_at)
-  cor.test(mean_pred, data_cold_non_forest$NEE_at)
-  
-
-  #----------------------------------Random forests only------------------------
-  library(ranger, caret)
-  # year_mid + 
-  rf_model <- ranger(
-    NEE_at ~ CO2 + P_gs_at + DIST_at + MAP + MAT + NEE + GPP + LE + ER + IGBP + Climate.class + source, 
-    importance = 'permutation',
-    data = data_cold_non_forest
-      )
-  pred <- predict(rf_model, data = data_cold_non_forest)
-  plot(pred$predictions, data_cold_non_forest$NEE_at)
-  cor.test(pred$predictions, data_cold_non_forest$NEE_at)
-  importance(rf_model)
 
 
 ```
@@ -840,46 +688,6 @@ ggplot(data=data_dry, aes(x=LE_ngs_at, y=NEE_at, col=site_ID)) +
 
 # cor.test(data_dry$LE_ngs_at, data_dry$LE_gs_at)
 
-#---------------------------------------------------------
-  fit <- brm(
-    bf(
-    formula = NEE_at ~ CO2 + LE_gs_at + TA_gs_at + SW_gs_at + P_ngs_at + SWC_gs_at + MAP + MAT + NEE + GPP + LE + ER + (1 | IGBP) + (1 | Climate.class) + (1 | source),
-    autocor = cor_ar(~ year_mid | site_ID, p = 1)
-    ),
-    data = data_dry,
-    backend = "cmdstanr",
-    iter = 4000,
-    control = list(adapt_delta = 0.99, max_treedepth = 15),
-    silent = TRUE
-  )
-  summary(fit)
-  
-#-------------------------------------------------------------------------------  
-  
-  data_new <- data_dry
-  # ep <- posterior_epred(fit, newdata = data_new)
-  
-  data_new$site_ID = 'US-Ton'
-  ep <- posterior_epred(fit, newdata = data_new, allow_new_levels = TRUE, incl_autocor = FALSE)
-  #
-  # 
-  mean_pred <- apply(ep, 2, mean)
-  plot(mean_pred, data_dry$NEE_at)
-  cor.test(mean_pred, data_dry$NEE_at)
-  
-  #----------------------------------Random forests only------------------------
-  library(ranger, caret)
-  # year_mid + 
-  rf_model <- ranger(
-    NEE_at ~ CO2 + LE_gs_at + TA_gs_at + SW_gs_at + P_ngs_at + SWC_gs_at + MAP + MAT + NEE + GPP + LE + ER + IGBP + Climate.class + source, 
-    importance = 'permutation',
-    data = data_dry
-      )
-  pred <- predict(rf_model, data = data_dry)
-  plot(pred$predictions, data_dry$NEE_at)
-  cor.test(pred$predictions, data_dry$NEE_at)
-  importance(rf_model)
-
 ```
 
 
@@ -1023,50 +831,8 @@ mod_brm <- brm(
 summary(mod_brm)
 
 
-# write.csv(row.names = F, df_total_effect, file.path('data', 'total_effect_NEE_trend_driver_sen.csv'))
-# write.csv(row.names = F, df_direct_effect, file.path('data', 'direct_effect_NEE_trend_driver_sen.csv'))
-
-#---------------------------------------------------------
-  fit <- brm(
-    bf(
-    formula = NEE_at ~ CO2 + TA_at + SW_at + MAP + MAT + NEE + GPP + LE + ER + (1 | IGBP) + (1 | Climate.class) + (1 | source),
-    autocor = cor_ar(~ year_mid | site_ID, p = 1)
-    ),
-    data = data_wet,
-    backend = "cmdstanr",
-    iter = 4000,
-    control = list(adapt_delta = 0.99, max_treedepth = 15),
-    silent = TRUE
-  )
-  summary(fit)
-  
-#-------------------------------------------------------------------------------
-
-  data_new <- data_wet
-  # ep <- posterior_epred(fit, newdata = data_new)
-  
-  data_new$site_ID = 'AU-Cow'
-  ep <- posterior_epred(fit, newdata = data_new, allow_new_levels = TRUE, incl_autocor = FALSE)
-  #
-  # 
-  mean_pred <- apply(ep, 2, mean)
-  plot(mean_pred, data_wet$NEE_at)
-  cor.test(mean_pred, data_wet$NEE_at)
-  
-  #----------------------------------Random forests only------------------------
-  library(ranger, caret)
-  # year_mid + 
-  rf_model <- ranger(
-    NEE_at ~ CO2 + TA_at + SW_at + MAP + MAT + NEE + GPP + LE + ER + IGBP + Climate.class + source, 
-    importance = 'permutation',
-    data = data_wet
-      )
-  pred <- predict(rf_model, data = data_wet)
-  plot(pred$predictions, data_wet$NEE_at)
-  cor.test(pred$predictions, data_wet$NEE_at)
-  importance(rf_model)
-
-
+write.csv(row.names = F, df_total_effect, file.path('data', 'total_effect_NEE_trend_driver_sen.csv'))
+write.csv(row.names = F, df_direct_effect, file.path('data', 'direct_effect_NEE_trend_driver_sen.csv'))
 
 ```
 

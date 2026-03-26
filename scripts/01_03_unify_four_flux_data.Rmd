@@ -215,7 +215,9 @@ sites_long$Climate.class[sites_long$site_ID %in% c("US-Akn")] <- "Cfa"
 ## the US-Akn measurements actually started from 2016; removed
 ## ZM-Mon: too few years of good data
 ## US-UMd: disturbance site
-sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6', 'US-Myb', "CA-Ca2", "US-KLS", "US-NC1", "US-NC3", "US-Tw4", "US-SP2", "CL-SDP", "DE-Hzd", "US-Blo", "US-NR3", "US-NR4", "IT-Lav", "IT-TrF", "US-Akn", "ZM-Mon", "US-UMd"))
+## IT-SRo: change in instrumentation; https://doi.org/10.5194/bg-21-1827-2024
+## DE-HoH: sites with large GPP and ER trends, problematic indicated by: A robust data cleaning procedure for eddy covariance flux measurements
+sites_long <- sites_long %>% filter(!site_ID %in% c('CA-TP1', 'US-Rpf', 'US-Me6', 'US-Myb', "CA-Ca2", "US-KLS", "US-NC1", "US-NC3", "US-Tw4", "US-SP2", "CL-SDP", "DE-Hzd", "US-Blo", "US-NR3", "US-NR4", "IT-Lav", "IT-TrF", "US-Akn", "ZM-Mon", "US-UMd", "IT-SRo", "DE-HoH"))
 #
 # Add NEE partition method
 sites_long <- sites_long %>% mutate(NEEpartition = case_when( 
@@ -353,6 +355,10 @@ for (i in 1:nrow(sites_long)) {
   if (site_ID %in% c("US-Rws", "US-Rms")) {
     # use the first year data at this site, because that year's data is consistent with overall trend. 
     tmp <- c()
+  }
+  ## at site CH-Dav, data before 2005 should not be used due to discontinuity detected by https://doi.org/10.5194/bg-21-1827-2024
+  if (site_ID == 'CH-Dav') {
+    tmp <- c(tmp, 1997:2005)
   }
   #
   #########process the removed years, and put them into data frame
