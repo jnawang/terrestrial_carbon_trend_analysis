@@ -25,88 +25,6 @@ shelf(tidyverse, ggpubr, MuMIn, car, fBasics, olsrr, lme4, Hmisc, corrplot, tren
 ```
 
 
-```{r get nitrogen deposition}
-# data is from 
-# Zhu (2025): Changing patterns of global nitrogen deposition driven by socio-economic development
-Nfiles <- list.files(file.path('data', 'Global_N_deposition_grid_dataset_2008_2020'), pattern='^mean_totN_', full.names = T)
-
-TNdep2008_2020 <- terra::rast(Nfiles)
-
-# transform to WGS 84 (longitude, latitude)
-data_ll <- suppressWarnings(terra::project(TNdep2008_2020, "EPSG:4326"))
-
-# get total N values from these rasters at our study sites
-sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
-
-xy <- data.frame(x=sites_long$Long, y=sites_long$Lat)
-TNvalues <- terra::extract(data_ll, xy)
-
-# deal with missing data
-for (i in which(is.na(TNvalues$mean_totN_2008_hm))) {
-  xy[i,] <- xy[i,] - 0.1482702
-  TNvalues[i,2:ncol(TNvalues)] <- terra::extract(data_ll, xy[i,])[2:ncol(TNvalues)]
-}
-
-TNvalues$Nmean <- rowMeans(TNvalues)
-TNvalues$Ntrend_lm <- 0
-TNvalues$Np <- 0
-
-for (i in 1:nrow(TNvalues)) {
-  data <- data.frame(x=2008:2020, y=as.numeric(TNvalues[i,2:14]))
-  TNvalues[i, 16:17] <- summary(lm(data=data, scale(y) ~ scale(x, scale=FALSE)))$coefficients[2, c(1,4)]
-}
-
-TNvalues$site_ID <- sites_long$site_ID
-
-```
-
-
-```{r get forest ages}
-
-forestAge <- read.csv(file.path('data', 'forest_ages.csv'))
-
-tmp <- separate(forestAge, Years, into = c("start_year", "end_year"), sep = "-")
-
-# process data in the first 126 row first.
-# these 126 data is from the paper: Quantifying the effect of forest age in annual net forest carbon balance
-tmp$end_year[is.na(tmp$end_year[1:126])] <- tmp$start_year[is.na(tmp$end_year[1:126])]
-
-forestAge$inyear[1:126] <- floor((as.numeric(tmp$end_year[1:126]) + as.numeric(tmp$start_year[1:126])) / 2)
-
-forestAge$Age_standard <- forestAge$Age - forestAge$inyear         # age compare to 0000 year
-
-# what are the forest sites we do not have forest age?
-forestSites <- sites_long$site_ID[sites_long$IGBP %in% c('ENF', 'DBF', 'MF', 'EBF', 'DNF')]
-forestSites[!forestSites %in% forestAge$Site[!is.na(forestAge$Age_standard)]]
-
-```
-
-
-```{r get canopy height}
-# plant height information
-canopyHeightLang <- read.csv(file.path('data', 'CanopyHeight_Lang.csv'))   # we have this data downloaded. 
-canopyHeightChu <- read.csv(file.path('data', 'AMF-HEIGHTC-BADM_AND_PI_chu.csv'))
-#
-sub_time_series <- read.csv('data/sub_time_series_sen.csv')
-#
-canopyHeight <- sub_time_series[, c("site_ID", "year_start", "year_end")]
-canopyHeight$year_mean <- (canopyHeight$year_start + canopyHeight$year_end) / 2
-canopyHeightChu <- canopyHeightChu[canopyHeightChu$SITE_ID %in% unique(canopyHeight$site_ID), ]
-#
-canopyHeightChu <- left_join(canopyHeightChu, canopyHeight[,c("site_ID", "year_mean")], by=c("SITE_ID"="site_ID"))
-canopyHeightChu <- canopyHeightChu %>% mutate(year_dif=abs(YEAR-year_mean)) %>% group_by(SITE_ID, year_mean) %>% summarise(Height=HEIGHTC[which.min(year_dif)])
-#
-canopyHeight <- canopyHeight %>% left_join(canopyHeightChu, by=c("site_ID"="SITE_ID", "year_mean"))
-# canopy height of CL-SDF is ~25m
-canopyHeight$Height[canopyHeight$site_ID=="CL-SDF"] <- 25.0	
-#
-canopyHeight <- canopyHeight %>% left_join(canopyHeightLang[, c("site_ID", "canopyH_Lang")], by="site_ID")
-
-canopyHeight$Height[is.na(canopyHeight$Height)] <- canopyHeight$canopyH_Lang[is.na(canopyHeight$Height)]
-
-```
-
-
 ```{r doy of southern hemisphere}
 # this function calculates day of year for the southern hemisphere using July 1st as doy = 1
 southern_hemisphere_doy <- function(dates) {
@@ -419,7 +337,8 @@ for (site in sites_all) {
     
   df_disturbance <- bind_rows(df_disturbance, df)
 }
-
+#
+write.csv(df_disturbance, file = 'LAI_reduction_disturbance.csv', row.names = F)
 
 ```
 
