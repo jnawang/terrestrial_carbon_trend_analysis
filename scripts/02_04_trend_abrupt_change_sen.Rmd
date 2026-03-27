@@ -87,7 +87,7 @@ for (i in 1:nrow(sites_long)) {
 
   if ("GPP_DT_VUT_REF" %in% names(a_YY)) {
     df$GPP_DT_VUT_REF <- a_YY_good$GPP_DT_VUT_REF
-    df$RECO_DT_VUT_REF <- a_YY_good$RECO_DT_VUT_REF    
+    df$RECO_DT_VUT_REF <- a_YY_good$RECO_DT_VUT_REF
   } else {
     df$GPP_DT_VUT_REF <- NA
     df$RECO_DT_VUT_REF <- NA
