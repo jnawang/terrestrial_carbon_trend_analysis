@@ -18,15 +18,20 @@ if (!'category' %in% names(trend_driver)) {
 
 climate_vegs <- c('cold_evergreen_forest', 'cold_deciduous_forest', 'cold_non_forest', 'dry', 'wet-warm')
 key_vars <- c('CO2 + LE_gs_at + TA_gs_at + TA_ngs_at', 
-              'CO2 + SW_gs_at + Lgs_at + TA_ngs_at', 
-              'P_gs_at + CO2', 
+              'CO2 + SW_gs_at + Lgs_at + TA_ngs_at',        # we could remove CO2 and TA_ngs_at
+              'P_gs_at + CO2',                              # we should remove CO2
               'LE_gs_at + TA_gs_at + SW_gs_at + P_ngs_at + SWC_gs_at', 
               'CO2 + TA_at + SW_at + DIST_at')
 
 # training performance; testing performance
 df_performance <- data.frame()
-# weight of rf method
+# initial weight of rf method
 weight_rf <- 0.5
+
+# parameters of rf models
+m_try = 4
+min_node_size = 5
+
 # 5 fold cross validation
 set.seed(123)
 nfolder <- 5
@@ -36,7 +41,7 @@ rstan_options(auto_write = TRUE)
 rstan_options(threads_per_chain = 1)
 
 #
-for (iclimate_veg in 2:length(climate_vegs)) {
+for (iclimate_veg in 1:length(climate_vegs)) {
   climate_veg <- climate_vegs[iclimate_veg]
   key_var <- key_vars[iclimate_veg]
   #
@@ -77,8 +82,8 @@ for (iclimate_veg in 2:length(climate_vegs)) {
       ),
       data = data_cold_evergreen_forest_cv,
       backend = "cmdstanr",
-      iter = 1000,
-      control = list(adapt_delta = 0.95, max_treedepth = 15),
+      iter = 2000,
+      control = list(adapt_delta = 0.99, max_treedepth = 15),
       silent = TRUE
     )
     # summary(fit)
@@ -91,16 +96,27 @@ for (iclimate_veg in 2:length(climate_vegs)) {
     #----------------------------------Random forests only------------------------
     rf_model <- ranger(
       formula = paste0("NEE_at ~ ", key_var, " + MAP + MAT + NEE + GPP + LE + ER + IGBP + Climate.class + source"), 
-      data = data_cold_evergreen_forest_cv
+      data = data_cold_evergreen_forest_cv,
+      mtry = m_try, 
+      min.node.size = min_node_size
     )
     pred_rf <- predict(rf_model, data = data_cold_evergreen_forest)
     plot(pred_rf$predictions, data_cold_evergreen_forest$NEE_at)
+    
+    
+    # weight should be given based on performance
+    
+    
     #-------------------------------combination of lmm and RF---------------------
     df_performance <- bind_rows(df_performance, data.frame(climate_veg = climate_veg, site_ID = data_cold_evergreen_forest$site_ID, 
                                                            obs = data_cold_evergreen_forest$NEE_at, 
                                                            lmm = pred_lmm, rf = pred_rf$predictions, 
                                                            lmm_rf = pred_lmm * (1 - weight_rf) + pred_rf$predictions * weight_rf, 
                                                            test = (1:nrow(data_cold_evergreen_forest)) %in% folds[[i]]))
+    
+    
+    
+    
   }  
 
 }
@@ -113,17 +129,20 @@ df_performance %>% filter(!test) %>% group_by(climate_veg) %>% summarise(rmse_lm
                                                                         rmse_rf = sqrt(mean((obs-rf)^2)),
                                                                         rmse_lmm_rf = sqrt(mean((obs-lmm_rf)^2)))
 
-i = 5
-cor(df_performance$obs[df_performance$test & df_performance$climate_veg == climate_vegs[i]], df_performance$rf[df_performance$test & df_performance$climate_veg == climate_vegs[i]])^2      # & df_performance$rf < 15
-cor(df_performance$obs[df_performance$test & df_performance$climate_veg == climate_vegs[i]], df_performance$lmm[df_performance$test & df_performance$climate_veg == climate_vegs[i]])^2
-cor(df_performance$obs[df_performance$test & df_performance$climate_veg == climate_vegs[i]], df_performance$lmm_rf[df_performance$test & df_performance$climate_veg == climate_vegs[i]])^2
+for (i in 1:length(climate_vegs)) {
+  print(climate_vegs[i])
+  cor(df_performance$obs[df_performance$test & df_performance$climate_veg == climate_vegs[i]], df_performance$rf[df_performance$test & df_performance$climate_veg == climate_vegs[i]])^2      # & df_performance$rf < 15
+  cor(df_performance$obs[df_performance$test & df_performance$climate_veg == climate_vegs[i]], df_performance$lmm[df_performance$test & df_performance$climate_veg == climate_vegs[i]])^2
+  cor(df_performance$obs[df_performance$test & df_performance$climate_veg == climate_vegs[i]], df_performance$lmm_rf[df_performance$test & df_performance$climate_veg == climate_vegs[i]])^2
+  
+  cor(df_performance$obs[!df_performance$test & df_performance$climate_veg == climate_vegs[i]], df_performance$rf[!df_performance$test & df_performance$climate_veg == climate_vegs[i]])^2
+  cor(df_performance$obs[!df_performance$test & df_performance$climate_veg == climate_vegs[i]], df_performance$lmm[!df_performance$test  & df_performance$climate_veg == climate_vegs[i]])^2
+  cor(df_performance$obs[!df_performance$test & df_performance$climate_veg == climate_vegs[i]], df_performance$lmm_rf[!df_performance$test  & df_performance$climate_veg == climate_vegs[i]])^2
+  
+  plot(df_performance$obs[df_performance$test], df_performance$rf[df_performance$test])
+  plot(df_performance$obs[df_performance$test], df_performance$lmm[df_performance$test])
+}
 
-cor(df_performance$obs[!df_performance$test & df_performance$climate_veg == climate_vegs[i]], df_performance$rf[!df_performance$test & df_performance$climate_veg == climate_vegs[i]])^2
-cor(df_performance$obs[!df_performance$test & df_performance$climate_veg == climate_vegs[i]], df_performance$lmm[!df_performance$test  & df_performance$climate_veg == climate_vegs[i]])^2
-cor(df_performance$obs[!df_performance$test & df_performance$climate_veg == climate_vegs[i]], df_performance$lmm_rf[!df_performance$test  & df_performance$climate_veg == climate_vegs[i]])^2
-
-plot(df_performance$obs[df_performance$test], df_performance$rf[df_performance$test])
-plot(df_performance$obs[df_performance$test], df_performance$lmm[df_performance$test])
 
 
 

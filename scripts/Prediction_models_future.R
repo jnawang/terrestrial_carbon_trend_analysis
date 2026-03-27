@@ -36,6 +36,11 @@ group_cv <- rsample::group_vfold_cv(data = data_cold_evergreen_forest, group = s
 #
 weight_rf <- 0.5
 
+# parameters of rf models
+m_try = 4
+min_node_size = 5
+
+#
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
 rstan_options(threads_per_chain = 1)
@@ -63,10 +68,14 @@ for (i in 1:nfolder) {
   ep <- posterior_epred(fit, newdata = data_new, allow_new_levels = TRUE, incl_autocor = FALSE)
   pred_lmm <- apply(ep, 2, mean)
   plot(pred_lmm, data_cold_evergreen_forest$NEE_at)
+  
+  
   #----------------------------------Random forests only------------------------
   rf_model <- ranger(
     NEE_at ~ CO2 + LE_gs_at + TA_gs_at + TA_ngs_at + MAP + MAT + NEE + GPP + LE + ER + IGBP + Climate.class + source, 
-    data = data_cold_evergreen_forest_cv
+    data = data_cold_evergreen_forest_cv, 
+    mtry = m_try, 
+    min.node.size = min_node_size
   )
   pred_rf <- predict(rf_model, data = data_cold_evergreen_forest)
   plot(pred_rf$predictions, data_cold_evergreen_forest$NEE_at)
@@ -96,26 +105,4 @@ cor(df_performance$obs[!df_performance$test], df_performance$lmm_rf[!df_performa
 
 plot(df_performance$obs[df_performance$test], df_performance$rf[df_performance$test])
 plot(df_performance$obs[df_performance$test], df_performance$lmm[df_performance$test])
-
-
-# extract modeled NEE values at these sites
-library(terra)
-library(trend)
-NEE_2001_2021 <- terra::rast('/Users/junnawang/YaleLab/data_server/carbon_trend_project/FLUXCOM_X_NEE_2001_2021.tif')
-plot(NEE_2001_2021[[1]])
-
-ext(NEE_2001_2021) <- c(-180, 180, -90, 90)
-crs(NEE_2001_2021) <- "EPSG:4326"
-
-NEE_2001_2021_sites <- terra::extract(NEE_2001_2021, sites_long[, c("Long", "Lat")])
-
-NEE_trend <- data.frame(site_ID = sites_long$site_ID, NEE_at_fluxcom = 0)
-for (i in 1:nrow(NEE_2001_2021_sites)) {
-  NEE_trend$NEE_at_fluxcom[i] <- as.numeric(sens.slope(as.numeric(NEE_2001_2021_sites[i, ]))[1])
-}
-
-NEE_trend <- NEE_trend %>% left_join(trend_driver %>% filter(year_mid >= 2010) %>% group_by(site_ID) %>% summarise(NEE_at_obs = mean(NEE_at, na.rm=T)), by = 'site_ID')
-# or use GPP trend based on SIF; which ever dataset to produce the best projection. 
-plot(NEE_trend$NEE_at_fluxcom, NEE_trend$NEE_at_obs)
-cor.test(NEE_trend$NEE_at_fluxcom, NEE_trend$NEE_at_obs)
 

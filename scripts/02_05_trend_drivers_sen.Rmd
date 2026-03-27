@@ -818,3 +818,30 @@ write.csv(data_trend_driver, file.path("data", "data_trend_driver_sen.csv"), row
 ```
 
 
+```{r NEEtrend obs - FLUXCOM}
+# extract modeled NEE values at these sites
+# library(terra)
+# library(trend)
+# NEE_2001_2021 <- terra::rast('/Users/junnawang/YaleLab/data_server/carbon_trend_project/FLUXCOM_X_NEE_2001_2021.tif')
+# plot(NEE_2001_2021[[1]])
+# 
+# ext(NEE_2001_2021) <- c(-180, 180, -90, 90)
+# crs(NEE_2001_2021) <- "EPSG:4326"
+# 
+# NEE_2001_2021_sites <- terra::extract(NEE_2001_2021, sites_long[, c("Long", "Lat")])
+# 
+# NEE_trend <- data.frame(site_ID = sites_long$site_ID, NEE_at_fluxcom = 0)
+# for (i in 1:nrow(NEE_2001_2021_sites)) {
+#   NEE_trend$NEE_at_fluxcom[i] <- as.numeric(sens.slope(as.numeric(NEE_2001_2021_sites[i, ]))[1])
+# }
+# 
+# NEE_trend <- NEE_trend %>% left_join(trend_driver %>% filter(year_mid >= 2010) %>% group_by(site_ID) %>% summarise(NEE_at_obs = mean(NEE_at, na.rm=T)), by = 'site_ID')
+# # or use GPP trend based on SIF; which ever dataset to produce the best projection. 
+# plot(NEE_trend$NEE_at_fluxcom, NEE_trend$NEE_at_obs)
+# cor.test(NEE_trend$NEE_at_fluxcom, NEE_trend$NEE_at_obs)
+
+
+
+
+```
+
