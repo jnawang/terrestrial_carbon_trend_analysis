@@ -16,10 +16,11 @@ if (!'category' %in% names(trend_driver)) {
   trend_driver <- trend_driver %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category", "NEEpartition", "source")], by = "site_ID")
 }
 
+# we only use significant variables
 climate_vegs <- c('cold_evergreen_forest', 'cold_deciduous_forest', 'cold_non_forest', 'dry', 'wet-warm')
 key_vars <- c('CO2 + LE_gs_at + TA_gs_at + TA_ngs_at', 
-              'CO2 + SW_gs_at + Lgs_at + TA_ngs_at',        # we could remove CO2 and TA_ngs_at
-              'P_gs_at + CO2',                              # we should remove CO2
+              'SW_gs_at + Lgs_at',        # we could remove CO2 and TA_ngs_at; CO2 + TA_ngs_at + LE_gs_at
+              'P_gs_at',                              # we should remove CO2 + LE_gs_at
               'LE_gs_at + TA_gs_at + SW_gs_at + P_ngs_at + SWC_gs_at', 
               'CO2 + TA_at + SW_at + DIST_at')
 
@@ -29,7 +30,7 @@ df_performance <- data.frame()
 weight_rf <- 0.5
 
 # parameters of rf models
-m_try = 4
+m_try = 4              # m_try = 4 is better than m_try = 3 and 5 for cold non-forest first. 
 min_node_size = 5
 
 # 5 fold cross validation
@@ -82,7 +83,7 @@ for (iclimate_veg in 1:length(climate_vegs)) {
       ),
       data = data_cold_evergreen_forest_cv,
       backend = "cmdstanr",
-      iter = 2000,
+      iter = 10,
       control = list(adapt_delta = 0.99, max_treedepth = 15),
       silent = TRUE
     )

@@ -33,7 +33,9 @@ source(file.path("scripts", "00_functions.R"))
 df_file_structure <- get_rawflux_file_structure(dir_rawdata)
 
 a_YY_all <- data.frame(site_ID=character(), TIMESTAMP=integer(), NEE_VUT_REF=double(), 
-                       GPP_VUT_REF=double(), RECO_VUT_REF=double())
+                       GPP_VUT_REF=double(), RECO_VUT_REF=double(), 
+                       GPP_NT_VUT_REF=double(), RECO_NT_VUT_REF=double(), 
+                       GPP_DT_VUT_REF=double(), RECO_DT_VUT_REF=double())
 #
 sites_long$nyear <- 0
 #
@@ -54,14 +56,42 @@ for (i in 1:nrow(sites_long)) {
   # plot(a_YY_good$TIMESTAMP, a_YY_good$GPP_NT_VUT_REF, main=site_ID)
   # plot(a_YY_good$TIMESTAMP, a_YY_good$RECO_NT_VUT_REF, main=site_ID)
   
+  # correct GPP
+  if ("GPP_NT_VUT_REF" %in% names(a_YY_good)) {
+    idx <- is.na(a_YY_good$GPP_NT_VUT_REF) & !is.na(a_YY_good$RECO_NT_VUT_REF) & !is.na(a_YY_good$NEE_VUT_REF)   
+    a_YY_good$GPP_NT_VUT_REF[idx] <- a_YY_good$RECO_NT_VUT_REF[idx] - a_YY_good$NEE_VUT_REF[idx]
+  }
+  if ("GPP_DT_VUT_REF" %in% names(a_YY)) {
+    idx <- is.na(a_YY_good$GPP_DT_VUT_REF) & !is.na(a_YY_good$RECO_DT_VUT_REF) & !is.na(a_YY_good$NEE_VUT_REF)         
+    a_YY_good$GPP_DT_VUT_REF[idx] <- a_YY_good$RECO_DT_VUT_REF[idx] - a_YY_good$NEE_VUT_REF[idx]
+  }
+  
+  #
   if (sites_long$NEEpartition[i] == 'DT') {
     df <- a_YY_good[, c("TIMESTAMP", "NEE_VUT_REF", "GPP_DT_VUT_REF", "RECO_DT_VUT_REF")]
   } else {
     df <- a_YY_good[, c("TIMESTAMP", "NEE_VUT_REF", "GPP_NT_VUT_REF", "RECO_NT_VUT_REF")]
   }
   names(df)[3:4] <- c("GPP_VUT_REF", "RECO_VUT_REF")
+
   # remove unreasonable GPP and RECO. 
   df[df$GPP_VUT_REF < 10 | is.na(df$GPP_VUT_REF), 3:4] <- NA
+  
+  if ("GPP_NT_VUT_REF" %in% names(a_YY_good)) {
+    df$GPP_NT_VUT_REF <- a_YY_good$GPP_NT_VUT_REF
+    df$RECO_NT_VUT_REF <- a_YY_good$RECO_NT_VUT_REF
+  } else {
+    df$GPP_NT_VUT_REF <- NA
+    df$RECO_NT_VUT_REF <- NA
+  }
+
+  if ("GPP_DT_VUT_REF" %in% names(a_YY)) {
+    df$GPP_DT_VUT_REF <- a_YY_good$GPP_DT_VUT_REF
+    df$RECO_DT_VUT_REF <- a_YY_good$RECO_DT_VUT_REF    
+  } else {
+    df$GPP_DT_VUT_REF <- NA
+    df$RECO_DT_VUT_REF <- NA
+  }
   #
   a_YY_all <- rbind(a_YY_all, data.frame(site_ID=site_ID, df))
 }
