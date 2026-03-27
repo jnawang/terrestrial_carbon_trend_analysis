@@ -1,6 +1,8 @@
 ---
 title: "02_06_trend_drivers_causal_inference_new"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -813,22 +815,6 @@ ggplot(data=data_wet, aes(x=SWC_at, y=NEE_at)) +
   geom_point() +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
-
-
-
-mod_brm <- brm(
-    bf(
-    GPP_at ~ CO2 + 
-             (1 | site_ID) + (1 | Climate.class) + (1 | IGBP) + (1 | source),
-    autocor = cor_ar(~ year_mid | site_ID, p = 1)
-  ),
-  data = data_wet,
-  family = gaussian(),
-  chains = 4,
-  cores = 4,
-  iter = 4000
-)
-summary(mod_brm)
 
 
 write.csv(row.names = F, df_total_effect, file.path('data', 'total_effect_NEE_trend_driver_sen.csv'))

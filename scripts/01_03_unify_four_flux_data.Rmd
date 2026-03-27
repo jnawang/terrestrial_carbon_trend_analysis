@@ -356,7 +356,7 @@ for (i in 1:nrow(sites_long)) {
     # use the first year data at this site, because that year's data is consistent with overall trend. 
     tmp <- c()
   }
-  ## at site CH-Dav, data before 2005 should not be used due to discontinuity detected by https://doi.org/10.5194/bg-21-1827-2024
+  ## at site CH-Dav, data before 2005 should not be used due to NEE discontinuity detected by https://doi.org/10.5194/bg-21-1827-2024
   if (site_ID == 'CH-Dav') {
     tmp <- c(tmp, 1997:2005)
   }
@@ -570,9 +570,9 @@ sum(sites_long$category=='dry', na.rm = T)
 # US-Mpj, should be the dry site. US-Ton, dry sites. 
 # we have 29 dry sites.
 sum(sites_long$category=='wet', na.rm = T)
-# we have 35 wet sites.
+# we have 34 wet sites.
 sum(sites_long$category=='cold', na.rm = T)
-# we have 95 cold sites. 
+# we have 94 cold sites. 
 write.csv(sites_long, file = file.path('data', 'long_term_ec_sites.csv'), row.names = F)
 
 ```
