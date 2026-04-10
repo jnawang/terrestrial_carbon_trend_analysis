@@ -490,7 +490,8 @@ for (i in 1:nrow(sites_long)) {
       a_DD <- a_DD %>% select(-P_ERA) %>% left_join(df_daily_prec_site, by = c('TIMESTAMP'='date'))
       #
       df_yearly <- df_daily_prec_site %>% mutate(year = year(date)) %>% 
-        group_by(year) %>% summarise(P_ERA = sum(P_ERA, na.rm=T), .groups = 'drop')
+        group_by(year) %>% 
+        summarise(P_ERA = if (all(is.na(P_ERA))) NA_real_ else sum(P_ERA, na.rm = T), .groups = 'drop')
       a_YY <- a_YY %>% select(-P_ERA) %>% left_join(df_yearly, by = c('TIMESTAMP'='year'))
       # This site's precipitation is slightly higher than reported, so we applied a ratio. 
       if (site_ID %in% c("CH-Aws")) {
