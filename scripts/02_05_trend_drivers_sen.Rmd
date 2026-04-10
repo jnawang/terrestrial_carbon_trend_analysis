@@ -96,54 +96,6 @@ merge_ERA_FLUX <- function(years2update, col_year, col_flux, col_era) {
 ```
 
 
-```{r a function to calculate sens slope}
-
-# these are old methods ignoring irregular time series
-# cal_sens_slope <- function(x) {
-#   x <- x[!is.na(x)]
-#   return(as.numeric(sens.slope(x)[c(1)]))
-# }
-# 
-# cal_sens_slope_scale <- function(x) {
-#   x <- x[!is.na(x)]
-#   x <- scale(x)
-#   return(as.numeric(sens.slope(x)[c(1,3)]))
-# }
-
-# use new methods covering irregular time series
-library(mblm)
-cal_sens_slope <- function(time, y) {
-  id.nonna <- !is.na(y) & !is.na(time) 
-  y <- y[id.nonna]
-  time <- time[id.nonna]
-  #
-  model <- mblm(y ~ time)
-  # summary(model)
-  return(summary(model)$coefficients[2, 1])
-}
-
-cal_sens_slope_scale <- function(time, y, yall) {
-  id.nonna <- !is.na(y) & !is.na(time) 
-  y <- y[id.nonna]
-  time <- time[id.nonna]
-  #
-  if (is.null(yall)) {
-    ymean <- mean(y)
-    ystd <- sd(y)
-  } else {
-    ymean <- mean(yall, na.rm=T)
-    ystd <- sd(yall, na.rm=T)
-  }
-  # scale y
-  y <- (y - ymean) / ystd
-  model <- mblm(y ~ time)
-  # summary(model)
-  return(as.numeric(summary(model)$coefficients[2,c(1, 4)]))
-}
-
-```
-
-
 ```{r calculate disturbance effects}
 # merge 4-day LAI data
 # dir_rawdata <- "/Users/junnawang/YaleLab/data_server/carbon_trend_project"
@@ -376,6 +328,11 @@ grow_season_site <- data_grow_season %>%
   group_by(site_ID) %>% 
   summarise(sos=floor((mean(sos_DER) + mean(sos_TRS)) / 2), 
             eos=ceiling((mean(eos_DER) + mean(eos_TRS)) / 2))
+
+# get growing seasons for all sites. 
+source(file.path("scripts", "00_functions.R"))
+grow_season_site <- bind_rows(grow_season_site, data.frame(site_ID = sites_grow_yearlong, sos = 1, eos = 365))
+
 #
 # if (!'category' %in% names(a_YY_all)) {
 #   a_YY_all <- a_YY_all %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by = "site_ID")
@@ -535,7 +492,8 @@ for (i in 1:nrow(sites_long)) {
       df_yearly <- df_daily_prec_site %>% mutate(year = year(date)) %>% 
         group_by(year) %>% summarise(P_ERA = sum(P_ERA, na.rm=T), .groups = 'drop')
       a_YY <- a_YY %>% select(-P_ERA) %>% left_join(df_yearly, by = c('TIMESTAMP'='year'))
-      if (site_ID %in% c("CH-Aws", "US-EML")) {
+      # This site's precipitation is slightly higher than reported, so we applied a ratio. 
+      if (site_ID %in% c("CH-Aws")) {
         ratio = sites_long$MAP[i] / mean(a_YY$P_ERA, na.rm = T)
         a_YY$P_ERA = a_YY$P_ERA * ratio
         a_DD$P_ERA = a_DD$P_ERA * ratio        
@@ -582,27 +540,23 @@ for (i in 1:nrow(sites_long)) {
   }
   
   ## we differentiate TA, P, VPD, SW_IN, LE, SWC for growing and non-growing seasons
-  if (site_ID %in% sites_grow_yearlong) {
-    a_YY_gw <- a_YY %>% rename("year" = "TIMESTAMP")
-    a_YY_ngw <- a_YY %>% rename("year" = "TIMESTAMP")
-  } else {
-    # start and end of growing season
-    sos <- grow_season_site$sos[grow_season_site$site_ID == site_ID]
-    eos <- grow_season_site$eos[grow_season_site$site_ID == site_ID]
-    a_YY_gw <- a_DD %>% filter(doy >= sos & doy <= eos) %>% group_by(year) %>% 
-          summarise(TA_F_MDS=mean(TA_F_MDS, na.rm=T), P_ERA=sum(P_ERA, na.rm=T), 
-                    VPD_F_MDS=mean(VPD_F_MDS, na.rm=T), SWC_ERA5=mean(SWC_ERA5, na.rm=T), 
-                    SW_IN_F_MDS=mean(SW_IN_F_MDS, na.rm=T), LE_F_MDS=mean(LE_F_MDS, na.rm=T))
-    a_YY_ngw <- a_DD %>% filter(doy < sos | doy > eos) %>% group_by(year) %>% 
-          summarise(TA_F_MDS=mean(TA_F_MDS, na.rm=T), P_ERA=sum(P_ERA, na.rm=T), 
-                    VPD_F_MDS=mean(VPD_F_MDS, na.rm=T), SWC_ERA5=mean(SWC_ERA5, na.rm=T), 
-                    SW_IN_F_MDS=mean(SW_IN_F_MDS, na.rm=T), LE_F_MDS=mean(LE_F_MDS, na.rm=T))
-    
-    # deal with missed P_ERA data in some years
-    missed_PERA_years <- a_YY$TIMESTAMP[is.na(a_YY$P_ERA)]
-    a_YY_gw$P_ERA[a_YY_gw$year %in% missed_PERA_years] <- NA
-    a_YY_ngw$P_ERA[a_YY_ngw$year %in% missed_PERA_years] <- NA
-  }  
+  # start and end of growing season
+  sos <- grow_season_site$sos[grow_season_site$site_ID == site_ID]
+  eos <- grow_season_site$eos[grow_season_site$site_ID == site_ID]
+  a_YY_gw <- a_DD %>% filter(doy >= sos & doy <= eos) %>% group_by(year) %>% 
+        summarise(TA_F_MDS=mean(TA_F_MDS, na.rm=T), P_ERA=sum(P_ERA, na.rm=T), 
+                  VPD_F_MDS=mean(VPD_F_MDS, na.rm=T), SWC_ERA5=mean(SWC_ERA5, na.rm=T), 
+                  SW_IN_F_MDS=mean(SW_IN_F_MDS, na.rm=T), LE_F_MDS=mean(LE_F_MDS, na.rm=T))
+  a_YY_ngw <- a_DD %>% filter(doy < sos | doy > eos) %>% group_by(year) %>% 
+        summarise(TA_F_MDS=mean(TA_F_MDS, na.rm=T), P_ERA=sum(P_ERA, na.rm=T), 
+                  VPD_F_MDS=mean(VPD_F_MDS, na.rm=T), SWC_ERA5=mean(SWC_ERA5, na.rm=T), 
+                  SW_IN_F_MDS=mean(SW_IN_F_MDS, na.rm=T), LE_F_MDS=mean(LE_F_MDS, na.rm=T))
+  
+  # deal with missed P_ERA data in some years
+  missed_PERA_years <- a_YY$TIMESTAMP[is.na(a_YY$P_ERA)]
+  a_YY_gw$P_ERA[a_YY_gw$year %in% missed_PERA_years] <- NA
+  a_YY_ngw$P_ERA[a_YY_ngw$year %in% missed_PERA_years] <- NA
+  # 
   if (site_ID %in% c("JP-Yms")) {
     # LE of these sites are mostly missing, using linear regression based on net radiation
     mod <- lm(data = a_YY, LE_F_MDS ~ NETRAD_F_MDS)
@@ -670,7 +624,7 @@ for (i in 1:nrow(sites_long)) {
         }
       }
       #
-      # Calculate trends of environmental conditions
+      # calculate trends of environmental conditions
       trend_driver[id, c("TA_t", "TA_p")] <- cal_sens_slope_scale(a_YY_sub$TIMESTAMP, a_YY_sub$TA_F_MDS, a_YY$TA_F_MDS)
       trend_driver[id, c("TA_at")] <- cal_sens_slope(a_YY_sub$TIMESTAMP, a_YY_sub$TA_F_MDS)
       trend_driver[id, c("TA_gs_t", "TA_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$year, a_YY_gw_sub$TA_F_MDS, a_YY_gw$TA_F_MDS)
@@ -678,12 +632,13 @@ for (i in 1:nrow(sites_long)) {
       trend_driver[id, c("TA_ngs_t", "TA_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$year, a_YY_ngw_sub$TA_F_MDS, a_YY_ngw$TA_F_MDS)
       trend_driver[id, c("TA_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$year, a_YY_ngw_sub$TA_F_MDS)
       #
+      # Note: we converted precipitation unit from mm/season to mm/day to exclude the varying effects of growing season legnth
       trend_driver[id, c("P_t", "P_p")] <- cal_sens_slope_scale(a_YY_sub$TIMESTAMP, a_YY_sub$P_ERA, a_YY$P_ERA)
-      trend_driver[id, c("P_at")] <- cal_sens_slope(a_YY_sub$TIMESTAMP, a_YY_sub$P_ERA)
+      trend_driver[id, c("P_at")] <- cal_sens_slope(a_YY_sub$TIMESTAMP, a_YY_sub$P_ERA) / 365.25
       trend_driver[id, c("P_gs_t", "P_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$year, a_YY_gw_sub$P_ERA, a_YY_gw$P_ERA)
-      trend_driver[id, c("P_gs_at")] <- cal_sens_slope(a_YY_gw_sub$year, a_YY_gw_sub$P_ERA)
+      trend_driver[id, c("P_gs_at")] <- cal_sens_slope(a_YY_gw_sub$year, a_YY_gw_sub$P_ERA) / (eos - sos + 1)
       trend_driver[id, c("P_ngs_t", "P_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$year, a_YY_ngw_sub$P_ERA, a_YY_ngw$P_ERA)
-      trend_driver[id, c("P_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$year, a_YY_ngw_sub$P_ERA)
+      trend_driver[id, c("P_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$year, a_YY_ngw_sub$P_ERA) / (365.25 - (eos - sos + 1))
       #
       trend_driver[id, c("VPD_t", "VPD_p")] <- cal_sens_slope_scale(a_YY_sub$TIMESTAMP, a_YY_sub$VPD_F_MDS, a_YY$VPD_F_MDS)
       trend_driver[id, c("VPD_at")] <- cal_sens_slope(a_YY_sub$TIMESTAMP, a_YY_sub$VPD_F_MDS)

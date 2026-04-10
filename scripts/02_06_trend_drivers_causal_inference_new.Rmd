@@ -274,6 +274,15 @@ ggplot(data=data_cold_evergreen_forest, aes(x=SW_gs_at, y=NEE_at)) +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
 
+ggplot(data=data_cold_evergreen_forest, aes(x=GPP_at, y=NEE_at)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+summary(lm(data = data_cold_evergreen_forest[data_cold_evergreen_forest$year_mid <= 2015 & data_cold_evergreen_forest$year_mid >= 2010, ], NEE_at ~ GPP_at))
+# no relationship for different period....
+
+
 ```
 
 
@@ -407,6 +416,12 @@ ggplot(data=data_cold_deciduous_forest, aes(x=Lgs_at, y=NEE_at, col = site_ID)) 
   geom_smooth(method = lm) +
   stat_cor(color='purple')
 
+ggplot(data=data_cold_deciduous_forest, aes(x=GPP_at, y=NEE_at)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+summary(lm(data = data_cold_deciduous_forest[data_cold_deciduous_forest$year_mid > 2010, ], NEE_at ~ GPP_at))
 
 ```
 
@@ -543,6 +558,14 @@ ggplot(data=data_cold_non_forest, aes(x=DIST_at, y=NEE_at, col = site_ID)) +
   geom_point() +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
+
+
+data_cold_non_forest %>% filter(year_mid > 2010) %>%
+ggplot(aes(x=GPP_at, y=NEE_at)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+summary(lm(data = data_cold_non_forest[data_cold_non_forest$year_mid > 2005, ], NEE_at ~ GPP_at))
 
 
 ```
@@ -688,7 +711,12 @@ ggplot(data=data_dry, aes(x=LE_ngs_at, y=NEE_at, col=site_ID)) +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
 
-# cor.test(data_dry$LE_ngs_at, data_dry$LE_gs_at)
+ggplot(data=data_dry, aes(x=GPP_at, y=NEE_at)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+summary(lm(data = data_dry[data_dry$year_mid > 2010, ], NEE_at ~ GPP_at))
+
 
 ```
 
@@ -816,9 +844,16 @@ ggplot(data=data_wet, aes(x=SWC_at, y=NEE_at)) +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
 
+data_wet %>% filter(year_mid > 2010) %>%
+ggplot(aes(x=GPP_at, y=NEE_at)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+summary(lm(data = data_wet[data_wet$year_mid > 2010, ], NEE_at ~ GPP_at))
 
-write.csv(row.names = F, df_total_effect, file.path('data', 'total_effect_NEE_trend_driver_sen.csv'))
-write.csv(row.names = F, df_direct_effect, file.path('data', 'direct_effect_NEE_trend_driver_sen.csv'))
+
+write.csv(row.names = F, df_total_effect, file.path('data', 'effect_total_NEE_trend_driver_sen.csv'))
+write.csv(row.names = F, df_direct_effect, file.path('data', 'effect_direct_NEE_trend_driver_sen.csv'))
 
 ```
 

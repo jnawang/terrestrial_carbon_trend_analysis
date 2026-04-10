@@ -38,9 +38,8 @@ shelf(tidyverse, ggpubr, terra, ncdf4, future.apply, trend)
 
 
 ```{r get start and end of growing season}
-data_grow_season <- read.csv('data/growing_season_yearly.csv')
-# sub_time_series <- read.csv("data/sub_time_series_potential_drivers_sen.csv")
-sites_long <- read.csv('data/long_term_ec_sites.csv')
+data_grow_season <- read.csv(file.path('data', 'growing_season_yearly.csv'))
+sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
 #
 sos_eos <- data_grow_season %>% group_by(site_ID) %>% 
   summarise(sos=mean(sos_TRS+sos_DER, na.rm=T)/2, eos=mean(eos_TRS+eos_DER, na.rm=T)/2) %>% 
@@ -93,8 +92,8 @@ sos_eos_group <- sos_eos_group %>% mutate(climate_id = case_when(
 
 
 ```{r get global zonation based on climate and vegetation}
-koppen_climate <- terra::rast('data/koppen_geiger_0p00833333.tif')
-land_cover <- terra::rast('data/968_Land_Cover_Class_0.25degree.nc')
+koppen_climate <- terra::rast(file.path('data', 'koppen_geiger_0p00833333.tif'))
+land_cover <- terra::rast(file.path('data', '968_Land_Cover_Class_0.25degree.nc'))
 #
 # plot(koppen_climate)
 plot(land_cover[[2]]%in% c(4:5))
@@ -332,6 +331,8 @@ writeRaster(et_gs, filename = 'data/et_gs_2005_2023.tif', overwrite=TRUE)
 ```
 
 
+
+
 ```{r calculate past NEE trends}
 t2m_gs <- terra::rast('data/t2m_gs_2005_2023.tif')
 tp_gs <- terra::rast('data/tp_gs_2005_2023.tif')
@@ -378,8 +379,6 @@ writeRaster(et_gs_slope, 'data/et_gs_slope_FLUXCOM_2005_2023.tif', overwrite=T)
 # sum(terra::values(et_gs_pvalue) < 0.1, na.rm=T) / sum(!is.na(terra::values(et_gs_pvalue))) 
 # 0.1348455 significant trends at 0.05; 0.1680927 significant trends at 0.2146213;
 
-# read canopy height
-canopy_height <- terra::rast('data/global_canopy_height_2020.tif')
 
 # align up all the slope result and trend result
 t2m_gs_slope <- terra::resample(t2m_gs_slope, et_gs_slope)

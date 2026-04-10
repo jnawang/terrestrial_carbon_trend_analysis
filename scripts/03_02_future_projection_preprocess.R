@@ -1,6 +1,10 @@
 # This script prepares data for projecting future NEE trends.
 # Junna Wang, 03-17-2026
 # 
+# make the unit of different variables clear enough
+# TA: C; P: mm/d; SW: W/m2; LE: W/m2; ET: mm/hr, and then should be converted to LE unit. 
+
+
 # global monthly CO2 is obtained from https://zenodo.org/records/5021361
 # citation: Cheng, W., Dan, L., Deng, X., Feng, J., Wang, Y., Peng, J., Tian, J., Qi, W., Liu, Z., Zheng, X., Zhou, D., Jiang, S., Zhao, H., & Wang, X. (2021). Global monthly distributions of atmospheric CO2 concentrations under the historical and future scenarios [Data set]. Zenodo. https://doi.org/10.5281/zenodo.5021361
 # for disturbance effects: use projections based various climate variables; be consistent. 
@@ -8,8 +12,8 @@
 
 rm(list=ls())
 # change this location where the raw data will be saved accordingly
-# dir_rawdata <- '/Volumes/WZZ_disk'
-dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
+dir_rawdata <- '/Volumes/WZZ_disk'
+# dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 #
 library(librarian)
 shelf(tidyverse, ggpubr, terra, ncdf4, future.apply, trend)
@@ -17,6 +21,7 @@ shelf(tidyverse, ggpubr, terra, ncdf4, future.apply, trend)
 ###########################################
 # 1. get start and end of growing season
 ###########################################
+source(file.path("scripts", "00_functions.R"))
 
 data_grow_season <- read.csv(file.path('data', 'growing_season_yearly.csv'))
 sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
@@ -49,28 +54,7 @@ sos_eos_group <- rbind(sos_eos_group, data.frame(category = c("cold", "cold", "c
 sos_eos_group <- sos_eos_group %>% arrange(category, Climate.class)
 # we have 30 climates now. 
 
-
-# match climate class and its coding ID
-sos_eos_group <- sos_eos_group %>% mutate(climate_id = case_when(
-  Climate.class == 'Dwa' ~ 21, Climate.class == 'Dwb' ~ 22,
-  Climate.class == 'Dwc' ~ 23, Climate.class == 'Dwd' ~ 24,
-  #
-  Climate.class == 'Dfa' ~ 25, Climate.class == 'Dfb' ~ 26,
-  Climate.class == 'Dfc' ~ 27, Climate.class == 'Dfd' ~ 28,
-  Climate.class == 'ET' ~ 29, Climate.class == 'EF' ~ 30,
-  #
-  Climate.class == 'Csc' ~ 10, Climate.class == 'Csb' ~ 9, Climate.class == 'Csa' ~ 8, 
-  Climate.class == 'BSk' ~ 7, Climate.class == 'BSh' ~ 6, 
-  Climate.class == 'BWk' ~ 5, Climate.class == 'BWh' ~ 4,
-  #
-  Climate.class == 'Aw' ~ 3, Climate.class == 'Am' ~ 2, Climate.class == 'Af' ~ 1, 
-  #
-  Climate.class == 'Dsa' ~ 17, Climate.class == 'Dsb' ~ 18, 
-  Climate.class == 'Dsc' ~ 19, Climate.class == 'Dsd' ~ 20, 
-  #
-  Climate.class == 'Cfa' ~ 14, Climate.class == 'Cfb' ~ 15, Climate.class == 'Cfc' ~ 16,
-  #
-  Climate.class == 'Cwa' ~ 11, Climate.class == 'Cwb' ~ 12, Climate.class == 'Cwc' ~ 13))
+sos_eos_group <- sos_eos_group %>% left_join(df_koppen_climate, by = 'Climate.class')
 
 
 ###########################################################
@@ -88,11 +72,12 @@ land_cover <- terra::rast(file.path('data', '968_Land_Cover_Class_0.25degree_lay
 # type_1 = Evergreen Needleleaf Forests; type2: Evergreen Broadleaf Forests; type3: Deciduous Needleleaf Forests;  
 # type_4 = Deciduous Broadleaf Forests; type_5 = Mixed Forests
 # type_11 = Permanent Wetlands; 
-# 0water, 12cropland, 13urban, 15ice, 16barren
+# 0water, 12cropland, 13urban, 14cropland_mosaic, 15 ice, 16barren
+# for other types, see the table below. 
 
 # plot(koppen_climate)
 # plot(land_cover%in% c(4:5))
-# large croplands on earth
+# large cropland areas on earth
 
 # unify resolution: 0.25 degree
 koppen_climate_0.25 <- terra::resample(koppen_climate, land_cover, method="near")
@@ -111,9 +96,9 @@ names(df_zone)[3] <- "AI"
 
 # the classification of dry and wet in tropics should based on aridity index. 
 df_zone <- df_zone %>% mutate(group = case_when(
-  koppen_climate %in% c(1:3, 11, 14) & !land_cover %in% c(12,13,15,16,0) & AI > 0.5 ~ "wet", 
-  koppen_climate %in% c(1:3, 11, 14) & !land_cover %in% c(12,13,15,16,0) & AI < 0.5 ~ "dry", 
-  koppen_climate %in% c(4:10) & !land_cover %in% c(12,13,15,16,0) ~ "dry",  # remove 0water, 12cropland, 13urban, 15ice, 16barren
+  koppen_climate %in% c(1:3, 11, 14) & !land_cover %in% c(12,13,14,15,16,17,0) & AI > 0.5 ~ "wet", 
+  koppen_climate %in% c(1:3, 11, 14) & !land_cover %in% c(12,13,14,15,16,17,0) & AI < 0.5 ~ "dry", 
+  koppen_climate %in% c(4:10) & !land_cover %in% c(12,13,14,15,16,17,0) ~ "dry",  # remove 0water, 12cropland, 13urban, 15ice, 16barren
   koppen_climate %in% c(12:13, 15:30) & land_cover %in% c(6:9, 14) ~ "cold_nonforest", 
   koppen_climate %in% c(12:13, 15:30) & land_cover %in% c(10) ~ "cold_nonforest", 
   koppen_climate %in% c(12:13, 15:30) & land_cover %in% c(11) ~ "cold_nonforest", 
@@ -226,7 +211,7 @@ for (i in 1:length(met_files)) {
 df_file_info <- df_file_info %>% arrange(var, year)
 
 # it takes 7-8 hours to rotate these rasters.
-# work on t2m
+# work on t2m, unit: Kelvin
 # t2m_data <- list()
 t2m_gs <- rast()
 t2m_ngs <- rast()
@@ -255,6 +240,7 @@ writeRaster(t2m_gs, filename = file.path('data', 't2m_gs_2005_2023.tif'), overwr
 writeRaster(t2m_ngs, filename = file.path('data', 't2m_ngs_2005_2023.tif'), overwrite=TRUE)
 
 #-----------------------------------
+# work on tp, unit: m
 # tp_data <- list()
 tp_gs <- rast()
 tp_ngs <- rast()
@@ -278,6 +264,7 @@ writeRaster(tp_gs, filename = file.path('data', 'tp_gs_2005_2023.tif'), overwrit
 writeRaster(tp_ngs, filename = file.path('data', 'tp_ngs_2005_2023.tif'), overwrite=TRUE)
 
 #-----------------------------------
+# work on ssrd, unit: J m**-2
 # ssrd_data <- list()
 ssrd_gs <- rast()
 df_file_info_subset <- subset(df_file_info, var=='ssrd')
@@ -300,8 +287,9 @@ writeRaster(ssrd_gs, filename = file.path('data', 'ssrd_gs_2005_2023.tif'), over
 # 5. process ET data from FLUXCOM in the past
 ###########################################################
 ET_files <- list.files(file.path(dir_rawdata, '/ScaleUp_Global/et_day_2005_2021/'), pattern='.nc$', full.names = T)
+# original unit of ET data is mm/hr
 
-et_gs <- rast()
+et_gs_past <- rast()
 for (i in 1:length(ET_files)) {
   print(i)
   met_data <- terra::rast(ET_files[i])
@@ -313,13 +301,13 @@ for (i in 1:length(ET_files)) {
   }
   #
   test <- process_one_year(met_data, zone_masks_north, zone_masks_south, sos_eos_group)
-  et_gs <- c(et_gs, test)
+  et_gs_past <- c(et_gs_past, test)
   
   rm(met_data)
   gc()
   terra::tmpFiles(remove = TRUE)
 }
-writeRaster(et_gs, filename = file.path('data', 'et_gs_2005_2023.tif'), overwrite=TRUE)
+writeRaster(et_gs_past, filename = file.path('data', 'et_gs_2005_2023.tif'), overwrite=TRUE)
 
 ######################################################################
 # 6. get future climate average during growing and non-growing season
@@ -372,17 +360,75 @@ for (var in vars) {
   }
 }
 
+#########################################################################################################
+# 7. get baseline (2005~2021) information about NEE, GPP, ET, MAT, MAP, climate and vegetation group 
+#########################################################################################################
+folder <- 'gpp_fluxcom_2005_2021'
+nc_files <- list.files(file.path(dir_rawdata, 'ScaleUp_Global', folder), pattern='.nc$', full.names = T)
+gpp_baseline <- terra::rast()
+for (i in 1:length(nc_files)) {
+  print(i)
+  gpp_data <- terra::rast(nc_files[i])
+  gpp_data <- terra::app(gpp_data, fun=sum, na.rm=T)
+  gpp_baseline <- c(gpp_baseline, gpp_data)
+}
+gpp_baseline <- terra::app(gpp_baseline, fun=mean, na.rm=T)
+
+writeRaster(gpp_baseline, filename = file.path('data', 'baseline_gpp_2005-2021.tif'), overwrite=TRUE)
+
+#-----------
+folder <- 'nee_fluxcom_2005_2021'
+nee_baseline <- terra::rast()
+for (i in 2005:2021) {
+  print(i)
+  nee_data <- terra::rast(file.path(dir_rawdata, 'ScaleUp_Global', folder, paste0('FLUXCOM-X-BASE net ecosystem exchange for ', i), paste0("NEE_", i, "_025_daily.nc")))
+  nee_data <- terra::app(nee_data, fun=sum, na.rm=T)
+  nee_baseline <- c(nee_baseline, nee_data) 
+}
+nee_baseline <- terra::app(nee_baseline, fun=mean, na.rm=T)
+
+writeRaster(nee_baseline, filename = file.path('data', 'baseline_nee_2005-2021.tif'), overwrite=TRUE) 
+
+#-----------
+folder <- 'et_day_2005_2021'
+nc_files <- list.files(file.path(dir_rawdata, 'ScaleUp_Global', folder), pattern='.nc$', full.names = T)
+et_baseline <- terra::rast()
+for (i in 1:length(nc_files)) {
+  print(i)
+  et_data <- terra::rast(nc_files[i])
+  et_data <- terra::app(et_data, fun=mean, na.rm=T)
+  et_baseline <- c(et_baseline, et_data)
+}
+et_baseline <- terra::app(et_baseline, fun=mean, na.rm=T)
+
+writeRaster(et_baseline, filename = file.path('data', 'baseline_et_2005-2021.tif'), overwrite=TRUE) 
+
+#--------MAT, MAP
+# mat_baseline <- terra::rast(file.path('data', 'MAT.tif'))
+# map_baseline <- terra::rast(file.path('data', 'MAP.tif'))
+# 
+# mat_baseline <- terra::resample(mat_baseline, gpp_baseline) 
+# map_baseline <- terra::resample(map_baseline, gpp_baseline)
+# 
+# writeRaster(mat_baseline, filename = file.path('data', 'baseline_mat.tif'), overwrite=TRUE)
+# writeRaster(map_baseline, filename = file.path('data', 'baseline_map.tif'), overwrite=TRUE)
+
+# climate_baseline <-  koppen_climate
+# igbp_baseline <-     land_cover
+
 ######################################################################
-# 7. get change of ET from coarse global climate models
+# 8. get change of ET from coarse global climate models and future ET
 ######################################################################
 # I want to get the change of ET from 2015-2025 to 2026-2050. 
-# assuming growing season is 5-9; 
+# assuming growing season is month 5-9; 
 # calculate changes in slopes using ET projections from 6 global climate models under ssp245;
 # BCC-CSM2-MR, CAMS-CSM1-0, CAS-ESM2-0, FIO-ESM-2-0, MIROC6, CESM2_ssp245
+# the original data is monthly and the unit of evspsbl is mm/s; we convert this to mm/hr to be consistent with FLUXCOM unit
 folder <- 'et_day_2026_2050'
 nc_files <- list.files(file.path(dir_rawdata, 'ScaleUp_Global', folder), pattern='.nc$', full.names = T)
 et_data_fut3 <- list()
 for (i in 1:length(nc_files)) {
+  # each file stores data from 2015 to 2100
   met_data <- terra::rast(nc_files[i])
   et_data_fut3 <- c(et_data_fut3, met_data)
 }
@@ -390,85 +436,112 @@ et_data_fut3[[6]] <- c(et_data_fut3[[6]], et_data_fut3[[7]])
 
 nmodels <- 6
 
-et_slope_model_past <- list()
-et_slope_model_fut <- list()
-et_slope_model_past_fut_change <- list()
+# logics of conversion: 
+# 1) get average et of each year; 2) calculate trend of 2015-2030 and that of 2031-2045; 
+# 3) get difference of the two periods; 4) unit conversion: mm/s -> mm/hr 
+et_data_year <- rast()
 for (imodel in 1:nmodels) {
-  et_data_year <- rast()
   data_north <- terra::mask(et_data_fut3[[imodel]], init(et_data_fut3[[imodel]], "y") > 0, maskvalues=0)
   data_south <- terra::mask(et_data_fut3[[imodel]], init(et_data_fut3[[imodel]], "y") <= 0, maskvalues=0)
   #
   for (iyear in 1:36) {
     r_north <- terra::app(data_north[[c(5:9) + (iyear-1)*12]], fun=mean, na.rm=T)
     r_south <- terra::app(data_south[[c(1:3, 11:12) + (iyear-1)*12]], fun=mean, na.rm=T)
-    et_data_year <- c(et_data_year, terra::cover(r_north, r_south))
+    
+    et_data_1year <- terra::cover(r_north, r_south)
+    if (imodel > 1) {
+      et_data_1year <- terra::resample(et_data_1year, et_data_year[[1]])
+    }
+    et_data_year <- c(et_data_year, et_data_1year)
     print(iyear)
   }
-  # 2015-2030
-  et_slope_model_past[[imodel]] <- terra::app(et_data_year[[1:16]], function(x) {ifelse(any(is.na(x)), NA, sens.slope(x)$estimate / sd(x))})
-  #  plot(et_slope_model_past[[imodel]])
-  et_slope_model_past[[imodel]] <- terra::rotate(et_slope_model_past[[imodel]])
-  # 2031-2046
-  et_slope_model_fut[[imodel]] <- terra::app(et_data_year[[17:32]], function(x) {ifelse(any(is.na(x)), NA, sens.slope(x)$estimate / sd(x))})
-  et_slope_model_fut[[imodel]] <- terra::rotate(et_slope_model_fut[[imodel]])
 }
 
+# average across different models
+et_gs_2015_2045 <- terra::rast()
+for (iyear in 1:36) {
+  et_data_1year <- terra::app(et_data_year[[seq(iyear, 36*6, 36)]], fun=mean, na.rm=T)
+  et_gs_2015_2045 <- c(et_gs_2015_2045, et_data_1year)
+}
+et_gs_2015_2045 <- rotate(et_gs_2015_2045)
 
+et_at_model_past <- terra::app(et_gs_2015_2045[[1:15]], function(x) {ifelse(any(is.na(x)), NA, sens.slope(x)$estimate)})
+et_at_model_fut <- terra::app(et_gs_2015_2045[[16:30]], function(x) {ifelse(any(is.na(x)), NA, sens.slope(x)$estimate)})
 
+et_at_past_fut_change <- et_at_model_fut - et_at_model_past
 
+et_at_past_fut_change <- et_at_past_fut_change * 3600   # convert unit from mm/s to mm/hr
+et_at_past_fut_change <- terra::resample(et_at_past_fut_change, et_gs_past)
 
+writeRaster(et_at_past_fut_change, filename = file.path('data', 'et_at_past_fut_change.tif'), overwrite=TRUE)
 
-
-
-
-
-
-
-
-
-
-
-
-
-# Compare the past ET trends from FLUXCOM with the current ET trends from climate models
-et_gs_slope_FLUXCOM <- terra::rast('data/et_gs_slope_FLUXCOM_2005_2023.tif')
-plot(et_gs_slope_FLUXCOM)
-for (imodel in 1:nmodels) {
-  et_slope_model_past[[imodel]] <- terra::resample(et_slope_model_past[[imodel]], et_gs_slope_FLUXCOM)
-  et_slope_model_past[[imodel]] <- terra::mask(et_slope_model_past[[imodel]], et_gs_slope_FLUXCOM)
-  plot(et_slope_model_past[[imodel]])
-  print(cor.test(terra::values(et_gs_slope_FLUXCOM), terra::values(et_slope_model_past[[imodel]])))
-  #
-  et_slope_model_fut[[imodel]] <- terra::resample(et_slope_model_fut[[imodel]], et_gs_slope_FLUXCOM)
-  et_slope_model_fut[[imodel]] <- terra::mask(et_slope_model_fut[[imodel]], et_gs_slope_FLUXCOM)
+################################################################################
+# 9. get current and future disturbance effects
+################################################################################
+trend_driver <- read.csv(file.path("data", "potential_trend_driver_sen.csv"))
+if (!'category' %in% names(trend_driver)) {
+  trend_driver <- trend_driver %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by = "site_ID")
 }
 
-et_slope_model_past <- terra::app(terra::rast(et_slope_model_past), fun='mean', na.rm=T)
-et_slope_model_fut  <- terra::app(terra::rast(et_slope_model_fut), fun='mean', na.rm=T)
+DIST_climate_IGBP_wet <- trend_driver %>% filter(category == 'wet') %>% 
+  group_by(site_ID) %>% slice_max(year_mid) %>%
+  filter(year_mid >= 2010) %>%
+  arrange(Climate.class, IGBP) %>%
+  group_by(Climate.class, IGBP) %>% 
+  summarise(DIST_at = mean(DIST_at, na.rm = T), .groups = "drop")
 
-print(cor.test(terra::values(et_gs_slope_FLUXCOM), terra::values(et_slope_model_past)))
-# r = 0.20099 and significant
+DIST_climate_wet <- trend_driver %>% filter(category == 'wet') %>% 
+  group_by(site_ID) %>% slice_max(year_mid) %>%
+  group_by(Climate.class) %>% 
+  summarise(DIST_at = mean(DIST_at, na.rm = T), .groups = "drop")
 
 
-et_slope_model_past_fut_change <- et_slope_model_fut - et_slope_model_past
-plot(et_slope_model_past_fut_change)
+unique_climate_veg_groups <- levels(zone_group)[[1]]
+cells <- which(terra::values(zone_group) == unique_climate_veg_groups$value[unique_climate_veg_groups$label=='wet'])
+df_wet_DIST_at <- data.frame(icell = cells, 
+                             climate_id = terra::values(koppen_climate_0.25)[cells], 
+                             IGBP_id = terra::values(land_cover)[cells])
+df_wet_DIST_at <- df_wet_DIST_at %>% left_join(df_koppen_climate, by = "climate_id") %>% 
+  left_join(df_IGBP, by = "IGBP_id") 
+  
+Climate_IGBP_all <- df_wet_DIST_at[, c("Climate.class", "IGBP")] %>% distinct() %>% arrange(Climate.class, IGBP)
+DIST_climate_IGBP_wet <- Climate_IGBP_all %>% left_join(DIST_climate_IGBP_wet, by = c("Climate.class", "IGBP")) %>% 
+  left_join(DIST_climate_wet, by = "Climate.class", suffix = c("", "_fill")) %>%
+  mutate(DIST_at = coalesce(DIST_at, DIST_at_fill)) %>%
+  select(-DIST_at_fill)                                         
+
+df_wet_DIST_at <- df_wet_DIST_at %>% left_join(DIST_climate_IGBP_wet, by = c("Climate.class", "IGBP"))
+
+DIST_at_past <- zone_group
+terra::values(DIST_at_past) <- NA
+terra::values(DIST_at_past)[df_wet_DIST_at$icell] <- df_wet_DIST_at$DIST_at
+plot(DIST_at_past)
+
+writeRaster(DIST_at_past, filename = file.path('data', 'DIST_at_wet_past.tif'), overwrite=TRUE)
+
+################################################################################
+# 10. get current and future CO2 concentration
+################################################################################
+ 
+# https://doi.org/10.5281/zenodo.5021361   1-degree resolution
+co2_1850_2013 <- terra::rast(file.path(dir_rawdata, 'ScaleUp_Global', 'co2', 'CO2_1deg_month_1850-2013.nc'))
+co2_2015_2150 <- terra::rast(file.path(dir_rawdata, 'ScaleUp_Global', 'co2', 'CO2_SSP245_2015_2150.nc'))
+terra::ext(co2_1850_2013) <- terra::ext(co2_2015_2150)
 #
-writeRaster(et_slope_model_past_fut_change, filename = file.path('data', 'et_slope_past_fut_change.tif'), overwrite=TRUE)
+co2_baseline1 <- terra::app(co2_1850_2013[[1873:1968]], fun = mean, na.rm=T)  # 2005-2013
+co2_baseline2 <- terra::app(co2_2015_2150[[1:96]], fun = mean, na.rm=T)       # 2015-2023
 
-##################################
-# 8. calculate past NEE trends
-##################################
+co2_baseline1 <- terra::resample(co2_baseline1, gpp_baseline)
+co2_baseline2 <- terra::resample(co2_baseline2, gpp_baseline)
 
+co2_baseline <- (co2_baseline1 + co2_baseline2) / 2
+# plot(co2_baseline)
 
+co2_fut <- terra::app(co2_2015_2150[[121:(120+12*25)]], fun = mean, na.rm=T)  # 2025-2050
+co2_fut <- terra::resample(co2_fut, gpp_baseline)
+# plot(co2_fut - co2_baseline)
 
+writeRaster(co2_baseline, filename = file.path('data', 'co2_mean_2005-2023.tif'), overwrite=TRUE)
+writeRaster(co2_fut, filename = file.path('data', 'co2_mean_2025-2050.tif'), overwrite=TRUE)
 
-##################################
-# 10. predict for future NEE trend
-##################################
-
-
-
-
-
-
-
+# I need to ensure that all the data used for projection are at the same resolution and the same extent. 
