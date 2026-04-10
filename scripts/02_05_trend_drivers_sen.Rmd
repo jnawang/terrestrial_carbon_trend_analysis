@@ -529,14 +529,14 @@ for (i in 1:nrow(sites_long)) {
   # if (!is.na(sites_long[i, "MAP"]) & abs(sites_long[i, "MAP"] - mean(a_YY$P_ERA, na.rm=T)) > 0.15*sites_long[i, "MAP"]) {
   #   print(paste0("MAP may have problems--", sites_long[i, "MAP"], "--", mean(a_YY$P_ERA, na.rm=T)))
   # }
-  ## Correct GPP and ER to ensure NEE = ER - GPP
-  if ("GPP_NT_VUT_REF" %in% names(a_YY_good)) {
-    idx <- is.na(a_YY_good$GPP_NT_VUT_REF) & !is.na(a_YY_good$RECO_NT_VUT_REF) & !is.na(a_YY_good$NEE_VUT_REF)   
-    a_YY_good$GPP_NT_VUT_REF[idx] <- a_YY_good$RECO_NT_VUT_REF[idx] - a_YY_good$NEE_VUT_REF[idx]
+  ## get yearly GPP, if we know NEE and ER
+  if ("GPP_NT_VUT_REF" %in% names(a_YY)) {
+    idx <- is.na(a_YY$GPP_NT_VUT_REF) & !is.na(a_YY$RECO_NT_VUT_REF) & !is.na(a_YY$NEE_VUT_REF)   
+    a_YY$GPP_NT_VUT_REF[idx] <- a_YY$RECO_NT_VUT_REF[idx] - a_YY$NEE_VUT_REF[idx]
   }
   if ("GPP_DT_VUT_REF" %in% names(a_YY)) {
-    idx <- is.na(a_YY_good$GPP_DT_VUT_REF) & !is.na(a_YY_good$RECO_DT_VUT_REF) & !is.na(a_YY_good$NEE_VUT_REF)         
-    a_YY_good$GPP_DT_VUT_REF[idx] <- a_YY_good$RECO_DT_VUT_REF[idx] - a_YY_good$NEE_VUT_REF[idx]
+    idx <- is.na(a_YY$GPP_DT_VUT_REF) & !is.na(a_YY$RECO_DT_VUT_REF) & !is.na(a_YY$NEE_VUT_REF)         
+    a_YY$GPP_DT_VUT_REF[idx] <- a_YY$RECO_DT_VUT_REF[idx] - a_YY$NEE_VUT_REF[idx]
   }
   
   ## we differentiate TA, P, VPD, SW_IN, LE, SWC for growing and non-growing seasons
