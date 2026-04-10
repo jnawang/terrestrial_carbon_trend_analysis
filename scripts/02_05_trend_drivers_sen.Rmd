@@ -629,23 +629,29 @@ for (i in 1:nrow(sites_long)) {
       trend_driver[id, c("TA_at")] <- cal_sens_slope(a_YY_sub$TIMESTAMP, a_YY_sub$TA_F_MDS)
       trend_driver[id, c("TA_gs_t", "TA_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$year, a_YY_gw_sub$TA_F_MDS, a_YY_gw$TA_F_MDS)
       trend_driver[id, c("TA_gs_at")] <- cal_sens_slope(a_YY_gw_sub$year, a_YY_gw_sub$TA_F_MDS)
-      trend_driver[id, c("TA_ngs_t", "TA_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$year, a_YY_ngw_sub$TA_F_MDS, a_YY_ngw$TA_F_MDS)
-      trend_driver[id, c("TA_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$year, a_YY_ngw_sub$TA_F_MDS)
+      if (! site_ID %in% sites_grow_yearlong) {
+        trend_driver[id, c("TA_ngs_t", "TA_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$year, a_YY_ngw_sub$TA_F_MDS, a_YY_ngw$TA_F_MDS)
+        trend_driver[id, c("TA_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$year, a_YY_ngw_sub$TA_F_MDS)
+      }
       #
       # Note: we converted precipitation unit from mm/season to mm/day to exclude the varying effects of growing season legnth
       trend_driver[id, c("P_t", "P_p")] <- cal_sens_slope_scale(a_YY_sub$TIMESTAMP, a_YY_sub$P_ERA, a_YY$P_ERA)
       trend_driver[id, c("P_at")] <- cal_sens_slope(a_YY_sub$TIMESTAMP, a_YY_sub$P_ERA) / 365.25
       trend_driver[id, c("P_gs_t", "P_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$year, a_YY_gw_sub$P_ERA, a_YY_gw$P_ERA)
       trend_driver[id, c("P_gs_at")] <- cal_sens_slope(a_YY_gw_sub$year, a_YY_gw_sub$P_ERA) / (eos - sos + 1)
-      trend_driver[id, c("P_ngs_t", "P_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$year, a_YY_ngw_sub$P_ERA, a_YY_ngw$P_ERA)
-      trend_driver[id, c("P_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$year, a_YY_ngw_sub$P_ERA) / (365.25 - (eos - sos + 1))
+      if (! site_ID %in% sites_grow_yearlong) {
+        trend_driver[id, c("P_ngs_t", "P_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$year, a_YY_ngw_sub$P_ERA, a_YY_ngw$P_ERA)
+        trend_driver[id, c("P_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$year, a_YY_ngw_sub$P_ERA) / (365.25 - (eos - sos + 1))
+      }
       #
       trend_driver[id, c("VPD_t", "VPD_p")] <- cal_sens_slope_scale(a_YY_sub$TIMESTAMP, a_YY_sub$VPD_F_MDS, a_YY$VPD_F_MDS)
       trend_driver[id, c("VPD_at")] <- cal_sens_slope(a_YY_sub$TIMESTAMP, a_YY_sub$VPD_F_MDS)
       trend_driver[id, c("VPD_gs_t", "VPD_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$year, a_YY_gw_sub$VPD_F_MDS, a_YY_gw$VPD_F_MDS)
       trend_driver[id, c("VPD_gs_at")] <- cal_sens_slope(a_YY_gw_sub$year, a_YY_gw_sub$VPD_F_MDS)
-      trend_driver[id, c("VPD_ngs_t", "VPD_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$year, a_YY_ngw_sub$VPD_F_MDS, a_YY_ngw$VPD_F_MDS)
-      trend_driver[id, c("VPD_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$year, a_YY_ngw_sub$VPD_F_MDS)
+      if (! site_ID %in% sites_grow_yearlong) {
+        trend_driver[id, c("VPD_ngs_t", "VPD_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$year, a_YY_ngw_sub$VPD_F_MDS, a_YY_ngw$VPD_F_MDS)
+        trend_driver[id, c("VPD_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$year, a_YY_ngw_sub$VPD_F_MDS)
+      }
       #
       if (site_ID %in% c('GL-ZaH')) {
         # a greenland site, constant SWC ERA5 data; use measured SWC_F_MDS_1 for actual trend; use LE data for scaled trend assumming SWC and LE have the same trend.  
@@ -660,24 +666,31 @@ for (i in 1:nrow(sites_long)) {
         trend_driver[id, c("SWC_at")] <- cal_sens_slope(a_YY_sub$TIMESTAMP, a_YY_sub$SWC_ERA5)
         trend_driver[id, c("SWC_gs_t", "SWC_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$year, a_YY_gw_sub$SWC_ERA5, a_YY_gw$SWC_ERA5)
         trend_driver[id, c("SWC_gs_at")] <- cal_sens_slope(a_YY_gw_sub$year, a_YY_gw_sub$SWC_ERA5)
-        trend_driver[id, c("SWC_ngs_t", "SWC_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$year, a_YY_ngw_sub$SWC_ERA5, a_YY_ngw$SWC_ERA5)
-        trend_driver[id, c("SWC_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$year, a_YY_ngw_sub$SWC_ERA5)     
+        if (! site_ID %in% sites_grow_yearlong) {
+          trend_driver[id, c("SWC_ngs_t", "SWC_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$year, a_YY_ngw_sub$SWC_ERA5, a_YY_ngw$SWC_ERA5)
+          trend_driver[id, c("SWC_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$year, a_YY_ngw_sub$SWC_ERA5)
+        }
       }
       #
       trend_driver[id, c("SW_t", "SW_p")] <- cal_sens_slope_scale(a_YY_sub$TIMESTAMP, a_YY_sub$SW_IN_F_MDS, a_YY$SW_IN_F_MDS)
       trend_driver[id, c("SW_at")] <- cal_sens_slope(a_YY_sub$TIMESTAMP, a_YY_sub$SW_IN_F_MDS)
       trend_driver[id, c("SW_gs_t", "SW_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$year, a_YY_gw_sub$SW_IN_F_MDS, a_YY_gw$SW_IN_F_MDS)
       trend_driver[id, c("SW_gs_at")] <- cal_sens_slope(a_YY_gw_sub$year, a_YY_gw_sub$SW_IN_F_MDS)
-      trend_driver[id, c("SW_ngs_t", "SW_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$year, a_YY_ngw_sub$SW_IN_F_MDS, a_YY_ngw$SW_IN_F_MDS)
-      trend_driver[id, c("SW_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$year, a_YY_ngw_sub$SW_IN_F_MDS)
+      if (! site_ID %in% sites_grow_yearlong) {
+        trend_driver[id, c("SW_ngs_t", "SW_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$year, a_YY_ngw_sub$SW_IN_F_MDS, a_YY_ngw$SW_IN_F_MDS)
+        trend_driver[id, c("SW_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$year, a_YY_ngw_sub$SW_IN_F_MDS)
+      }
       #
       #
       trend_driver[id, c("LE_t", "LE_p")] <- cal_sens_slope_scale(a_YY_sub$TIMESTAMP, a_YY_sub$LE_F_MDS, a_YY$LE_F_MDS)
       trend_driver[id, c("LE_at")] <- cal_sens_slope(a_YY_sub$TIMESTAMP, a_YY_sub$LE_F_MDS)
       trend_driver[id, c("LE_gs_t", "LE_gs_p")] <- cal_sens_slope_scale(a_YY_gw_sub$year, a_YY_gw_sub$LE_F_MDS, a_YY_gw$LE_F_MDS)
       trend_driver[id, c("LE_gs_at")] <- cal_sens_slope(a_YY_gw_sub$year, a_YY_gw_sub$LE_F_MDS)
-      trend_driver[id, c("LE_ngs_t", "LE_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$year, a_YY_ngw_sub$LE_F_MDS, a_YY_ngw$LE_F_MDS)
-      trend_driver[id, c("LE_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$year, a_YY_ngw_sub$LE_F_MDS)
+      if (! site_ID %in% sites_grow_yearlong) {
+        trend_driver[id, c("LE_ngs_t", "LE_ngs_p")] <- cal_sens_slope_scale(a_YY_ngw_sub$year, a_YY_ngw_sub$LE_F_MDS, a_YY_ngw$LE_F_MDS)
+        trend_driver[id, c("LE_ngs_at")] <- cal_sens_slope(a_YY_ngw_sub$year, a_YY_ngw_sub$LE_F_MDS)
+      }
+      
       #
       # left join a_YY, a_YY_gw, and a_YY_ngw and put data into a data frame
       a_YY_gw_rename <- a_YY_gw
@@ -769,34 +782,6 @@ print(paste0('total number of site years with TA outliers is removed: ', TA_site
 write.csv(trend_driver, file.path("data", "potential_trend_driver_sen.csv"), row.names = F)
 
 write.csv(data_trend_driver, file.path("data", "data_trend_driver_sen.csv"), row.names = F)
-
-```
-
-
-```{r NEEtrend obs - FLUXCOM}
-# extract modeled NEE values at these sites
-# library(terra)
-# library(trend)
-# NEE_2001_2021 <- terra::rast('/Users/junnawang/YaleLab/data_server/carbon_trend_project/FLUXCOM_X_NEE_2001_2021.tif')
-# plot(NEE_2001_2021[[1]])
-# 
-# ext(NEE_2001_2021) <- c(-180, 180, -90, 90)
-# crs(NEE_2001_2021) <- "EPSG:4326"
-# 
-# NEE_2001_2021_sites <- terra::extract(NEE_2001_2021, sites_long[, c("Long", "Lat")])
-# 
-# NEE_trend <- data.frame(site_ID = sites_long$site_ID, NEE_at_fluxcom = 0)
-# for (i in 1:nrow(NEE_2001_2021_sites)) {
-#   NEE_trend$NEE_at_fluxcom[i] <- as.numeric(sens.slope(as.numeric(NEE_2001_2021_sites[i, ]))[1])
-# }
-# 
-# NEE_trend <- NEE_trend %>% left_join(trend_driver %>% filter(year_mid >= 2010) %>% group_by(site_ID) %>% summarise(NEE_at_obs = mean(NEE_at, na.rm=T)), by = 'site_ID')
-# # or use GPP trend based on SIF; which ever dataset to produce the best projection. 
-# plot(NEE_trend$NEE_at_fluxcom, NEE_trend$NEE_at_obs)
-# cor.test(NEE_trend$NEE_at_fluxcom, NEE_trend$NEE_at_obs)
-
-
-
 
 ```
 
