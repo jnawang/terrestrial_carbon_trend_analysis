@@ -780,9 +780,9 @@ trend_driver <- trend_driver %>%
 
 print(paste0('total number of site years with TA outliers is removed: ', TA_site_years_removed))
 
-write.csv(trend_driver, file.path("data", "potential_trend_driver_sen.csv"), row.names = F)
+write.csv(trend_driver, file.path("data", "potential_trend_driver.csv"), row.names = F)
 
-write.csv(data_trend_driver, file.path("data", "data_trend_driver_sen.csv"), row.names = F)
+write.csv(data_trend_driver, file.path("data", "data_trend_driver.csv"), row.names = F)
 
 ```
 

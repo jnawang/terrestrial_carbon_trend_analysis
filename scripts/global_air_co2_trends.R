@@ -5,17 +5,12 @@
 # 3. the annual amplitude is > 7 ppm. 
 
 # Junna Wang, 4/4/2026
-
 # New ideas for this analysis
 # cluster analysis of these sites
-# use relative magnitude
-# remove the year with measurement < 2 days a year
-# could we just look the amplitude of these valleys? the contribution of peaks and valleys on the amplitude. 
-# should we look at the zero-crossing date?
-# if we only use the sites above 50 degree N, could we see the increase in respiration activity ? or the sites between 50 and 70 degree. 
+# use scaled amplitude
+# should we look at the zero-crossing date? this will take more time. 
+# if we only use the sites above 40 degree N, we see the amplitude trend is more consistent with NEE trends. 
 # I really think the shape of the curve is likely to change; larger peak and lower valley; 
-
-
 
 
 
@@ -178,6 +173,10 @@ site_years_all <- df_obspack_co2_daily %>% filter(!is.na(co2)) %>%
 site_years_bad <- df_obspack_co2_daily %>% filter(!is.na(co2)) %>%
   group_by(site_ID, year) %>% summarise(nmonth = n_distinct(month), .groups = "drop") %>%
   filter(nmonth < 12) %>% select(site_ID, year)
+  # group_by(site_ID, year, month) %>% summarise(nobs = n(), .groups = "drop") %>% 
+  # filter(nobs >= 2) %>% 
+  # group_by(site_ID, year) %>% summarise(nmonth = n_distinct(month), .groups = "drop") %>% 
+  # filter(nmonth < 12) %>% select(site_ID, year)
 
 sites_good <- site_years_all %>%
   anti_join(site_years_bad, by = c("site_ID", "year")) %>% 
@@ -274,7 +273,7 @@ outfiles <- list.files(file.path("ccg_filter", "output"), full.names = F)
 for (outfile in outfiles) {
   df <- read.table(file.path("ccg_filter", "output", outfile), sep = '', skip = 3, header = FALSE)
   names(df) <- c('year', 'amp', 'amp_peak', 'month_max', 'day_max', 
-                                'amp_valley', 'month_valley', 'day_valley')
+                                'amp_valley', 'month_min', 'day_min')
   # remove bad years
   site <- substring(outfile, 1, 3)
   if (sum(site_years_bad$site_ID == site) > 0) {
@@ -283,17 +282,47 @@ for (outfile in outfiles) {
   co2_amp <- bind_rows(co2_amp, data.frame(site_ID = site, df))
 }
 
-co2_amp_feature <- co2_amp %>% group_by(site_ID) %>% summarise(amp_mean = mean(amp, na.rm = T)) %>%
+# use the mean of 2000-2010 to standardize time series. 
+co2_amp_feature <- co2_amp %>% filter(between(year, 2000, 2020)) %>% group_by(site_ID) %>% summarise(amp_mean = mean(amp, na.rm = T), 
+                                                               amp_peak_mean = mean(amp_peak, na.rm = T), 
+                                                               amp_valley_mean = mean(amp_valley, na.rm = T)) %>%
   left_join(all_sites_info_10yr_unique[, c('site_ID', 'climate_code', 'koppen', 'site_name', "site_latitude", "site_longitude")], by = 'site_ID')
 
-# mannually assign climate_code to sites not identified in the global climate map.
+# manually assign climate_code to sites not identified in the global climate map.
 co2_amp_feature$koppen[co2_amp_feature$site_ID %in% c("coi", "cya", "hba", "ice", "mqa", "psa", "syo")] <- 'cold'
 co2_amp_feature$koppen[co2_amp_feature$site_ID %in% c("hat", "bmw", "key", "kum", "mnm", "tap", "mid", "mlo")] <- 'warm'
 co2_amp_feature$koppen[co2_amp_feature$site_ID %in% c("nwr")] <- 'dry'
 
+# get relative amplitude
 if (!'koppen' %in% names(co2_amp)) {
-  co2_amp <- co2_amp %>% left_join(co2_amp_feature[, c('site_ID', 'koppen', "site_latitude", "site_longitude", "amp_mean")], by = 'site_ID')
+  co2_amp <- co2_amp %>% left_join(co2_amp_feature[, c('site_ID', 'koppen', "site_latitude", "site_longitude", "amp_mean", "amp_peak_mean", "amp_valley_mean")], by = 'site_ID')
 }
+co2_amp <- co2_amp %>% mutate(amp_rel = amp / amp_mean, 
+                              amp_peak_rel = amp_peak / amp_peak_mean, 
+                              amp_valley_rel = amp_valley / amp_valley_mean)
+
+co2_amp <- co2_amp %>% group_by(site_ID) %>% mutate(amp_scale = as.numeric(scale(amp)),
+                                                    amp_peak_scale = as.numeric(scale(amp_peak)),
+                                                    amp_valley_scale = as.numeric(scale(amp_valley))) %>% ungroup()
+
+# If a site is in southern hemisphere, its month should plus or minus 6 to be consistent with northern sites
+# Something wrong here. 
+co2_amp <- co2_amp %>% mutate(peak_doy = case_when(site_latitude >= 0 ~ yday(as.Date(paste(year, month_max, day_max, sep = "-"), format = "%Y-%b-%d")),
+                # match(month_max, month.abb) <= 6 & site_latitude <  0 ~ yday(as.Date(paste(year, month_max, day_max, sep = "-"), format = "%Y-%b-%d")) + 181, 
+                # match(month_max, month.abb) > 6  & site_latitude <  0 ~ yday(as.Date(paste(year, month_max, day_max, sep = "-"), format = "%Y-%b-%d")) - 181),
+                                                   site_latitude <  0 ~ yday(as.Date(paste(year, month_max, day_max, sep = "-"), format = "%Y-%b-%d")) - 181),
+                            valley_doy = case_when(site_latitude >= 0 ~ yday(as.Date(paste(year, month_min, day_min, sep = "-"), format = "%Y-%b-%d")),
+                # match(month_min, month.abb) <= 6 & site_latitude <  0 ~ yday(as.Date(paste(year, month_min, day_min, sep = "-"), format = "%Y-%b-%d")) + 181, 
+                # match(month_min, month.abb) > 6  & site_latitude <  0 ~ yday(as.Date(paste(year, month_min, day_min, sep = "-"), format = "%Y-%b-%d")) - 181
+                                                   site_latitude <  0 ~ yday(as.Date(paste(year, month_min, day_min, sep = "-"), format = "%Y-%b-%d")) + 181)        
+                                  )
+# Add more characteristics
+co2_amp_feature <- co2_amp_feature %>% left_join(co2_amp %>% filter(between(year, 2000, 2020)) %>% group_by(site_ID) %>% 
+                                                   summarise(peak_doy_mean = mean(peak_doy, na.rm=T), 
+                                                             valley_doy_mean = mean(valley_doy, na.rm=T), 
+                                                             amp_scale_mean = mean(amp_scale, na.rm=T), 
+                                                             amp_peak_scale_mean = mean(amp_peak_scale, na.rm=T), 
+                                                             amp_valley_scale_mean = mean(amp_valley_scale, na.rm=T), .groups = "drop"), by = "site_ID")  
 
 ###########
 sites <- unique(co2_amp$site_ID)
@@ -303,7 +332,8 @@ source(file.path("scripts", "00_functions.R"))
 
 # Characteristics of annual seasonal cycle for each site
 df_amp_at <- data.frame(site_ID = character(), year_mid = integer(), 
-                        amp_at = double(), amp_at_peak = double(), amp_at_valley = double())
+                        amp_at = double(), amp_at_peak = double(), amp_at_valley = double(), 
+                        amp_t = double(),  amp_t_peak = double(),  amp_t_valley = double())
 id = 1
 for (site in sites) {
   co2_amp_site <- co2_amp[co2_amp$site_ID == site, ]
@@ -324,26 +354,60 @@ for (site in sites) {
     df_amp_at[id, 8] <- cal_sens_slope_scale(df$year, df$amp_valley, df$amp_valley)[2]
     id = id + 1
   }
+
+
+  # site = "cba" # 'brw', "mlo"
+  p11 <- co2_amp %>% filter(site_ID == site) %>% 
+    ggplot(aes(x = year)) +  # , col = site
+    geom_line(aes(y = amp), linetype = 1) +
+    geom_line(aes(y = amp_peak), linetype = 2) + 
+    geom_line(aes(y = amp_valley), linetype = 3) + 
+    geom_hline(yintercept = 0, linetype = 3) +
+    labs(title = site) + 
+    theme_classic2()
+  plot(p11)
+  
+  p12 <- df_amp_at %>%  filter(site_ID == site) %>%      # "mlo", 'brw', 'alt', 'syo'
+    ggplot(aes(x = year_mid)) +  # , col = site
+    geom_line(aes(y = amp_at), linetype = 1) +
+    geom_line(aes(y = amp_at_peak), linetype = 2) +      # dashed.
+    geom_line(aes(y = amp_at_valley), linetype = 3) +
+    geom_hline(yintercept = 0, linetype = 3) +
+    labs(title = site) + 
+    theme_classic2()
+  plot(p12)
+
 }
+# df_amp_at %>% 
+#   ggplot(aes(x = year_mid)) +  # , col = site
+#   geom_point(aes(y = amp_at), cor = 'black') +
+#   geom_point(aes(y = amp_at_peak), cor = 'red') + 
+#   geom_point(aes(y = amp_at_valley), cor = 'blue') +
+#   geom_hline(yintercept = 0, linetype = 3) +
+#   labs(title = site) + 
+#   theme_classic2()
 
-site = "mlo" # 'brw'
-co2_amp %>% filter(site_ID == site) %>% 
-  ggplot(aes(x = year)) +  # , col = site
-  geom_line(aes(y = amp), linetype = 1) +
-  geom_line(aes(y = amp_peak), linetype = 2) + 
-  geom_line(aes(y = amp_valley), linetype = 3) + 
-  geom_hline(yintercept = 0, linetype = 3) +
-  labs(title = site) + 
-  theme_classic2()
-
-df_amp_at %>% filter(site_ID == site) %>%      # "mlo", 'brw', 'alt', 'syo'
-  ggplot(aes(x = year_mid)) +  # , col = site
-  geom_line(aes(y = amp_at), linetype = 1) +
-  geom_line(aes(y = amp_at_peak), linetype = 2) +      # dashed.
-  geom_line(aes(y = amp_at_valley), linetype = 3) +
-  geom_hline(yintercept = 0, linetype = 3) +
-  labs(title = site) + 
-  theme_classic2()
+# Add more characteristics
+co2_amp_feature <- co2_amp_feature %>% left_join(df_amp_at %>% filter(between(year_mid, 2005, 2015)) %>% 
+                                                   group_by(site_ID) %>% 
+                                                   summarise(amp_t_mean = mean(amp_t, na.rm=T), 
+                                                             amp_t_peak_mean = mean(amp_t_peak, na.rm=T), 
+                                                             amp_t_valley_mean = mean(amp_t_valley, na.rm=T), .groups = "drop"), by = 'site_ID')
+                                                   
+# a cluster analysis to group these sites based on its characters
+# df_cluster <- co2_amp_feature[, c("peak_doy_mean", "valley_doy_mean",
+#                                   "site_latitude", "site_longitude",
+#                                   "amp_scale_mean", "amp_peak_scale_mean", "amp_valley_scale_mean",
+#                                   "amp_t_mean", "amp_t_peak_mean", "amp_t_valley_mean")]
+# df_cluster_scale <- scale(df_cluster)
+# dist_mat <- dist(df_cluster_scale)
+# hc <- hclust(dist_mat, method = "ward.D2")
+# plot(hc)
+# 
+# # Cut into clusters:
+# df_cluster$cluster <- cutree(hc, k = 3)
+# co2_amp_feature$cluster <- cutree(hc, k = 3)
+# this is not used because it does not make lots of sense. 
 
 ###########overall trend of all climates
 df_amp_at_group <- data.frame()
@@ -355,15 +419,17 @@ for (climate_veg in climate_vegs) {
   NEEtrend <- data.frame(year_mid=integer(), nsite = integer(),
                          amp=double(), Tlmer=double(), Tlmerlow=double(), Tlmerup=double(),
                          amp_peak=double(), Tlmer_peak=double(), Tlmerlow_peak=double(), Tlmerup_peak=double(),
-                         amp_valley=double(), Tlmer_valley=double(), Tlmerlow_valley=double(), Tlmerup_valley=double()
-                         )  
+                         amp_valley=double(), Tlmer_valley=double(), Tlmerlow_valley=double(), Tlmerup_valley=double(), 
+                         peak_doy = double(), peak_doylow = double(), peak_doyup = double(),
+                         valley_doy = double(), valley_doylow = double(), valley_doyup = double()
+                         )
   #
   if (climate_veg == 'cold') {
-    data <- co2_amp %>% filter(koppen == "cold") %>% filter(amp_mean > 5) # filter(between(site_latitude, 45, 90))
+    data <- co2_amp %>% filter(koppen == "cold") # %>% filter(between(site_latitude, 40, 90)) %>% filter(amp_mean > 5) # filter(between(site_latitude, 40, 90))
   } else if (climate_veg == 'warm') {
-    data <- co2_amp %>% filter(koppen == "warm") %>% filter(amp_mean > 5)
+    data <- co2_amp %>% filter(koppen == "warm") # %>% filter(amp_mean > 5)
   } else if (climate_veg == 'dry') {
-    data <- co2_amp %>% filter(koppen == "dry") %>% filter(amp_mean > 5)
+    data <- co2_amp %>% filter(koppen == "dry") # %>% filter(amp_mean > 5)
   }
   # data <- co2_amp 
   
@@ -374,21 +440,43 @@ for (climate_veg in climate_vegs) {
   for (iwindow in year_start:(year_end - window_size + 1)) {
     print(iwindow)
     subdata <- data %>% filter(between(year, iwindow, iwindow + window_size - 1))   
-    mod_lmer <- lmer(data=subdata, amp ~ year + (1 | site_ID))
-    mod_lmer_peak <- lmer(data=subdata, amp_peak ~ year + (1 | site_ID))
-    mod_lmer_valley <- lmer(data=subdata, amp_valley ~ year + (1 | site_ID))
+    # mod_lmer <- lmer(data=subdata, amp ~ year + (1 | site_ID))
+    # mod_lmer_peak <- lmer(data=subdata, amp_peak ~ year + (1 | site_ID))
+    # mod_lmer_valley <- lmer(data=subdata, amp_valley ~ year + (1 | site_ID))
+    
+    mod_lmer <- lm(data=subdata, amp_scale ~ year)
+    mod_lmer_peak <- lm(data=subdata, amp_peak_scale ~ year)
+    mod_lmer_valley <- lm(data=subdata, amp_valley_scale ~ year)
+    
+    mod_lmer_peak_doy <- lm(data=subdata, peak_doy ~ year)
+    mod_lmer_valley_doy <- lm(data=subdata, valley_doy ~ year)
+    
     #
     NEEtrend[iwindow-year_start, 1] <- iwindow + (window_size - 1) / 2
     NEEtrend[iwindow-year_start, 2] <- length(unique(subdata$site_ID))
-    NEEtrend[iwindow-year_start, 3] <- mean(subdata$amp[subdata$year == NEEtrend[iwindow-year_start, 1]], na.rm = T)
+    NEEtrend[iwindow-year_start, 3] <- mean(subdata$amp_rel[subdata$year == NEEtrend[iwindow-year_start, 1]], na.rm = T)
     NEEtrend[iwindow-year_start, 4] <- summary(mod_lmer)$coefficients[2,c(1)]
-    NEEtrend[iwindow-year_start, 5:6] <- confint(mod_lmer, parm = "beta_", method = "profile")[2,1:2]
-    NEEtrend[iwindow-year_start, 7] <- mean(subdata$amp_peak[subdata$year == NEEtrend[iwindow-year_start, 1]], na.rm = T)
+    # NEEtrend[iwindow-year_start, 5:6] <- confint(mod_lmer, parm = "beta_", method = "profile")[2,1:2]
+    NEEtrend[iwindow-year_start, 5:6] <- confint(mod_lmer)[2, 1:2]
+    
+    NEEtrend[iwindow-year_start, 7] <- mean(subdata$amp_peak_rel[subdata$year == NEEtrend[iwindow-year_start, 1]], na.rm = T)
     NEEtrend[iwindow-year_start, 8] <- summary(mod_lmer_peak)$coefficients[2,c(1)]
-    NEEtrend[iwindow-year_start, 9:10] <- confint(mod_lmer_peak, parm = "beta_", method = "profile")[2,1:2]
-    NEEtrend[iwindow-year_start, 11] <- mean(subdata$amp_valley[subdata$year == NEEtrend[iwindow-year_start, 1]], na.rm = T)
+    # NEEtrend[iwindow-year_start, 9:10] <- confint(mod_lmer_peak, parm = "beta_", method = "profile")[2,1:2]
+    NEEtrend[iwindow-year_start, 9:10] <- confint(mod_lmer_peak)[2, 1:2]
+    
+    NEEtrend[iwindow-year_start, 11] <- mean(subdata$amp_valley_rel[subdata$year == NEEtrend[iwindow-year_start, 1]], na.rm = T)
     NEEtrend[iwindow-year_start, 12] <- summary(mod_lmer_valley)$coefficients[2,c(1)]
-    NEEtrend[iwindow-year_start, 13:14] <- confint(mod_lmer_valley, parm = "beta_", method = "profile")[2,1:2]
+    # NEEtrend[iwindow-year_start, 13:14] <- confint(mod_lmer_valley, parm = "beta_", method = "profile")[2,1:2]
+    NEEtrend[iwindow-year_start, 13:14] <- confint(mod_lmer_valley)[2, 1:2]
+    
+    NEEtrend[iwindow-year_start, 15] <- summary(mod_lmer_peak_doy)$coefficients[2,c(1)]
+    # NEEtrend[iwindow-year_start, 13:14] <- confint(mod_lmer_valley, parm = "beta_", method = "profile")[2,1:2]
+    NEEtrend[iwindow-year_start, 16:17] <- confint(mod_lmer_peak_doy)[2, 1:2]
+    
+    NEEtrend[iwindow-year_start, 18] <- summary(mod_lmer_valley_doy)$coefficients[2,c(1)]
+    # NEEtrend[iwindow-year_start, 13:14] <- confint(mod_lmer_valley, parm = "beta_", method = "profile")[2,1:2]
+    NEEtrend[iwindow-year_start, 19:20] <- confint(mod_lmer_valley_doy)[2, 1:2]
+    
   }
   
   #-----------
@@ -432,6 +520,26 @@ for (climate_veg in climate_vegs) {
     theme_classic()
   print(p3)    
   
+  p4 <- ggplot(data = NEEtrend, aes(x=year_mid, y = peak_doy)) +
+    geom_line(col = 'green') +
+    geom_point(col = 'green') +
+    geom_errorbar(aes(ymin=peak_doylow, ymax=peak_doyup)) +
+    geom_hline(yintercept = 0) +
+    lims(x=c(1990, 2020)) +
+    labs(title = climate_veg) +
+    theme_classic()
+  print(p4)  
+
+  p5 <- ggplot(data = NEEtrend, aes(x=year_mid, y = valley_doy)) +
+    geom_line(col = 'green') +
+    geom_point(col = 'green') +
+    geom_errorbar(aes(ymin=valley_doylow, ymax=valley_doyup)) +
+    geom_hline(yintercept = 0) +
+    lims(x=c(1990, 2020)) +
+    labs(title = climate_veg) +
+    theme_classic()
+  print(p5)   
+  
   # merge them together
   df_amp_at_group <- bind_rows(df_amp_at_group, data.frame(climate_veg = climate_veg, NEEtrend))
 }
@@ -444,4 +552,7 @@ write.csv(df_amp_at_group, file.path("data", "air_co2_amp_trend.csv"), row.names
 # warm: 8 sites
 # dry: 13 sites
 # cold: 29 sites
+# We have 13 sites in southern hemisphere. 
 
+
+# in wet-warm climate, valley is moving afterward. in other climates, vally and peak timings remained. 

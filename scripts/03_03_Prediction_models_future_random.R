@@ -10,7 +10,7 @@ rm(list=ls())
 library(librarian)
 shelf(tidyverse, ggpubr, lme4, dagitty, lmerTest, brms, randomForest, glmmTMB, performance, ranger, caret, Metrics, rsample, terra)
 
-trend_driver <- read.csv(file.path("data", "potential_trend_driver_sen.csv"))
+trend_driver <- read.csv(file.path("data", "potential_trend_driver.csv"))
 sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
 
 # adding IGBP, climate, and category into trend driver
@@ -47,8 +47,8 @@ if (!'category' %in% names(trend_driver)) {
 # we only use significant variables
 climate_vegs <- c('cold_evergreen_forest', 'cold_deciduous_forest', 'cold_non_forest', 'dry', 'wet-warm')
 key_vars <- c('CO2 + LE_gs_at + TA_gs_at + TA_ngs_at', 
-              'SW_gs_at + Lgs_at',                # we could remove CO2 and TA_ngs_at; CO2 + TA_ngs_at + LE_gs_at
-              'P_gs_at',                          # we should remove CO2 + LE_gs_at
+              'SW_gs_at + Lgs_at + TA_ngs_at + CO2', 
+              'P_gs_at',                          
               'LE_gs_at + TA_gs_at + SW_gs_at + P_ngs_at + SWC_gs_at', 
               'CO2 + TA_at + SW_at + DIST_at')
 
@@ -205,20 +205,20 @@ for (iclimate_veg in 1:length(climate_vegs)) {
 df_performance %>% filter(var == 'NEE_at') %>% filter(test) %>% group_by(climate_veg) %>% 
   summarise(rmse_rf = sqrt(mean((obs-rf)^2)), r2 = cor(obs, rf)^2)
 # climate_veg           rmse_rf    r2
-# 1 cold_deciduous_forest   10.3  0.568
-# 2 cold_evergreen_forest   12.7  0.437
-# 3 cold_non_forest          8.59 0.434
-# 4 dry                      7.84 0.499
-# 5 wet-warm                13.6  0.590
+# 1 cold_deciduous_forest    9.53 0.655
+# 2 cold_evergreen_forest   12.6  0.447
+# 3 cold_non_forest          8.75 0.412
+# 4 dry                      7.90 0.493
+# 5 wet-warm                13.5  0.605
  
 df_performance %>% filter(var == 'NEE_at') %>% filter(!test) %>% group_by(climate_veg) %>% 
   summarise(rmse_rf = sqrt(mean((obs-rf)^2)), r2 = cor(obs, rf)^2)
 # climate_veg           rmse_rf    r2
-# 1 cold_deciduous_forest    5.76 0.888
-# 2 cold_evergreen_forest    5.59 0.936
-# 3 cold_non_forest          3.75 0.925
-# 4 dry                      3.83 0.925
-# 5 wet-warm                 6.32 0.939
+# 1 cold_deciduous_forest    4.59 0.942
+# 2 cold_evergreen_forest    5.62 0.935
+# 3 cold_non_forest          3.91 0.918
+# 4 dry                      3.77 0.932
+# 5 wet-warm                 6.30 0.939
 
 df_performance %>% filter(var == 'DIST_at') %>% filter(test) %>% group_by(climate_veg) %>% 
   summarise(rmse_rf = sqrt(mean((obs-rf)^2)), r2 = cor(obs, rf)^2)
@@ -230,7 +230,7 @@ df_performance %>% filter(var == 'DIST_at') %>% filter(!test) %>% group_by(clima
 
 df_performance %>% filter(var == 'Lgs_at') %>% filter(test) %>% group_by(climate_veg) %>% 
   summarise(rmse_rf = sqrt(mean((obs-rf)^2)), r2 = cor(obs, rf)^2)
-# cold_deciduous_forest   0.830 0.355
+# cold_deciduous_forest   0.819 0.372
 
 df_performance %>% filter(var == 'Lgs_at') %>% filter(!test) %>% group_by(climate_veg) %>% 
   summarise(rmse_rf = sqrt(mean((obs-rf)^2)), r2 = cor(obs, rf)^2)
@@ -242,4 +242,4 @@ df_performance %>% filter(var == 'SWC_gs_at') %>% filter(test) %>% group_by(clim
 
 df_performance %>% filter(var == 'SWC_gs_at') %>% filter(!test) %>% group_by(climate_veg) %>% 
   summarise(rmse_rf = sqrt(mean((obs-rf)^2)), r2 = cor(obs, rf)^2)
-# dry 0.0850 0.946
+# dry 0.0878 0.941

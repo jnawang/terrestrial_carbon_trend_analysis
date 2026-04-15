@@ -25,7 +25,7 @@ shelf(tidyverse, ggpubr, lme4, dagitty, lmerTest, brms, randomForest, glmmTMB, p
 
 ```{r prepare for data}
 # check calculated results
-trend_driver <- read.csv(file.path("data", "potential_trend_driver_sen.csv"))
+trend_driver <- read.csv(file.path("data", "potential_trend_driver.csv"))
 sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
 
 # adding IGBP, climate, and category into trend driver
@@ -63,7 +63,7 @@ run_adjusted_model <- function(
   backend = "cmdstanr",
   iter = 4000,
   adapt_delta = 0.99,
-  max_treedepth = 15, 
+  max_treedepth = 20, 
   effect_type = c("direct", "total")
 ) {
   effect_type <- match.arg(effect_type)
@@ -279,7 +279,7 @@ ggplot(data=data_cold_evergreen_forest, aes(x=GPP_at, y=NEE_at)) +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
 
-summary(lm(data = data_cold_evergreen_forest[data_cold_evergreen_forest$year_mid <= 2015 & data_cold_evergreen_forest$year_mid >= 2010, ], NEE_at ~ GPP_at))
+# summary(lm(data = data_cold_evergreen_forest[data_cold_evergreen_forest$year_mid <= 2015 & data_cold_evergreen_forest$year_mid >= 2010, ], NEE_at ~ GPP_at))
 # no relationship for different period....
 
 
@@ -627,6 +627,7 @@ DAG_dry <- dagitty("dag {
   DIST_at -> NEE_at
   CO2 -> DIST_at
   TA_gs_at -> DIST_at
+  SW_gs_at -> DIST_at
   P_gs_at -> DIST_at
   P_ngs_at -> DIST_at
   DIST_at -> LE_gs_at
@@ -852,8 +853,8 @@ ggplot(aes(x=GPP_at, y=NEE_at)) +
 summary(lm(data = data_wet[data_wet$year_mid > 2010, ], NEE_at ~ GPP_at))
 
 
-write.csv(row.names = F, df_total_effect, file.path('data', 'effect_total_NEE_trend_driver_sen.csv'))
-write.csv(row.names = F, df_direct_effect, file.path('data', 'effect_direct_NEE_trend_driver_sen.csv'))
+write.csv(row.names = F, df_total_effect, file.path('data', 'effect_total_NEE_trend_driver.csv'))
+write.csv(row.names = F, df_direct_effect, file.path('data', 'effect_direct_NEE_trend_driver.csv'))
 
 ```
 

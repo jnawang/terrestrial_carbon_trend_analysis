@@ -37,11 +37,11 @@ ta_ngs_past <- terra::rast(file.path('data', 't2m_ngs_2005_2023.tif')) - 273.15
 ta_gs_fut <- terra::rast(file.path('data', 'tas_gs_2026_2050.tif')) - 273.15
 ta_ngs_fut <- terra::rast(file.path('data', 'tas_ngs_2026_2050.tif')) - 273.15
 #
-# Junna need to modify this later; 4/8/2026; tentatively get yearly results
-tp_gs_past <- terra::rast(file.path('data', 'tp_gs_2005_2023.tif')) * 1000 * 24    * 180   # convert unit from m/hr to mm/day
-tp_ngs_past <- terra::rast(file.path('data', 'tp_ngs_2005_2023.tif')) * 1000 * 24  * 180   # convert unit from m/hr to mm/day 
-tp_gs_fut <- terra::rast(file.path('data', 'pr_gs_2026_2050.tif')) * 86400         * 180   # convert mm/s to mm/day
-tp_ngs_fut <- terra::rast(file.path('data', 'pr_ngs_2026_2050.tif')) * 86400       * 180   # convert mm/s to mm/day
+# precipitation unit conversion
+tp_gs_past <- terra::rast(file.path('data', 'tp_gs_2005_2023.tif')) * 1000 * 24      # convert unit from m/hr to mm/day
+tp_ngs_past <- terra::rast(file.path('data', 'tp_ngs_2005_2023.tif')) * 1000 * 24    # convert unit from m/hr to mm/day 
+tp_gs_fut <- terra::rast(file.path('data', 'pr_gs_2026_2050.tif')) * 86400           # convert mm/s to mm/day
+tp_ngs_fut <- terra::rast(file.path('data', 'pr_ngs_2026_2050.tif')) * 86400         # convert mm/s to mm/day
 
 sw_gs_past <- terra::rast(file.path('data', "ssrd_gs_2005_2023.tif")) / 3600       # convert J m⁻² to W m⁻² 
 sw_gs_fut <- terra::rast(file.path('data', "rsds_gs_2026_2050.tif"))               # no need for conversion
@@ -115,7 +115,7 @@ DIST_at_wet_fut <- terra::resample(DIST_at_wet_fut, land_cover)
 
 ####################################projection starts here################################
 # project growing-season length trends
-trend_driver <- read.csv(file.path("data", "potential_trend_driver_sen.csv"))
+trend_driver <- read.csv(file.path("data", "potential_trend_driver.csv"))
 sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
 
 # adding IGBP, climate, and category into trend driver
@@ -126,11 +126,10 @@ if (!'category' %in% names(trend_driver)) {
 #
 climate_vegs <- c('cold_ENF', 'cold_DBF', 'cold_nonforest', 'dry', 'wet')
 key_vars <- c('CO2 + LE_gs_at + TA_gs_at + TA_ngs_at', 
-              'SW_gs_at + Lgs_at',                # we could remove CO2 + TA_ngs_at + LE_gs_at
-              'P_gs_at',                          # we should remove CO2 + LE_gs_at
-              'LE_gs_at + TA_gs_at + SW_gs_at + P_ngs_at + SWC_gs_at',
-              'CO2 + TA_gs_at + SW_gs_at + DIST_at')       # In wet climate, we assumed growing season is the whole year. 
-
+              'SW_gs_at + Lgs_at + TA_ngs_at + CO2', 
+              'P_gs_at',                          
+              'LE_gs_at + TA_gs_at + SW_gs_at + P_ngs_at + SWC_gs_at', 
+              'CO2 + TA_at + SW_at + DIST_at')
 #
 NEE_trend_past <- zone_group
 NEE_trend_fut <- zone_group
@@ -214,20 +213,20 @@ for (iclimate_veg in 1:length(climate_vegs)) {
       mtry = m_try, 
       min.node.size = min_node_size
     )
-    df_project_past$Lgs_at <- predict(rf_model, data = df_project_past)
-    df_project_fut$Lgs_at <- predict(rf_model, data = df_project_fut)
+    df_project_past$Lgs_at <- predict(rf_model, data = df_project_past)$predictions
+    df_project_fut$Lgs_at <- predict(rf_model, data = df_project_fut)$predictions
   }
   #
   if (climate_veg == 'dry') {
     rf_model <- ranger(
       formula = paste0("SWC_gs_at ~ TA_gs_at + SW_gs_at + P_gs_at + LE_gs_at", " + MAP + MAT + NEE + GPP + LE + Climate.class + AI"), 
-      data = data_group_cv, 
+      data = data_group, 
       mtry = m_try, 
       min.node.size = min_node_size,
       importance = "permutation"
     )
-    df_project_past$SWC_gs_at <- predict(rf_model, data = df_project_past)
-    df_project_fut$SWC_gs_at <- predict(rf_model, data = df_project_fut)
+    df_project_past$SWC_gs_at <- predict(rf_model, data = df_project_past)$predictions
+    df_project_fut$SWC_gs_at <- predict(rf_model, data = df_project_fut)$predictions
   }
   
   #--------------project for NEE_at
@@ -237,6 +236,13 @@ for (iclimate_veg in 1:length(climate_vegs)) {
     mtry = m_try, 
     min.node.size = min_node_size
   )
+  
+  if (climate_veg == 'wet') {
+    # for wet-warm climate, we need to rename variable names; growing season is the whole year; 
+    df_project_past <- df_project_past %>% rename(TA_at = TA_gs_at, SW_at = SW_gs_at) 
+    df_project_fut  <- df_project_fut  %>% rename(TA_at = TA_gs_at, SW_at = SW_gs_at)
+  }
+  #
   df_project_past$NEE_at <- predict(rf_model, data = df_project_past)$predictions
   df_project_fut$NEE_at <- predict(rf_model, data = df_project_fut)$predictions
   
@@ -252,4 +258,9 @@ terra::plot(NEE_trend_fut - NEE_trend_past)
 
 hist(terra::values(NEE_trend_fut - NEE_trend_past))
 density(terra::values(NEE_trend_fut - NEE_trend_past), na.rm=T)
+quantile(terra::values(NEE_trend_fut - NEE_trend_past), probs = c(0.95, 0.75, 0.5, 0.25, 0.05), na.rm = T)
+
+# writeRaster(NEE_trend_past, filename = file.path('data', 'NEE_trend_2005-2023.tif'), overwrite=TRUE)
+# writeRaster(NEE_trend_fut, filename = file.path('data', 'NEE_trend_2026-2045.tif'), overwrite=TRUE)
+writeRaster(NEE_trend_fut - NEE_trend_past, filename = file.path('data', 'NEE_trend_change.tif'), overwrite=TRUE)
 
