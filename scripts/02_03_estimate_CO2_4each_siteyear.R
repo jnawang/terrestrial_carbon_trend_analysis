@@ -21,7 +21,9 @@ source(file.path("scripts", "00_functions.R"))
 df_file_structure <- get_rawflux_file_structure(dir_rawdata)
 
 a_YY_all <- data.frame(site_ID=character(), TIMESTAMP=integer(), NEE_VUT_REF=double(), 
-                       GPP_VUT_REF=double(), RECO_VUT_REF=double(), CO2_F_MDS=double())
+                       GPP_VUT_REF=double(), RECO_VUT_REF=double(), 
+                       GPP_NT_VUT_REF=double(), RECO_NT_VUT_REF=double(), 
+                       GPP_DT_VUT_REF=double(), RECO_DT_VUT_REF=double())
 #
 sites_long$nyear <- 0
 #
@@ -42,18 +44,53 @@ for (i in 1:nrow(sites_long)) {
   # plot(a_YY_good$TIMESTAMP, a_YY_good$GPP_NT_VUT_REF, main=site_ID)
   # plot(a_YY_good$TIMESTAMP, a_YY_good$RECO_NT_VUT_REF, main=site_ID)
   
-  if (sites_long$NEEpartition[i] == 'DT' & "CO2_F_MDS" %in% names(a_YY_good)) {
-    df <- a_YY_good[, c("TIMESTAMP", "NEE_VUT_REF", "GPP_DT_VUT_REF", "RECO_DT_VUT_REF", "CO2_F_MDS")]
-  } else if (sites_long$NEEpartition[i] == 'NT' & "CO2_F_MDS" %in% names(a_YY_good)) {
-    df <- a_YY_good[, c("TIMESTAMP", "NEE_VUT_REF", "GPP_NT_VUT_REF", "RECO_NT_VUT_REF", "CO2_F_MDS")]
+  # correct GPP
+  if ("GPP_NT_VUT_REF" %in% names(a_YY_good)) {
+    idx <- is.na(a_YY_good$GPP_NT_VUT_REF) & !is.na(a_YY_good$RECO_NT_VUT_REF) & !is.na(a_YY_good$NEE_VUT_REF)   
+    a_YY_good$GPP_NT_VUT_REF[idx] <- a_YY_good$RECO_NT_VUT_REF[idx] - a_YY_good$NEE_VUT_REF[idx]
+  }
+  if ("GPP_DT_VUT_REF" %in% names(a_YY)) {
+    idx <- is.na(a_YY_good$GPP_DT_VUT_REF) & !is.na(a_YY_good$RECO_DT_VUT_REF) & !is.na(a_YY_good$NEE_VUT_REF)         
+    a_YY_good$GPP_DT_VUT_REF[idx] <- a_YY_good$RECO_DT_VUT_REF[idx] - a_YY_good$NEE_VUT_REF[idx]
+  }
+  
+  #
+  if (sites_long$NEEpartition[i] == 'DT') {
+    df <- a_YY_good[, c("TIMESTAMP", "NEE_VUT_REF", "GPP_DT_VUT_REF", "RECO_DT_VUT_REF")]
+  } else {
+    df <- a_YY_good[, c("TIMESTAMP", "NEE_VUT_REF", "GPP_NT_VUT_REF", "RECO_NT_VUT_REF")]
   }
   names(df)[3:4] <- c("GPP_VUT_REF", "RECO_VUT_REF")
+  
   # remove unreasonable GPP and RECO. 
   df[df$GPP_VUT_REF < 10 | is.na(df$GPP_VUT_REF), 3:4] <- NA
+  
+  if ("GPP_NT_VUT_REF" %in% names(a_YY_good)) {
+    df$GPP_NT_VUT_REF <- a_YY_good$GPP_NT_VUT_REF
+    df$RECO_NT_VUT_REF <- a_YY_good$RECO_NT_VUT_REF
+  } else {
+    df$GPP_NT_VUT_REF <- NA
+    df$RECO_NT_VUT_REF <- NA
+  }
+  
+  if ("GPP_DT_VUT_REF" %in% names(a_YY)) {
+    df$GPP_DT_VUT_REF <- a_YY_good$GPP_DT_VUT_REF
+    df$RECO_DT_VUT_REF <- a_YY_good$RECO_DT_VUT_REF
+  } else {
+    df$GPP_DT_VUT_REF <- NA
+    df$RECO_DT_VUT_REF <- NA
+  }
+  
+  # adding CO2 concentration
+  if ('CO2_F_MDS' %in% names(a_YY_good)) {
+    df$CO2_F_MDS <- a_YY_good$CO2_F_MDS
+  } else {
+    df$CO2_F_MDS <- NA
+  }
   #
   a_YY_all <- rbind(a_YY_all, data.frame(site_ID=site_ID, df))
 }
-
+# 
 # Adding IGBP and categories
 if (!'category' %in% names(a_YY_all)) {
   a_YY_all <- a_YY_all %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by = "site_ID")
@@ -62,15 +99,15 @@ if (!'category' %in% names(a_YY_all)) {
 a_YY_all_decade <- a_YY_all %>% filter(between(TIMESTAMP,1990, 2000))
 summary(lmer(data = a_YY_all_decade, CO2_F_MDS ~ TIMESTAMP + (1 | site_ID)))
 
-a_YY_all %>% 
+a_YY_all %>%
   ggplot(aes(x=TIMESTAMP, y=CO2_F_MDS, color=site_ID)) +
   geom_point() +
   geom_line() +
-  labs(x='Year', y='CO2 concentration (ppm)') + 
-  theme_classic() + 
+  labs(x='Year', y='CO2 concentration (ppm)') +
+  theme_classic() +
   theme(legend.position = "none")
 
-write.csv(a_YY_all[, 1:6], file = file.path("data", "a_YY_all.csv"), row.names = F)
+# write.csv(a_YY_all[, 1:6], file = file.path("data", "a_YY_all.csv"), row.names = F)
 ######end of Step 1-------------------------------------------------------------------------------
 
 ######Step 2: pick up site-years with good CO2 measurements from our flux datasets---------------- 
@@ -81,7 +118,7 @@ write.csv(a_YY_all[, 1:6], file = file.path("data", "a_YY_all.csv"), row.names =
 # data_BASE <- amf_read_base('/Users/junnawang/Downloads/drive-download-20260204T075928Z-3-001/AMF_US-SP3_BASE-BADM_3-1.zip', parse_timestamp=TRUE, unzip = T)
 # plot(data_BASE$TIMESTAMP, data_BASE$CO2_2)
 
-a_YY_all <- read.csv(file = file.path("data", "a_YY_all.csv"))
+# a_YY_all <- read.csv(file = file.path("data", "a_YY_all.csv"))
 
 # 29 sites with good CO2
 flux_sites_good_CO2 <- c('CA-Ca1', 'CA-Oas', 'CA-Obs', "CH-Fru", "DE-Obe", "DE-RuR", "DE-Tha", "FI-Hyy",
@@ -167,8 +204,6 @@ a_YY_co2_good %>%
   labs(x='Year', y='CO2 concentration (ppm)') + 
   theme_classic() + 
   theme(legend.position = "none")
-
-a_YY_co2_good %>% filter(CO2_F_MDS < 350)
 
 ######end of Step 2------------------------------------------------------------------------ 
 
