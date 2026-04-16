@@ -254,7 +254,7 @@ for (exposure_var in exposure_vars) {
 df_total_effect
 
 #-------------------------------------------------------------------------------
-ggplot(data=data_cold_evergreen_forest, aes(x=CO2, y=NEE_at)) + 
+ggplot(data=data_cold_evergreen_forest, aes(x=CO2, y=NEE_at, col = site_ID)) + 
   geom_point() +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
@@ -274,7 +274,7 @@ ggplot(data=data_cold_evergreen_forest, aes(x=SW_gs_at, y=NEE_at)) +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
 
-ggplot(data=data_cold_evergreen_forest, aes(x=GPP_at, y=NEE_at)) + 
+ggplot(data=data_cold_evergreen_forest, aes(x=CO2, y=ER_at, col = site_ID)) +  # , col = site_ID
   geom_point() +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
@@ -282,6 +282,7 @@ ggplot(data=data_cold_evergreen_forest, aes(x=GPP_at, y=NEE_at)) +
 # summary(lm(data = data_cold_evergreen_forest[data_cold_evergreen_forest$year_mid <= 2015 & data_cold_evergreen_forest$year_mid >= 2010, ], NEE_at ~ GPP_at))
 # no relationship for different period....
 
+# With increasing co2, when GPP_at for most sites is declining, but ER stays the same, NEP will decline more significantly.  
 
 ```
 
@@ -421,7 +422,13 @@ ggplot(data=data_cold_deciduous_forest, aes(x=GPP_at, y=NEE_at)) +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
 
-summary(lm(data = data_cold_deciduous_forest[data_cold_deciduous_forest$year_mid > 2010, ], NEE_at ~ GPP_at))
+ggplot(data=data_cold_deciduous_forest, aes(x=CO2, y=ER_at, col = site_ID)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+# Respiration increased with CO2 increase. 
+# summary(lm(data = data_cold_deciduous_forest[data_cold_deciduous_forest$year_mid > 2010, ], NEE_at ~ GPP_at))
 
 ```
 
@@ -712,11 +719,16 @@ ggplot(data=data_dry, aes(x=LE_ngs_at, y=NEE_at, col=site_ID)) +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
 
+ggplot(data=data_dry, aes(x=CO2, y=NEE_at, col=site_ID)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
 ggplot(data=data_dry, aes(x=GPP_at, y=NEE_at)) + 
   geom_point() +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
-summary(lm(data = data_dry[data_dry$year_mid > 2010, ], NEE_at ~ GPP_at))
+# summary(lm(data = data_dry[data_dry$year_mid > 2010, ], NEE_at ~ GPP_at))
 
 
 ```
@@ -841,6 +853,11 @@ ggplot(data=data_wet, aes(x=P_at, y=NEE_at)) +
   stat_cor(color='purple')
 
 ggplot(data=data_wet, aes(x=SWC_at, y=NEE_at)) + 
+  geom_point() +
+  geom_smooth(method = lm) +
+  stat_cor(color='purple')
+
+ggplot(data=data_wet, aes(x=CO2, y=ER_at, col = site_ID)) +  # , col = site_ID
   geom_point() +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
