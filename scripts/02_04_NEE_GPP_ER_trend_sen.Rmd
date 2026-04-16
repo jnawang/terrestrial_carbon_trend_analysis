@@ -94,8 +94,11 @@ for (i in 1:nrow(sites_long)) {
   }
   
   # adding CO2 concentration
-  df$CO2_F_MDS <- a_YY_good$CO2_F_MDS
-  
+  if ('CO2_F_MDS' %in% names(a_YY_good)) {
+    df$CO2_F_MDS <- a_YY_good$CO2_F_MDS
+  } else {
+    df$CO2_F_MDS <- NA
+  }
   #
   a_YY_all <- rbind(a_YY_all, data.frame(site_ID=site_ID, df))
 }
