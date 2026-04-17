@@ -257,37 +257,34 @@ for (i in 1:nrow(sites_long)) {
   }
 
   
-  # Junna temporarily commentted these lines in order to test partition methods
-  if (i %in% c(6, 7, 15, 33, 36, 56, 66, 68, 69, 73, 76, 79, 81, 84, 
-               92, 93, 95, 98, 100, 115, 116, 118, 121, 125, 133, 
-               134, 138, 141, 142, 144, 153, 154, 155, 157)) {
-    if (sites_long$NEEpartition[i] == 'DT') {
-      a_DD$GPP <- pmax(a_DD$GPP_NT_VUT_REF, 0.0)
-    } else {
-      next
-    }
-    
-  } else {
-    next
-  }
-  
-  
-  
-  # #
-  # # using nighttime GPP for the following sites
-  # # have at least 5-year data and not in the bad daytime partitioned sites and GPP should be positive
-  # if (sum(!is.na(a_DD$GPP_DT_VUT_REF)) >= 5*365 & sites_long$NEEpartition[i] == 'DT') {
-  #   a_DD$GPP <- pmax(a_DD$GPP_DT_VUT_REF, 0.0)
+  # # Junna temporarily use these lines in order to test effects of partition methods
+  # if (i %in% c(6, 7, 15, 33, 36, 56, 66, 68, 69, 76, 79, 81,
+  #              92, 93, 95, 98, 100, 115, 116, 118, 121, 125, 133, 
+  #              134, 138, 141, 142, 144, 154, 155, 157)) {
+  #   if (sites_long$NEEpartition[i] == 'DT') {
+  #     a_DD$GPP <- pmax(a_DD$GPP_NT_VUT_REF, 0.0)
+  #   } else {
+  #     next
+  #   }
   # } else {
-  #   a_DD$GPP <- pmax(a_DD$GPP_NT_VUT_REF, 0.0)
+  #   next
   # }
-  # 
-  # # deal with US-Ho1, use GPP_DT if available, otherwise use GPP_NT
-  # if (site_ID %in% c("US-Ho1", "US-Ho2")) {
-  #   # US-Ho2 has missing years
-  #   a_DD$GPP[!is.na(a_DD$GPP_DT_VUT_REF)] <- a_DD$GPP_DT_VUT_REF[!is.na(a_DD$GPP_DT_VUT_REF)]
-  # }
-  # 
+  
+  #
+  # using nighttime GPP for the following sites
+  # have at least 5-year data and not in the bad daytime partitioned sites and GPP should be positive
+  if (sum(!is.na(a_DD$GPP_DT_VUT_REF)) >= 5*365 & sites_long$NEEpartition[i] == 'DT') {
+    a_DD$GPP <- pmax(a_DD$GPP_DT_VUT_REF, 0.0)
+  } else {
+    a_DD$GPP <- pmax(a_DD$GPP_NT_VUT_REF, 0.0)
+  }
+
+  # deal with US-Ho1, use GPP_DT if available, otherwise use GPP_NT
+  if (site_ID %in% c("US-Ho1", "US-Ho2")) {
+    # US-Ho2 has missing years
+    a_DD$GPP[!is.na(a_DD$GPP_DT_VUT_REF)] <- a_DD$GPP_DT_VUT_REF[!is.na(a_DD$GPP_DT_VUT_REF)]
+  }
+
   ggplot(data=a_DD, aes(x=TIMESTAMP, y=GPP)) +
     geom_point()
   #
@@ -493,7 +490,7 @@ for (i in 1:nrow(sites_long)) {
 }
 #
 data_grow_season <- data_grow_season[!is.na(data_grow_season$year), ]
-write.csv(data_grow_season, file.path('data', 'growing_season_yearly_TEST.csv'), row.names = F)
+write.csv(data_grow_season, file.path('data', 'growing_season_yearly.csv'), row.names = F)
 # save the data frame
 # look into these sites
 # dryland flux should be modeled in different ways. to understand their drivers in more detail. 
