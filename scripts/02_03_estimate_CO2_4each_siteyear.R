@@ -555,4 +555,146 @@ a_YY_co2_gap_filled %>%
 # save the new dataset
 write.csv(a_YY_co2_gap_filled, file = file.path("data", "a_YY_co2_gap_filled.csv"), row.names = F)
 
-######end of Step 5----------------------------------------------------------------------------------
+######end of Step 5------------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------------------------------
+# Extra work to test model performance
+flux_sites_test <- c('CA-Ca1', "CH-Fru", "DE-Obe", "FI-Hyy", "FR-FBn", 
+                     "IT-Ro2", "JP-Tak", "US-GLE", "US-KL3", "US-SRG")
+
+a_YY_co2_test <- data.frame()
+
+for (fluxsite in flux_sites_test) {
+  i <- which(sites_long$site_ID == fluxsite)
+  dist_km_point <- dist_km(
+    lat0 = sites_long$Lat[i], lon0 = sites_long$Long[i],
+    lat  = baseline_lat_long$site_latitude,
+    lon  = baseline_lat_long$site_longitude
+  )
+  # get index of second smallest point, because the smallest point would be itself
+  idx <- order(dist_km_point)[2]
+  
+  # get observation data
+  obs <- df_obspack_ec_co2_yearly %>% filter(site == baseline_lat_long$site[idx]) %>% 
+    select(c(year, co2)) %>% rename('value' = 'co2') %>% filter(year >= 1990)
+  obs_t <- match(obs$year, years)
+  
+  # get trend information
+  # the default trend
+  beta_mu <- c(1.81, 2.04, 2.36, 2.85)
+  beta_se <- c(0.5, 0.5, 0.6, 0.6)
+  # update trend using the period trends of nearby 20 sites
+  # remove the one overlapped with the test site. 
+  idx <- order(dist_km_point)[2:21]
+  
+  # it has to include one site with > 35 years of data to cover the trend from 1990 to 2025
+  if (max(baseline_lat_long$nyear[idx]) < 35) {
+    idx <- c(idx, id_baseline_longterm[which.min(dist_km_point[id_baseline_longterm])])
+  }
+  
+  subdata <- df_obspack_ec_co2_yearly %>% filter(site %in% baseline_lat_long$site[idx])
+  for (j in unique(period)) {
+    subdata_period <- subdata %>% filter(year %in% years[period == j])
+    if (length(unique(subdata_period$site)) > 1) {
+      mod <- lmer(data = subdata_period, co2 ~ year + (1 | site))
+      beta_mu[j] = fixef(mod)[2]        
+    } else {
+      mod <- lm(data = subdata_period, co2 ~ year)
+      beta_mu[j] = coef(mod)[2]        
+    }
+  }
+  
+  # get stan data
+  stan_data <- list(
+    T = T,
+    P = 4,
+    N_obs = nrow(obs),
+    obs_t = obs_t,
+    y_obs = obs$value,
+    period = period,
+    beta_mu = beta_mu,
+    beta_se = beta_se
+  )
+  
+  # run the model
+  fit <- stan(
+    model_code = stan_code,
+    data = stan_data,
+    chains = 4,
+    iter = 2000,
+    control = list(
+      adapt_delta = 0.99,
+      max_treedepth = 15
+    )
+  )
+  
+  # get y values
+  post <- rstan::extract(fit)
+  y_mean <- apply(post$y, 2, mean)
+  
+  a_YY_co2_test <- bind_rows(a_YY_co2_test, data.frame(site_ID = fluxsite, TIMESTAMP = years, co2 = y_mean))
+}
+
+a_YY_co2_test <- a_YY_co2_test %>% 
+  left_join(a_YY_co2_good[, c("site_ID", "TIMESTAMP", "CO2_F_MDS")], by = c("site_ID", "TIMESTAMP")) %>% 
+  filter(!is.na(CO2_F_MDS))
+
+# R2 and RMSE
+cor(a_YY_co2_test$co2, a_YY_co2_test$CO2_F_MDS)^2
+sqrt(mean((a_YY_co2_test$co2 - a_YY_co2_test$CO2_F_MDS)^2))
+
+#-------------------------------------------------------------
+# make a plot for supplementary information
+# good data from tower, opspack, inferred results, model performance
+# 76 sites
+p1 <- ggplot(data = a_YY_co2_good, aes(x = TIMESTAMP, y = CO2_F_MDS, col = site_ID)) +
+  geom_point() +
+  geom_line() + 
+  lims(x = c(1990, 2026), y = c(330, 460)) +
+  labs(x = 'Year', y = expression('Atmospheric CO'[2] ~ ' concentration (ppm)'), 
+       title = 'High-quality observations at tower sites', tag = 'a') +
+  theme_classic2() +
+  theme(legend.position = 'None')
+p1
+
+# 100 sites
+p2 <- ggplot(data = df_obspack_co2_yearly, aes(x = year, y = co2, col = dataset_name)) +
+  geom_point() + 
+  geom_line() + 
+  # lims(x = c(1990, 2026), y = c(330, 460)) +
+  labs(x = 'Year', y = expression('Atmospheric CO'[2] ~ ' concentration (ppm)'), 
+       title = "Observations from NOAA ObsPack datasets", tag = 'b') +
+  theme_classic2() +
+  theme(legend.position = 'None')
+p2
+
+# 81 sites
+p3 <- a_YY_co2_gap_filled %>% filter(!site_ID %in% c(flux_sites_good_CO2, flux_sites_partial_good_CO2)) %>%
+  ggplot(aes(x = TIMESTAMP, y = CO2_F_MDS, col = site_ID)) +
+  geom_point() + 
+  geom_line() + 
+  # lims(x = c(1990, 2026), y = c(330, 460)) +
+  labs(x = 'Year', y = expression('Atmospheric CO'[2] ~ ' concentration (ppm)'), 
+       title = expression("Inferred CO"[2] ~ "for data-limited tower sites"), tag = 'c') +
+  theme_classic2() +
+  theme(legend.position = 'None')
+p3
+
+p4 <- ggplot(data = a_YY_co2_test, aes(x = co2, y = CO2_F_MDS, col = site_ID)) +
+  geom_point() + 
+  geom_line() +
+  geom_abline(slope = 1, intercept = 0, col = 'black', linetype = 'dashed') +
+  # lims(x = c(1990, 2026), y = c(330, 460)) +
+  labs(x = expression('Inferred CO'[2] ~ ' concentration (ppm)'), 
+       y = expression('Observed CO'[2] ~ ' concentration (ppm)'), 
+       title = 'Model performance evaluation', tag = 'd') +
+  geom_text(x = 427, y = 422, label = "1:1 line", col = 'black') +
+  geom_text(x = 385, y = 430, label = "R^2 == 0.81 * ';' ~ italic(p) < 0.001",
+            parse = TRUE, size = 5) +
+  theme_classic2() +
+  theme(legend.position = 'None')
+p4
+
+plot_grid(p1, p2, p3, p4, nrow=2, ncol=2, align='hv')
+# ggsave(file.path('/Users/junnawang/Downloads/', 'co2_performance.png'), width = 10, height = 10, units = "in")
+
