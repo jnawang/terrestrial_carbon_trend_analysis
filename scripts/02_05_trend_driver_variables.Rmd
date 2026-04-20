@@ -299,7 +299,7 @@ for (site in sites_all) {
   df_disturbance <- bind_rows(df_disturbance, df)
 }
 #
-write.csv(df_disturbance, file = 'LAI_reduction_disturbance.csv', row.names = F)
+# write.csv(df_disturbance, file = 'LAI_reduction_disturbance.csv', row.names = F)
 
 ```
 

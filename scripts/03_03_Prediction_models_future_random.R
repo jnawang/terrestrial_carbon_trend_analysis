@@ -131,7 +131,7 @@ for (iclimate_veg in 1:length(climate_vegs)) {
     )
     pred_rf <- predict(rf_model, data = data_group)
     plot(pred_rf$predictions, data_group$NEE_at, main = climate_veg)
-    # print(importance(rf_model))
+    print(importance(rf_model))
     
     #-------------------------------combination of lmm and RF---------------------
     df_performance <- bind_rows(df_performance, data.frame(climate_veg = climate_veg, site_ID = data_group$site_ID, 
