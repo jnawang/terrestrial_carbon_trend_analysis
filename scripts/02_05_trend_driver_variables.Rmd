@@ -143,6 +143,9 @@ data_LAI_south <- data_LAI %>%
   
 data_LAI <- bind_rows(data_LAI_north, data_LAI_south)
 
+  # LAI data at IT-Cp2 and > 2020 had abrupt change, so not used.
+data_LAI <- data_LAI %>% filter(!(ID == "IT-Cp2" & year > 2020))
+
 # write.csv(data_LAI, file.path("data", 'modis_LAI.csv'), row.names = F)
 # data_LAI <- read.csv(file.path("data", 'modis_LAI.csv'))
 
@@ -295,7 +298,7 @@ for (site in sites_all) {
     summarise(deficit_obs = sum(deficit_obs, na.rm=T) * 4 / LAI_gs, .groups = 'drop') 
   
   plot(df$year, df$deficit_obs, main = site)
-    
+  
   df_disturbance <- bind_rows(df_disturbance, df)
 }
 #
