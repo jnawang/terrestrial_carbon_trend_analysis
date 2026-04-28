@@ -233,7 +233,7 @@ sites_long$Climate.class[sites_long$Climate.class == "Bsk"] <- "BSk"
 ```
 
 
-```{r remove some years}
+```{r remove some outlier years}
 ##this chunk generates the years we should remove; 
 # it takes about 1-2 hour.
 data_length_thresh <- 10

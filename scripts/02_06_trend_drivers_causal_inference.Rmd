@@ -847,7 +847,7 @@ ggplot(data=data_wet, aes(x=TA_at, y=NEE_at)) +
   geom_smooth(method = lm) +
   stat_cor(color='purple')
 
-ggplot(data=data_wet, aes(x=P_at, y=NEE_at)) + 
+ggplot(data=data_wet, aes(x=DIST_at, y=NEE_at, col = site_ID)) + 
   geom_point() +
   geom_smooth(method = lm) +
   stat_cor(color='purple')

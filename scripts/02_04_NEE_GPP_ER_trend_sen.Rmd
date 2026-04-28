@@ -81,16 +81,16 @@ for (i in 1:nrow(sites_long)) {
     df$GPP_NT_VUT_REF <- a_YY_good$GPP_NT_VUT_REF
     df$RECO_NT_VUT_REF <- a_YY_good$RECO_NT_VUT_REF
   } else {
-    df$GPP_NT_VUT_REF <- NA
-    df$RECO_NT_VUT_REF <- NA
+    df$GPP_NT_VUT_REF <- a_YY_good$GPP_DT_VUT_REF
+    df$RECO_NT_VUT_REF <- a_YY_good$RECO_DT_VUT_REF
   }
 
   if ("GPP_DT_VUT_REF" %in% names(a_YY)) {
     df$GPP_DT_VUT_REF <- a_YY_good$GPP_DT_VUT_REF
     df$RECO_DT_VUT_REF <- a_YY_good$RECO_DT_VUT_REF
   } else {
-    df$GPP_DT_VUT_REF <- NA
-    df$RECO_DT_VUT_REF <- NA
+    df$GPP_DT_VUT_REF <- a_YY_good$GPP_NT_VUT_REF
+    df$RECO_DT_VUT_REF <- a_YY_good$RECO_DT_VUT_REF
   }
   
   # adding CO2 concentration
