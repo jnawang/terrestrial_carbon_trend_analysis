@@ -286,7 +286,7 @@ for (climate_veg in climate_vegs) {
   NEEtrend_all <- bind_rows(NEEtrend_all, data.frame(climate_veg = climate_veg, NEEtrend))
 }
 
-
+# write.csv(data.frame(window = window_size, NEEtrend_all), file = file.path('data', 'NEEtrend.csv'), row.names = F)
 
 ```
 
@@ -421,8 +421,128 @@ p3 <- ggplot(data = ERtrend, aes(x=year_mid, y = Tlmer)) +
   # merge them together
   GPPtrend_all <- bind_rows(GPPtrend_all, data.frame(climate_veg = climate_veg, GPPtrend))
   ERtrend_all <- bind_rows(ERtrend_all, data.frame(climate_veg = climate_veg, ERtrend))
-
 }
+
+```
+
+
+```{r GPP and ER trends, daytime or nighttime dominated}
+
+library(librarian)
+shelf(lme4, ggplot2, tidyverse, lmerTest)
+# 
+if (!'category' %in% names(a_YY_all)) {
+  a_YY_all <- a_YY_all %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by = "site_ID")
+}
+
+# get trends using local regression of 15 years, 13 years, and 10 years
+window_size = 15
+
+GPPtrend_all <- data.frame()
+ERtrend_all <- data.frame()
+# using all sites or sites within certain category. 
+climate_vegs <- c('cold_evergreen_forest', 'cold_deciduous_forest', 'cold_non_forest', 'dry', 'wet-warm')
+
+for (climate_veg in climate_vegs) {
+  NEEtrend <- data.frame(year_mid=integer(), nsite = integer(),
+            Tlm=double(), plm=double(), Tlmlow=double(), Tlmup=double(), 
+            Tlmer=double(), plmer=double(), Tlmerlow=double(), Tlmerup=double())  
+  #
+  if (climate_veg == 'cold_evergreen_forest') {
+    data <- a_YY_all %>%   
+      filter(IGBP %in% c('ENF', 'EBF') & category == "cold")
+  } else if (climate_veg == 'cold_deciduous_forest') {
+    data <- a_YY_all %>%  
+      filter(IGBP %in% c('DBF', 'DNF', 'MF') & category == "cold")
+  } else if (climate_veg == 'cold_non_forest') {
+    data <- a_YY_all %>%  
+      filter(!IGBP %in% c('ENF', 'EBF', 'DBF', 'DNF', 'MF') & category == "cold") 
+  } else if (climate_veg == 'dry') {
+    data <- a_YY_all %>% filter(category == 'dry')
+  } else if (climate_veg == 'wet-warm') {
+    data <- a_YY_all %>% filter(category == 'wet')
+  }
+
+  # data <- a_YY_all %>% filter(category == 'cold')
+  
+  year_start <- min(data$TIMESTAMP)
+  year_end <- max(data$TIMESTAMP)
+  
+  # try these without intervals
+  GPPtrend <- data.frame(year_mid=integer(), nsite = integer(),
+              Tlm=double(), plm=double(), Tlmlow=double(), Tlmup=double(), 
+              Tlmer=double(), plmer=double(), Tlmerlow=double(), Tlmerup=double())
+  #
+  ERtrend <- data.frame(year_mid=integer(), nsite = integer(),
+              Tlm=double(), plm=double(), Tlmlow=double(), Tlmup=double(), 
+              Tlmer=double(), plmer=double(), Tlmerlow=double(), Tlmerup=double())
+  #
+  for (iwindow in year_start:(year_end - window_size + 1)) {
+    print(iwindow)
+    subdata <- data %>% filter(between(TIMESTAMP, iwindow, iwindow + window_size - 1))   
+    # this part can be adjusted, the part about window_size
+    site_ID_selected <- subdata %>% group_by(site_ID) %>% 
+      summarise(nyear = max(TIMESTAMP) - min(TIMESTAMP) + 1) %>% 
+      filter(nyear >= min(window_size - 2, 10)) %>% pull(site_ID) 
+    
+    if (length(site_ID_selected) <= 5 | iwindow < 1995) next
+    
+    subdata <- subdata %>% filter(site_ID %in% site_ID_selected) %>% filter(GPP_DT_VUT_REF < 5000 &  RECO_DT_VUT_REF < 5000) # remove abnormal values. 
+    
+    # Are they robust to DT and NT partition methods? 
+    #### GPP trends first, GPP_DT_VUT_REF , GPP_NT_VUT_REF
+    ## Partitioning methods were not in the model. 
+    mod_lm <- lm(data=subdata, GPP_NT_VUT_REF ~ TIMESTAMP + site_ID)
+    mod_lmer <- lmer(data=subdata, GPP_NT_VUT_REF ~ TIMESTAMP + (1 | site_ID))
+
+    # print(summary(mod_lmer))
+    GPPtrend[iwindow-year_start, 1] <- iwindow + (window_size - 1) / 2
+    GPPtrend[iwindow-year_start, 2] <- length(site_ID_selected)
+    GPPtrend[iwindow-year_start, 3:4] <- summary(mod_lm)$coefficients[2,c(1,4)]
+    GPPtrend[iwindow-year_start, 5:6] <- confint(mod_lm)[2, 1:2]
+    GPPtrend[iwindow-year_start, 7:8] <- summary(mod_lmer)$coefficients[2,c(1,5)]
+    GPPtrend[iwindow-year_start, 9:10] <- confint(mod_lmer, parm = "beta_", method = "profile")[2,1:2]
+    
+    #### ER trends second: RECO_DT_VUT_REF, RECO_NT_VUT_REF
+    mod_lm <- lm(data=subdata, RECO_NT_VUT_REF ~ TIMESTAMP + site_ID)
+    mod_lmer <- lmer(data=subdata, RECO_NT_VUT_REF ~ TIMESTAMP + (1 | site_ID))
+    #
+    ERtrend[iwindow-year_start, 1] <- iwindow + (window_size - 1) / 2
+    ERtrend[iwindow-year_start, 2] <- length(site_ID_selected)
+    ERtrend[iwindow-year_start, 3:4] <- summary(mod_lm)$coefficients[2,c(1,4)]
+    ERtrend[iwindow-year_start, 5:6] <- confint(mod_lm)[2, 1:2]
+    ERtrend[iwindow-year_start, 7:8] <- summary(mod_lmer)$coefficients[2,c(1,5)]
+    ERtrend[iwindow-year_start, 9:10] <- confint(mod_lmer, parm = "beta_", method = "profile")[2,1:2]
+  }
+  
+  #-----------------------------------Look at the results------------------------
+  p2 <- ggplot(data = GPPtrend, aes(x=year_mid, y = Tlmer)) +
+      geom_line(col = 'green') +
+      geom_point(col = 'green') +
+     geom_errorbar(aes(ymin=Tlmerlow, ymax=Tlmerup)) +
+      geom_hline(yintercept = 0) +
+      lims(x=c(2000, 2020), y=c(-25, 30)) +
+      labs(title = climate_veg, x = 'Mid-year of moving window', y = 'GPPTrend') +
+      theme_classic()
+    print(p2)
+    
+  p3 <- ggplot(data = ERtrend, aes(x=year_mid, y = Tlmer)) +
+      geom_line(col = 'green') +
+      geom_point(col = 'green') +
+     geom_errorbar(aes(ymin=Tlmerlow, ymax=Tlmerup)) +
+      geom_hline(yintercept = 0) +
+      lims(x=c(2000, 2020), y=c(-25, 30)) +
+      labs(title = climate_veg, x = 'Mid-year of moving window', y = 'ERTrend') +
+      theme_classic()
+    print(p3)
+    
+  # merge them together
+  GPPtrend_all <- bind_rows(GPPtrend_all, data.frame(climate_veg = climate_veg, GPPtrend))
+  ERtrend_all <- bind_rows(ERtrend_all, data.frame(climate_veg = climate_veg, ERtrend))
+}
+
+write.csv(data.frame(method = 'nighttime', GPPtrend_all), file = file.path('data', 'GPPtrend.csv'), row.names = F)
+write.csv(data.frame(method = 'nighttime', ERtrend_all), file = file.path('data', 'ERtrend.csv'), row.names = F)
 
 
 

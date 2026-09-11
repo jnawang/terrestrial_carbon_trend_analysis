@@ -555,4 +555,3 @@ write.csv(df_amp_at_group, file.path("data", "air_co2_amp_trend.csv"), row.names
 # We have 13 sites in southern hemisphere. 
 
 
-# in wet-warm climate, valley is moving afterward. in other climates, vally and peak timings remained. 

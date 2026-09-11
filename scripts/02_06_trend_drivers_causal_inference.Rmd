@@ -155,6 +155,7 @@ DAG_cold_evergreen_forest <- dagitty("dag {
   
   CO2 -> TA_gs_at
   CO2 -> SW_gs_at
+  CO2 -> P_gs_at
   CO2 -> LE_gs_at
   CO2 -> SWC_gs_at
   CO2 -> Lgs_at
