@@ -1,0 +1,945 @@
+---
+title: "make_supplementary_figures"
+output: html_document
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r library}
+rm(list=ls())
+#
+library(librarian)
+shelf(tidyverse, ggpubr, lme4, dagitty, ggridges, patchwork, cowplot, foreign, MASS, ggtext, trend, tidyterra, terra, ggExtra, ggforce, png, grid, broom, ggnewscale, ggrepel, viridis, RColorBrewer, )
+
+dir_rawdata <- '/Volumes/WZZ_disk/Carbon_trend/SiteData'
+#
+dir_fig <- '/Users/junnawang/YaleLab/manuscript2/figures'
+
+```
+
+
+```{r features of study sites}
+# A figure indicating the composition of study sites. 
+sites_long <- read.csv(file.path("data2026", "long_term_ec_sites.csv"))
+a_YY_all <- read.csv(file.path("data2026", "a_YY_carbon_flux_all.csv"))
+
+tmp <- a_YY_all %>% group_by(site_ID) %>% summarise(nYear = sum(!is.na(NEE_VUT_REF)), .groups = "drop")
+
+p1 <- ggplot(tmp, aes(x = nYear)) +
+  geom_histogram(binwidth = 1, fill = "grey", color = "white") +
+  labs(x = "Number of years", y = "Number of sites", title = "Histogram of NEP measurement duration", tag = "a") +
+  theme_classic()
+
+
+sites_long <- sites_long %>% mutate(Climate.class = factor(Climate.class, levels = c("BSh", "BSk", "BWh", "BWk", "Csa", "Csb", 
+                                                                                     "Am", "Aw", "Cfa", "Cfb", "Cwa", "Cwb", 
+                                                                                     "Dfa", "Dfb", "Dfc", "Dfd", "Dsb", "Dwb", "Dwc", "ET")))
+p3 <- ggplot(sites_long, aes(x = Climate.class)) +
+  geom_bar(fill = "steelblue", color = "white") +
+  labs(x = "Climate class", y = "Number of sites", tag = "c") +
+  theme_classic()
+
+sites_long <- sites_long %>% mutate(IGBP = factor(IGBP, levels = c("ENF", "EBF", "DBF", "DNF", "MF", "GRA","WET", "OSH", "SAV", "WSA", "CSH")))
+p4 <- ggplot(sites_long, aes(x = IGBP)) +
+  geom_bar(fill = "darkseagreen4", color = "white") +
+  labs(x = "Vegetation type", y = "Number of sites", tag = "d") +
+  theme_classic()
+
+
+sites_long_mutate <- sites_long %>% 
+  mutate(group = case_when(category=='wet' ~ "Wet-warm climate: all ecosystems",
+                           category=='dry' ~ "Dry climate: all ecosystems",
+                           IGBP %in% c("ENF") & category=='cold' ~ "Wet-cold climate: ENF",
+                           IGBP %in% c("DBF", "MF", "DNF") & category=='cold' ~ "Wet-cold climate: DBF+DNF+MF",
+                           !IGBP %in% c("ENF", "EBF","DBF", "MF", "DNF") & category=='cold' ~ "Wet-cold climate: non-forest")) %>%
+  mutate(group = factor(group, levels=c("Wet-cold climate: ENF",
+                                        "Wet-cold climate: DBF+DNF+MF",
+                                        "Wet-cold climate: non-forest",
+                                        "Wet-warm climate: all ecosystems", 
+                                        "Dry climate: all ecosystems")))
+
+custom_colors <- c(
+  "Wet-cold climate: ENF" = "#2bb673",
+  "Wet-cold climate: DBF+DNF+MF" = "#8dc63f",
+  "Wet-cold climate: non-forest" = "#a2e0f6",
+  "Wet-warm climate: all ecosystems" = "#facecf",
+  "Dry climate: all ecosystems" = "#f3e089"
+)
+
+pie_dat <- sites_long_mutate %>%
+  count(group) %>%
+  mutate(
+    prop = n / sum(n),
+    label = case_when(
+      group == "Wet-cold climate: ENF" ~ paste0("Wet-cold climate:\nENF\n", n, " sites\n", round(prop * 100, 1), "%"),
+      group == "Wet-cold climate: DBF+DNF+MF" ~ paste0("Wet-cold climate:\nDBF+DNF+MF\n", n, " sites\n", round(prop * 100, 1), "%"),
+      group == "Wet-cold climate: non-forest" ~ paste0("Wet-cold climate:\nnon-forest\n", n, " sites\n", round(prop * 100, 1), "%"),
+      group == "Wet-warm climate: all ecosystems" ~ paste0("Wet-warm climate:\nall ecosystems\n", n, " sites\n", round(prop * 100, 1), "%"),
+      group == "Dry climate: all ecosystems" ~ paste0("Dry climate:\nall ecosystems\n", n, " sites\n", round(prop * 100, 1), "%")
+    )
+  )
+
+p2 <- ggplot(pie_dat, aes(x = "", y = n, fill = group)) +
+  geom_col(width = 1, color = "white") +
+  geom_text(
+    aes(label = label),
+    position = position_stack(vjust = 0.5),
+    size = 3.5,
+    lineheight = 0.9
+  ) +
+  coord_polar(theta = "y") +
+  scale_fill_manual(values = custom_colors) +
+  labs(title = "Five climate-vegetation groups", tag = "b") + 
+  theme_void() +
+  theme(legend.position = "none")
+
+p1_2 <- plot_grid(p1, p2, nrow = 1, ncol = 2, align = "hv")
+p3_4 <- plot_grid(p3, p4, nrow = 2, ncol = 1, align = "hv")
+
+plot_grid(p1_2, p3_4, nrow = 2, ncol = 1, rel_heights = c(1, 1.5), align = "hv")
+ggsave(file.path(dir_fig, 'FigS1_site_features.png'), width = 10, height = 12, units = "in", bg = "white")
+
+```
+
+
+```{r statistics of site-level carbon flux}
+
+trend_driver <- read.csv(file.path("data2026", "potential_trend_driver.csv"))
+a_YY <- read.csv(file.path("data2026", "a_YY_carbon_flux_all.csv"))
+
+a_YY_site <- a_YY %>% group_by(site_ID) %>%
+  summarise(NEE = mean(NEE_VUT_REF, na.rm = T), 
+            GPP = mean(GPP_VUT_REF, na.rm = T), 
+            ER = mean(RECO_VUT_REF, na.rm = T))
+
+# daytime dominated methods
+p1 <- ggplot(data = a_YY_site, aes(x = -NEE)) +
+  geom_histogram() +
+  labs(x = expression("Net ecosystem production (" * g~m^{-2}~yr^{-1} * ")"), 
+       y = 'Number of sites', tag = 'a') +
+  theme_classic()
+
+p2 <- ggplot(data = a_YY_site, aes(x = GPP)) +
+  geom_histogram() +
+  labs(x = expression("Gross primary production (" * g~m^{-2}~yr^{-1} * ")"), 
+       y = 'Number of sites', tag = 'b') +
+  lims(x = c(0, 4000)) + 
+  theme_classic()
+
+p3 <- ggplot(data = a_YY_site, aes(x = ER)) +
+  geom_histogram() +
+  labs(x = expression("Ecosystem respiration (" * g~m^{-2}~yr^{-1} * ")"), 
+       y = 'Number of sites', tag = 'c') +
+  theme_classic()
+
+p4 <- ggplot(data = trend_driver, aes(x = -NEE_at)) +
+  geom_histogram() +
+  labs(x = expression("Net ecosystem production trend (" * g~m^{-2}~yr^{-2} * ")"), 
+       y = 'Number of site-windows', tag = 'd') +
+  theme_classic()
+p4
+
+p5 <- ggplot(data = trend_driver, aes(x = GPP_at)) +
+  geom_histogram() +
+  labs(x = expression("Gross primary production trend (" * g~m^{-2}~yr^{-2} * ")"), 
+       y = 'Number of site-windows', tag = 'e') +
+  theme_classic()
+p5
+
+p6 <- ggplot(data = trend_driver, aes(x = ER_at)) +
+  geom_histogram() +
+  labs(x = expression("Ecosystem respiration trend (" * g~m^{-2}~yr^{-2} * ")"), 
+       y = 'Number of site-windows', tag = 'f') +
+  theme_classic()
+p6
+
+plot_grid(p1, p2, p3, p4, p5, p6, nrow=2, ncol=3) 
+ggsave(file.path(dir_fig, 'FigS_carbon_flux_quality_check.png'), width = 10.5, height = 8, units = "in")
+
+
+```
+
+
+```{r atmosphere CO2 concentration data}
+# A map of air CO2 site distribution
+co2_amp <- data.frame()
+outfiles <- list.files(file.path("ccg_filter", "output"), full.names = F)
+for (outfile in outfiles) {
+  df <- read.table(file.path("ccg_filter", "output", outfile), sep = '', skip = 3, header = FALSE)
+  names(df) <- c('year', 'amp', 'amp_peak', 'month_max', 'day_max', 
+                                'amp_valley', 'month_min', 'day_min')
+  # remove bad years
+  site <- substring(outfile, 1, 3)
+  # if (sum(site_years_bad$site_ID == site) > 0) {
+  #   df <- df %>% filter(!year %in% site_years_bad$year[site_years_bad$site_ID == site])
+  # }
+  co2_amp <- bind_rows(co2_amp, data.frame(site_ID = site, df))
+}
+
+# How many years of data each site has? >= 22 years of data.  
+sites_CO2 <- unique(co2_amp$site_ID)
+
+
+# look at atmospheric CO2
+read_obspack_metadata <- function(file) {
+  # file <- files[1]
+  print(file)
+  
+  # read file as text
+  txt <- readLines(file, warn = FALSE)
+  
+  # keep key : value lines
+  meta_lines <- txt[grepl(":", txt)]
+  
+  # split into key / value
+  kv <- strsplit(meta_lines, "\\s*:\\s*")
+  meta_df <- data.frame(
+    key = sapply(kv, `[`, 1),
+    value = sapply(kv, `[`, 2),
+    stringsAsFactors = FALSE
+  )
+  
+  # extract fields
+  dataset_start <- ymd_h(
+    meta_df$value[meta_df$key == "dataset_start_date"],
+    tz = "UTC"
+  )
+  dataset_stop <- ymd_h(
+    meta_df$value[meta_df$key == "dataset_stop_date"],
+    tz = "UTC"
+  )
+  
+  data_duration_years <- time_length(
+    interval(dataset_start, dataset_stop),
+    "year"
+  )
+  
+  data.frame(
+    site_name = meta_df$value[meta_df$key == "site_name"],
+    # site_country = meta_df$value[meta_df$key == "site_country"],
+    site_latitude = as.numeric(meta_df$value[meta_df$key == "site_latitude"]),
+    site_longitude = as.numeric(meta_df$value[meta_df$key == "site_longitude"]),
+    site_elevation = as.numeric(meta_df$value[meta_df$key == "site_elevation"]),
+    dataset_name = meta_df$value[meta_df$key == "dataset_name"],
+    dataset_project = meta_df$value[meta_df$key == "dataset_project"],
+    dataset_start_date = dataset_start,
+    dataset_stop_date = dataset_stop,
+    data_duration_years = round(data_duration_years, 2),
+    stringsAsFactors = FALSE
+  )
+}
+files <- list.files('/Users/junnawang/YaleLab/data_CO2/obspack_co2_1_GLOBALVIEWplus_v11.0_2026-01-12_daily/metadata', pattern = '.txt', full.names = T)
+all_sites_info <- do.call(rbind, lapply(files, read_obspack_metadata))
+all_sites_info$site_ID <- substr(all_sites_info$dataset_name, 5, 7)
+#
+df_CO2_site_info <- left_join(data.frame(site_ID = sites_CO2), all_sites_info[, c("site_ID", "site_latitude", "site_longitude")], by = "site_ID")
+#
+
+mundi <- terra::vect(rnaturalearthdata::coastline110)
+mundi <- terra::crop(mundi,ext(c(-180,180,-60,90)))
+p1 <- ggplot() +
+  geom_spatvector(data = mundi, linewidth = .2) +
+  geom_hline(yintercept=0, linetype = "dotted", colour = "grey") + 
+  geom_point(data=df_CO2_site_info, aes(x=site_longitude, y=site_latitude, color="Sites"), shape = 15, stroke = 0.5) +      # , color='royalblue'
+  scale_color_manual(name = NULL, values = c("Sites" = "royalblue")) +
+  labs(x='Longitude', y='Latitude', title = expression("Global distribution of long-term (>20 years) atmospheric " * CO[2] * " monitoring sites"), tag = "a") + 
+  coord_sf(expand=FALSE, xlim = c(-180, 180), ylim = c(-60, 80)) + 
+  # guides(size = "none") +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank(), panel.border = element_rect(colour = "black")) +
+  theme(
+    legend.position = c(0.15, 0.15),
+    legend.text = element_text(size = 10),
+    legend.key.height = unit(0.5, "cm"),
+    legend.key.width  = unit(0.5, "cm"),
+    legend.spacing.y  = unit(0.1, "cm"),
+    legend.background = element_rect(fill = "transparent", color = NA),
+    legend.box.background = element_rect(fill = "transparent", color = NA),
+    legend.key = element_rect(fill = "transparent", color = NA)
+  )
+p1
+
+# 
+bmw_air <- read.csv(file.path('ccg_filter', 'data', 'bmw.txt'), sep = " ", header = FALSE)
+names(bmw_air) <- c('time', 'co2')
+
+# bmw_amp <- read.csv(file.path('ccg_filter', 'output', 'bmw.txt'))        # brw
+co2_amp_site <- read.table(file.path("ccg_filter", "output", 'bmw.txt'), sep = '', skip = 3, header = FALSE)
+names(co2_amp_site) <- c('year', 'amp', 'amp_peak', 'month_max', 'day_max', 
+                              'amp_valley', 'month_min', 'day_min')
+
+# co2 time series
+p2 <- ggplot(data = bmw_air, aes(x = time, y = co2)) +
+  geom_line() +
+  labs(x = 'Year', 
+       y = expression("CO"[2] * " concentration (ppm)"), tag = 'b') +
+  lims(x = c(1990, 2025)) + 
+  theme_classic()
+p2
+
+
+# annual amplitude
+p3 <- ggplot(data = co2_amp_site, aes(x = year, y = amp)) +
+  geom_line() +
+  labs(x = 'Year', 
+       y = expression("CO"[2] * " amplitude (ppm)"), tag = 'c') +
+  lims(x = c(1990, 2025)) + 
+  theme_classic()
+p3
+
+##############-------------------------------
+co2_amp_site$amp_scale <- scale(co2_amp_site$amp) 
+p4 <- ggplot(data = co2_amp_site, aes(x = year, y = amp_scale)) +
+  geom_line() +
+  labs(x = 'Year', 
+       y = expression("Normalized CO"[2] * " amplitude"), tag = 'd') +
+  lims(x = c(1990, 2025)) + 
+  theme_classic()
+p4
+
+source(file.path("scripts", "00_functions.R"))
+
+# decadal trend of CO2 magnitude
+  window_size = 15
+  year_start <- min(co2_amp_site$year)
+  year_end <- max(co2_amp_site$year)
+  nwindow = max(year_end - year_start + 1 - window_size + 1, 1)
+  df_amp_at = c()
+  for (iwindow in 1:nwindow) {
+    years_window <- (year_start + iwindow - 1):(year_start + iwindow + window_size - 2)
+    df <- co2_amp_site %>% filter(year %in% years_window) %>% arrange(year)
+    df_amp_at <- c(df_amp_at, cal_sens_slope(df$year, df$amp_scale))   # sens.slope(df$amp); cal_sens_slope(df$year, df$amp)
+  }
+
+  # 1997:2018
+p5 <- ggplot(data = data.frame(year = (year_start + as.integer(window_size / 2)) : (year_end - as.integer(window_size / 2)), 
+                               trend = df_amp_at), aes(x = year, y = trend)) +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = 3) +
+  geom_smooth(method = "loess", se = T) +
+  labs(x = 'The midpoint year of a 15-year moving window', 
+       y = expression("Normalized CO"[2] * " amplitude trend (yr"^{-1} * ")"), tag = 'e') +
+  lims(x = c(1990, 2025)) + 
+  theme_classic()
+p5 
+
+p2_5 <- plot_grid(p2, p3, p4, p5, nrow=2, ncol=2, align = "hv", axis = "tblr")
+
+
+p_final <- ggdraw() +
+  draw_label(
+    "Illustrative example site: Tudor Hill, Bermuda",
+    x = 0.5, y = 0.98, hjust = 0.5, vjust = 1, fontface = "bold", size = 12 ) +
+  draw_plot(p2_5, x = 0, y = 0, width = 1, height = 0.94)
+p_final
+
+p1_5 <- plot_grid(p1, p_final, nrow = 2, ncol = 1, rel_heights = c(1, 1.5))
+p1_5
+
+ggsave(file.path(dir_fig, 'FigS_atmospheric_co2_amplitude.png'), width = 8, height = 8.9, units = "in")
+
+```
+
+```{r dynamics of growing season change and robust to window size}
+
+library(readr)
+library(dplyr)
+library(ggplot2)
+
+df_DT <- read_csv(file.path(dir_fig, "SI_data", "growing_season_length_trend_DT.csv"), na = c("", "NA")) %>%
+  mutate(
+    plot_row = case_when(
+      var %in% c("SOS", "EOS") ~ "SOS / EOS",
+      var == "LGS" ~ "LGS",
+      TRUE ~ var
+    ),
+    plot_row = factor(plot_row, levels = c("SOS / EOS", "LGS")),
+    var = factor(var, levels = c("SOS", "EOS", "LGS")),
+    climate_veg = factor(climate_veg, levels = c("cold_evergreen_forest", "cold_deciduous_forest", "cold_non_forest")),
+    climate_veg = dplyr::recode(
+      climate_veg,
+      "cold_evergreen_forest" = "Wet-cold climate:\n ENF",
+      "cold_deciduous_forest" = "Wet-cold climate:\n DBF+DNF+MF",
+      "cold_non_forest" = "Wet-cold climate:\nnon-forest ecosystems"
+    )
+  )
+
+p1 <- ggplot(
+  df_DT,
+  aes(
+    x = year_mid,
+    y = Tlmer,
+    color = var,
+    fill = var,
+    group = var
+  )
+) +
+  geom_ribbon(
+    aes(ymin = Tlmerlow, ymax = Tlmerup),
+    alpha = 0.18,
+    color = NA
+  ) +
+  geom_line(linewidth = 0.8) +
+  geom_point(aes(size = nsite), alpha = 0.75) +
+  geom_hline(yintercept = 0, linetype = 3) +  
+  facet_grid(plot_row ~ climate_veg, scales = "free_y") +
+  scale_color_manual(
+    values = c(
+      "SOS" = "#2E86AB",
+      "EOS" = "#C73E1D",
+      "LGS" = "#3A7D44"
+    ),
+    labels = c(
+      "SOS" = "Start of growing season",
+      "EOS" = "End of growing season",
+      "LGS" = "Growing season length"
+    )
+  ) +
+  scale_fill_manual(
+    values = c(
+      "SOS" = "#2E86AB",
+      "EOS" = "#C73E1D",
+      "LGS" = "#3A7D44"
+    ),
+    labels = c(
+      "SOS" = "Start of growing season",
+      "EOS" = "End of growing season",
+      "LGS" = "Growing season length"
+    )
+  ) +
+  scale_size_continuous(range = c(1.2, 3.2)) +
+  labs(
+    x = "Mid-year",
+    # y = expression(paste("Trend estimates using ", bold("daytime-partitioned GPP"))),
+    y = "Trend estimates", 
+    color = NULL,
+    fill = NULL,
+    size = "No. sites",
+    tag = "b"
+  ) +
+  theme_classic(base_size = 11) +
+  theme(
+    strip.background = element_blank(),
+    strip.text = element_text(face = "bold"),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.4),
+    legend.position = "bottom"
+  )
+p1
+
+#-------------------------------------robust to moving windows-------------------------------------------------------------
+total_es <- read.csv(file.path(dir_fig, "SI_data", "driver_analysis_robustness_DT.csv"))
+total_es <- total_es %>% filter(nyear < 13)
+
+# Since working on NEP, change the sign of NEE effect size
+total_es <- total_es %>%
+  mutate(
+    estimate = -estimate,
+
+    ci_lower_2.5_tmp = -ci_upper_97.5,
+    ci_upper_97.5 = -ci_lower_2.5,
+    ci_lower_2.5 = ci_lower_2.5_tmp,
+
+    ci_lower_5_tmp = -ci_upper_95,
+    ci_upper_95 = -ci_lower_5,
+    ci_lower_5 = ci_lower_5_tmp
+  ) %>%
+  select(-ci_lower_2.5_tmp, -ci_lower_5_tmp)
+
+total_es <- total_es %>%
+  mutate(
+    sig95 = !between(0, ci_lower_2.5, ci_upper_97.5),
+    sig90 = !between(0, ci_lower_5, ci_upper_95)
+  ) %>%
+  filter(!exposure %in% c("SW_ngs_t", "P_ngs_at"))
+
+# Variables in wet-warm climate should be growing season
+total_es <- total_es %>%
+  mutate(
+    exposure = case_when(
+      exposure == "SWC_at" ~ "SWC_gs_at",
+      exposure == "LE_at" ~ "ET_gs_at",
+      exposure == "LE_gs_at" ~ "ET_gs_at",
+      exposure == "P_at" ~ "P_gs_at",
+      exposure == "TA_at" ~ "TA_gs_at",
+      exposure == "SW_at" ~ "SW_gs_at",
+      TRUE ~ exposure
+    )
+  )
+
+facet_labs <- c(
+  "cold_evergreen_forest" = "Wet-cold climate:\nENF",
+  "cold_deciduous_forest" = "Wet-cold climate:\nDBF+DNF+MF",
+  "cold_non_forest" = "Wet-cold climate:\nnon-forest",
+  "wet-warm" = "Wet-warm climate:\nall ecosystems",
+  "dry" = "Dry climate:\nall ecosystems"
+)
+
+nyear_labs <- c(
+  "10" = "Sites with ≥10-year data",
+  "11" = "Sites with ≥11-year data",
+  "12" = "Sites with ≥12-year data" # ,
+  # "13" = "≥13 years of data"
+)
+
+p2 <- total_es %>%
+  mutate(
+    # nyear = factor(nyear, levels = c(10, 11, 12, 13)),
+    nyear = factor(nyear, levels = c(10, 11, 12)),
+    climate_veg = factor(
+      climate_veg,
+      levels = c(
+        "cold_evergreen_forest",
+        "cold_deciduous_forest",
+        "cold_non_forest",
+        "wet-warm",
+        "dry"
+      )
+    ),
+    exposure = factor(
+      exposure,
+      levels = c(
+        "Lgs_at",
+        "DIST_at",
+        "SWC_gs_at",
+        "ET_gs_at",
+        "P_gs_at",
+        "SW_gs_at",
+        "TA_ngs_at",
+        "TA_gs_at",
+        "CO2"
+      )
+    ),
+    driver_type = case_when(
+      exposure %in% c("SW_gs_at", "TA_ngs_at", "TA_gs_at", "CO2") & sig90 ~ "climatic warming",
+      exposure %in% c("SWC_gs_at", "ET_gs_at", "P_gs_at") & sig90 ~ "water availability",
+      exposure %in% c("Lgs_at", "DIST_at") & sig90 ~ "vegetation",
+      TRUE ~ "non-significant"
+    )
+  ) %>%
+  filter(!is.na(exposure)) %>%
+  ggplot(aes(x = exposure, y = estimate, col = driver_type)) +
+  geom_point(size = 2.4, shape = 15) +
+  geom_linerange(aes(ymin = ci_lower_2.5, ymax = ci_upper_97.5), linewidth = 0.25) +
+  geom_linerange(aes(ymin = ci_lower_5, ymax = ci_upper_95), linewidth = 0.75) +
+  geom_hline(yintercept = 0, linetype = "dotted", colour = "grey10", linewidth = 0.25) +
+  scale_x_discrete(labels = c(
+    "<b><i><span style='color:#3A7D44'>Lgs<sup>T</sup></span></i></b>",
+    "<b><i><span style='color:#3A7D44'>LAI<sub>dist</sub><sup>T</sup></span></i></b>",
+    "<b><i><span style='color:#215da7'>SWC<sub>gs</sub><sup>T</sup></span></i></b>",
+    "<b><i><span style='color:#215da7'>ET<sub>gs</sub><sup>T</sup></span></i></b>",
+    "<b><i><span style='color:#215da7'>P<sub>gs</sub><sup>T</sup></span></i></b>",
+    "<b><i><span style='color:#de8727'>SR<sub>gs</sub><sup>T</sup></span></i></b>",
+    "<b><i><span style='color:#de8727'>TA<sub>ngs</sub><sup>T</sup></span></i></b>",
+    "<b><i><span style='color:#de8727'>TA<sub>gs</sub><sup>T</sup></span></i></b>",
+    "<b><i><span style='color:#de8727'>CO<sub>2</sub></span></i></b>"
+  )) +
+  scale_colour_manual(values = c(
+    "water availability" = "#215da7",
+    "climatic warming" = "#de8727",
+    "non-significant" = "grey",
+    "vegetation" = "#3A7D44"
+  )) +
+  scale_y_continuous(
+    expand = c(0, 0),
+    limits = c(-0.72, 0.72),
+    breaks = seq(-0.6, 0.6, 0.3)
+  ) +
+  coord_flip() +
+  labs(
+    x = "Potential NEP trend driver variable",
+    y = "Total effect size of each potential NEP trend driver variable",
+    tag = "a"
+  ) +
+  facet_grid(
+    nyear ~ climate_veg,
+    labeller = labeller(
+      nyear = nyear_labs,
+      climate_veg = facet_labs
+    ),
+    drop = FALSE
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    legend.background = element_rect(fill = alpha("white", 0.6)),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    # plot.tag = element_text(face = "bold"),
+    strip.text = element_text(size = 8.5, lineheight = 0.9, face = "bold"),
+    axis.text.y = ggtext::element_markdown(size = 8.5),
+    axis.text.x = element_text(size = 8),
+    axis.title = element_text(size = 10)
+  )
+p2
+
+p <- plot_grid(p2, p1, nrow = 2, ncol = 1, align = "hv", rel_heights = c(2, 1.2))
+ggsave(file.path(dir_fig, "FigS_growing_season_length_trend_robust_moving_windows.png"), 
+  p,
+  width = 8.5,
+  height = 10,
+  dpi = 300
+)
+
+```
+
+
+```{r verify disturbance effects}
+library(librarian)
+shelf(tidyverse, ggpubr, MuMIn, car, fBasics, olsrr, lme4, Hmisc, corrplot, trend, glmmTMB, mblm, brms, mgcv)
+
+dir_rawdata <- "/Users/junnawang/YaleLab/data_server/carbon_trend_project"
+
+data_LAI <- read.csv(file.path(dir_rawdata, 'Trend022026-MCD15A3H-061-results.csv'))
+data_LAI_DE_Akm <- read.csv(file.path(dir_rawdata, 'trend-DE-Akm-MCD15A3H-061-results.csv'))
+#
+data_LAI <- data_LAI %>% filter(ID != "DE-Akm")
+#
+data_LAI <- bind_rows(data_LAI, data_LAI_DE_Akm)
+data_LAI$MCD15A3H_061_Lai_500m[data_LAI$MCD15A3H_061_Lai_500m > 20] = NA
+
+# plot(data_LAI$MCD15A3H_061_Lai_500m)
+
+# If a site is in southern hemisphere
+sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
+sites_south_hemisphere <- sites_long$site_ID[sites_long$Lat < -10]
+
+data_LAI_north <- data_LAI %>% 
+  filter(!ID %in% sites_south_hemisphere) %>%
+  mutate(Date = ymd(Date)) %>%
+  mutate(year = year(Date), doy = yday(Date)) %>%
+  # filter(MCD15A3H_061_FparLai_QC_CloudState == '0b00') %>%  # MCD15A3H_061_FparLai_QC_MODLAND == '0b0' & 
+  # MCD15A3H_061_FparExtra_QC_Aerosol == "0b0"; MCD15A3H_061_FparExtra_QC_Cloud_Shadow == "0b0"
+  # MCD15A3H_061_FparExtra_QC_Internal_CloudMask == '0b0'
+  select(ID, Date, year, doy, MCD15A3H_061_Lai_500m, MCD15A3H_061_FparLai_QC_MODLAND, 
+         MCD15A3H_061_FparLai_QC_CloudState, MCD15A3H_061_FparExtra_QC_Aerosol, 
+         MCD15A3H_061_FparExtra_QC_Cloud_Shadow, MCD15A3H_061_FparExtra_QC_Internal_CloudMask) %>%
+  rename(LAI = MCD15A3H_061_Lai_500m) %>%
+  arrange(ID, year, doy)
+
+data_LAI_south <- data_LAI %>% 
+  filter(ID %in% sites_south_hemisphere) %>%
+  mutate(Date = ymd(Date), year = year(ymd(Date))) %>%
+  mutate(doy = case_when(leap_year(year) & month(ymd(Date)) < 7 ~ yday(Date) - 182 + 366, 
+                         leap_year(year) & month(ymd(Date)) >= 7 ~ yday(Date) - 182,
+                         !leap_year(year) & month(ymd(Date)) < 7 ~ yday(Date) - 181 + 365, 
+                         !leap_year(year) & month(ymd(Date)) >= 7 ~ yday(Date) - 181)) %>%
+  # filter(MCD15A3H_061_FparLai_QC_CloudState == '0b00') %>%
+  select(ID, Date, year, doy, MCD15A3H_061_Lai_500m, MCD15A3H_061_FparLai_QC_MODLAND, 
+         MCD15A3H_061_FparLai_QC_CloudState, MCD15A3H_061_FparExtra_QC_Aerosol, 
+         MCD15A3H_061_FparExtra_QC_Cloud_Shadow, MCD15A3H_061_FparExtra_QC_Internal_CloudMask) %>%
+    rename(LAI = MCD15A3H_061_Lai_500m) %>%
+    arrange(ID, year, doy)
+  
+data_LAI <- bind_rows(data_LAI_north, data_LAI_south)
+
+  # LAI data at IT-Cp2 and >= 2020 had abrupt change, so not used.
+data_LAI <- data_LAI %>% filter(!(ID == "IT-Cp2" & year >= 2020))
+
+# write.csv(data_LAI, file.path("data", 'modis_LAI.csv'), row.names = F)
+# data_LAI <- read.csv(file.path("data", 'modis_LAI.csv'))
+
+LAI_seasonal_pattern <- data_LAI %>% 
+  filter(MCD15A3H_061_FparLai_QC_CloudState == '0b00') %>% 
+  filter(MCD15A3H_061_FparExtra_QC_Aerosol == '0b0') %>% 
+  filter(MCD15A3H_061_FparExtra_QC_Cloud_Shadow == '0b0') %>% 
+  filter(MCD15A3H_061_FparExtra_QC_Internal_CloudMask == '0b0') %>% 
+  # filter(MCD15A3H_061_FparLai_QC_MODLAND == '0b0') %>%
+  group_by(ID, doy) %>% 
+  summarise(LAI = mean(LAI, na.rm = T), .groups = "drop") 
+
+# read in start and end of growing season
+data_grow_season <- read.csv(file.path('data', 'growing_season_yearly.csv'))
+grow_season_site <- data_grow_season %>%
+  group_by(site_ID) %>% 
+  summarise(sos=floor((mean(sos_DER) + mean(sos_TRS)) / 2), 
+            eos=ceiling((mean(eos_DER) + mean(eos_TRS)) / 2))
+
+source(file.path("scripts", "00_functions.R"))
+grow_season_site <- bind_rows(grow_season_site, data.frame(site_ID = sites_grow_yearlong, sos = 1, eos = 365))
+
+#
+sites_all <- unique(sites_long$site_ID)
+LAI_seasonal_pattern_smooth <- data.frame(site_ID = character(), doy = integer(), LAI_gam = double())
+for (site in sites_all) {
+  tmp <- LAI_seasonal_pattern %>% filter(ID == site) 
+  plot(tmp$doy, tmp$LAI, main = site)
+  # adding lines of growing season
+  sos <- grow_season_site$sos[grow_season_site$site_ID == site]
+  eos <- grow_season_site$eos[grow_season_site$site_ID == site]
+  points(x = c(sos, eos), 
+         y = c(mean(tmp$LAI, na.rm=T), mean(tmp$LAI, na.rm=T)), col = 'red', pch = 19)
+  
+  # smooth the seasonal pattern (losses, or gam)
+  loess_model <- loess(LAI ~ doy, data = tmp)
+  gam_model <- gam(LAI ~ s(doy), data = tmp)
+  #
+  df <- data.frame(site_ID = site, doy = sos:eos)
+  df$LAI_loess <- predict(loess_model, newdata = df)
+  pred <- predict(gam_model, newdata = df, se.fit = TRUE)
+  df$LAI_gam <- pred$fit # - pred$se.fit * 1.96 # consider noise effects
+  # we finally decided to use LAI_gam, because it matches seasonal pattern better. 
+  #
+  lines(df$doy, df$LAI_loess, col = 'yellow')
+  lines(df$doy, df$LAI_gam, col = 'blue')
+  
+  LAI_seasonal_pattern_smooth <- bind_rows(LAI_seasonal_pattern_smooth, df)
+}
+
+# we should use the gam smoothed line. 
+# How many site-years have been missing in the data?
+data_LAI <- data_LAI %>%
+  mutate(weight = case_when(
+    MCD15A3H_061_FparLai_QC_CloudState == '0b00' & MCD15A3H_061_FparExtra_QC_Aerosol == '0b0' &
+    MCD15A3H_061_FparExtra_QC_Cloud_Shadow == '0b0' & MCD15A3H_061_FparExtra_QC_Internal_CloudMask == '0b0' &
+    MCD15A3H_061_FparLai_QC_MODLAND == '0b0' ~ 1,
+    MCD15A3H_061_FparLai_QC_CloudState == '0b00' & MCD15A3H_061_FparExtra_QC_Aerosol == '0b0' &
+    MCD15A3H_061_FparExtra_QC_Cloud_Shadow == '0b0' & MCD15A3H_061_FparExtra_QC_Internal_CloudMask == '0b0' &
+    MCD15A3H_061_FparLai_QC_MODLAND != '0b0' ~ 0.5,
+    TRUE ~ 0)) %>%
+  left_join(LAI_seasonal_pattern_smooth, by = c("ID" = "site_ID", "doy"))
+
+
+df_LAI_check_sites <- data.frame()
+
+df_disturbance <- data.frame()
+for (site in sites_all) {
+  # site = 'CA-Cbo'
+  
+  print(site)
+  #
+  data_LAI_site <- data_LAI %>% filter(ID == site) 
+  
+  f_good_data <- data_LAI_site %>% group_by(year) %>% summarise(f = sum(weight == 1) / n()) 
+  # remove a year if it has < 50% of average data
+  bad_years <- f_good_data %>% filter(f < mean(f_good_data$f, na.rm=T) * 0.5) %>% pull(year)
+  if (length(bad_years) > 0) {
+    data_LAI_site <- data_LAI_site %>% filter(!year %in% bad_years)
+  }
+  
+  # interpolate missing points
+  data_LAI_site$LAI_intp <- data_LAI_site$LAI
+  data_LAI_site$LAI_intp[data_LAI_site$weight == 0] <- NA
+  data_LAI_site$LAI_intp[data_LAI_site$weight == 0.5 & data_LAI_site$LAI_intp < 0.5 * data_LAI_site$LAI_gam] <- NA
+  data_LAI_site$LAI_intp <- approx(
+    x = as.numeric(data_LAI_site$Date),    # time axis as numeric
+    y = data_LAI_site$LAI_intp,            # values to interpolate
+    xout = as.numeric(data_LAI_site$Date), # points where we want the output
+    method = "linear",
+    rule = 2                               # optional: extrapolate endpoints
+  )$y
+
+  if (site %in% c("CH-Lae", "CH-Dav", "CH-Aws", "CH-Fru", "CH-Cha", "US-GLE", "US-Var", "AU-Rob")) {
+    df_LAI_check_sites <- bind_rows(df_LAI_check_sites, data_LAI_site)
+  }
+  
+  #
+  # get trend of growing-season LAI
+  sos <- grow_season_site$sos[grow_season_site$site_ID == site]
+  eos <- grow_season_site$eos[grow_season_site$site_ID == site]
+  yearly_LAI_site <- data_LAI_site %>% filter(between(doy, sos, eos)) %>%
+    group_by(year) %>% summarise(LAI_gs = mean(LAI_intp, na.rm=T), .groups = "drop")
+  
+  # correct trend's effect  
+  fit <- lm(data = yearly_LAI_site, LAI_gs ~ year)
+  summary(fit)
+  
+  if (summary(fit)$coefficients["year", "Pr(>|t|)"] < 0.05) {
+    trend_annual <- fitted(fit)
+    data_LAI_site <- data_LAI_site %>% left_join(data.frame(year = yearly_LAI_site$year, trend = trend_annual), by = "year")
+    data_LAI_site$LAI_intp_detrend <- data_LAI_site$LAI_intp - data_LAI_site$trend + mean(data_LAI_site$trend)
+    # plot(data_LAI_site$LAI_intp_detrend)
+    # plot(data_LAI_site$LAI_intp)
+  } else {
+    data_LAI_site$LAI_intp_detrend <- data_LAI_site$LAI_intp
+  }
+
+  # calculate disturbance effects
+  LAI_gs <- mean(data_LAI_site$LAI_gam[between(data_LAI_site$doy, sos, eos)], na.rm = T) * (eos - sos + 1)
+  df <- data_LAI_site %>% filter(between(doy, sos, eos)) %>%
+    mutate(deficit_obs = pmax(LAI_gam - LAI_intp_detrend, 0)) %>%
+    group_by(ID, year) %>%
+    summarise(deficit_obs = sum(deficit_obs, na.rm=T) * 4 / LAI_gs, .groups = 'drop') 
+  
+  plot(df$year, df$deficit_obs, main = site)
+  
+  df_disturbance <- bind_rows(df_disturbance, df)
+}
+
+#------------------------start to make plots-----------------------
+p1 <- df_LAI_check_sites %>% filter(ID == 'CH-Lae' & year == 2015) %>%
+  ggplot() + 
+  geom_line(aes(x = Date, y = LAI_intp), col = 'darkgreen') + 
+  # geom_line(aes(x = Date, y = LAI_gam), col = 'blue') + 
+  annotate(
+    "rect",
+    xmin = as.Date("2015-07-06"), xmax = as.Date("2015-07-21"),
+    ymin = 0, ymax = 7,
+    fill = NA, color = "red", linewidth = 0.3
+  ) +
+  annotate(
+    "rect",
+    xmin = as.Date("2015-08-02"), xmax = as.Date("2015-08-13"),
+    ymin = 0, ymax = 7,
+    fill = NA, color = "red", linewidth = 0.3
+  ) +  
+  labs(x = 'Date', y = expression("Leaf area index"~(m^2~m^-2)), 
+       title = "Drought at CH-Lae in 2015", tag = 'a') + 
+  theme_classic()
+#  
+p2 <- df_LAI_check_sites %>% filter(ID == 'CH-Lae' & year == 2018) %>%
+  ggplot() + 
+  geom_line(aes(x = Date, y = LAI_intp), col = 'darkgreen') + 
+  # geom_line(aes(x = Date, y = LAI_gam), col = 'blue') +
+  annotate(
+    "rect",
+    xmin = as.Date("2018-07-23"), xmax = as.Date("2018-08-23"),
+    ymin = 0, ymax = 7,
+    fill = NA, color = "red", linewidth = 0.3
+  ) +
+  labs(x = 'Date', y = expression("Leaf area index"~(m^2~m^-2)), 
+       title = "Drought at CH-Lae in 2018", tag = 'b') + 
+  theme_classic()
+#
+p3 <- df_LAI_check_sites %>% filter(ID == 'CH-Lae' & year == 2022) %>%
+  ggplot() + 
+  geom_line(aes(x = Date, y = LAI_intp), col = 'darkgreen') + 
+  # geom_line(aes(x = Date, y = LAI_gam), col = 'blue') +
+  annotate(
+    "rect",
+    xmin = as.Date("2022-07-14"), xmax = as.Date("2022-08-04"),
+    ymin = 0, ymax = 7,
+    fill = NA, color = "red", linewidth = 0.3
+  ) +
+  labs(x = 'Date', y = expression("Leaf area index"~(m^2~m^-2)), 
+       title = "Drought at CH-Lae in 2022", tag = 'c') + 
+  theme_classic()
+#
+p4 <- df_LAI_check_sites %>% filter(ID == 'CH-Dav' & year == 2018) %>%
+  ggplot() + 
+  geom_line(aes(x = Date, y = LAI_intp), col = 'darkgreen') + 
+  # geom_line(aes(x = Date, y = LAI_gam), col = 'blue') +
+  annotate(
+    "rect",
+    xmin = as.Date("2018-07-25"), xmax = as.Date("2018-09-20"),
+    ymin = 0, ymax = 3,
+    fill = NA, color = "red", linewidth = 0.3
+  ) +
+  labs(x = 'Date', y = expression("Leaf area index"~(m^2~m^-2)), 
+       title = "Drought at CH-Dav in 2018", tag = 'd') + 
+  theme_classic()
+
+#
+p5 <- df_LAI_check_sites %>% filter(ID == 'CH-Fru' & year == 2018) %>%
+  ggplot() + 
+  geom_line(aes(x = Date, y = LAI_intp), col = 'darkgreen') + 
+  # geom_line(aes(x = Date, y = LAI_gam), col = 'blue') +
+  annotate(
+    "rect",
+    xmin = as.Date("2018-07-01"), xmax = as.Date("2018-08-20"),
+    ymin = 0, ymax = 6,
+    fill = NA, color = "red", linewidth = 0.3
+  ) +
+  labs(x = 'Date', y = expression("Leaf area index"~(m^2~m^-2)), 
+       title = "Drought at CH-Fru in 2018", tag = 'e') + 
+  theme_classic()
+
+#
+p6 <- df_LAI_check_sites %>% filter(ID == 'CH-Cha' & year == 2018) %>%
+  ggplot() + 
+  geom_line(aes(x = Date, y = LAI_intp), col = 'darkgreen') + 
+  # geom_line(aes(x = Date, y = LAI_gam), col = 'blue') +
+  annotate(
+    "rect",
+    xmin = as.Date("2018-07-01"), xmax = as.Date("2018-08-20"),
+    ymin = 0, ymax = 7,
+    fill = NA, color = "red", linewidth = 0.3
+  ) +
+  labs(x = 'Date', y = expression("Leaf area index"~(m^2~m^-2)), 
+       title = "Drought at CH-Cha in 2018", tag = 'f') + 
+  theme_classic()
+
+p7 <- df_LAI_check_sites %>% filter(ID == 'CH-Aws' & year == 2018) %>%
+  ggplot() + 
+  geom_line(aes(x = Date, y = LAI_intp), col = 'darkgreen') + 
+  # geom_line(aes(x = Date, y = LAI_gam), col = 'blue') +
+  annotate(
+    "rect",
+    xmin = as.Date("2018-07-01"), xmax = as.Date("2018-08-20"),
+    ymin = 0, ymax = 4,
+    fill = NA, color = "red", linewidth = 0.3
+  ) +
+  labs(x = 'Date', y = expression("Leaf area index"~(m^2~m^-2)), 
+       title = "Drought at CH-Aws in 2018", tag = 'g') + 
+  theme_classic()
+p7
+
+
+p8 <- df_LAI_check_sites %>% filter(ID == 'AU-Rob' & year == 2016) %>%
+  ggplot() + 
+  geom_line(aes(x = Date, y = LAI_intp), col = 'darkgreen') + 
+  # geom_line(aes(x = Date, y = LAI_gam), col = 'blue') + 
+  annotate(
+    "rect",
+    xmin = as.Date("2016-01-01"), xmax = as.Date("2016-02-28"),
+    ymin = 0, ymax = 7,
+    fill = NA, color = "red", linewidth = 0.3
+  ) +
+  annotate(
+    "rect",
+    xmin = as.Date("2016-03-16"), xmax = as.Date("2016-05-22"),
+    ymin = 0, ymax = 7,
+    fill = NA, color = "blue", linewidth = 0.3
+  ) +  
+  lims(y = c(0, 7)) +
+  labs(x = 'Date', y = expression("Leaf area index"~(m^2~m^-2)), 
+       title = "Drought in Jan-Feb and \n storms in Mar-May at AU-Rob in 2016", tag = 'h') + 
+  theme_classic()
+
+
+p9 <- df_LAI_check_sites %>% filter(ID == 'US-GLE' & (year %in% 2006:2011)) %>%
+  ggplot() + 
+  geom_line(aes(x = Date, y = LAI_intp), col = 'darkgreen') + 
+  geom_line(aes(x = Date, y = LAI_gam), col = 'black', linetype = 'solid', size = 1) +
+  annotate(
+    "rect",
+    xmin = as.Date("2008-01-01"), xmax = as.Date("2011-12-20"),
+    ymin = 0, ymax = 1.5,
+    fill = NA, color = "red", linewidth = 0.3
+  ) +
+  labs(x = 'Date', y = expression("Leaf area index"~(m^2~m^-2)), 
+       title = "Insect outbreak at US-GLE in 2008-2011", tag = 'i') + 
+  theme_classic()
+
+p10 <- df_LAI_check_sites %>% filter(ID == 'US-Var' & (year %in% 2015:2021)) %>%
+  ggplot() + 
+  geom_line(aes(x = Date, y = LAI_intp), col = 'darkgreen') + 
+  geom_line(aes(x = Date, y = LAI_gam), col = 'black', linetype = 'solid', size = 1) +
+  annotate(
+    "rect",
+    xmin = as.Date("2015-03-01"), xmax = as.Date("2015-05-15"),
+    ymin = 0, ymax = 3,
+    fill = NA, color = "red", linewidth = 0.3
+  ) +
+  annotate(
+    "rect",
+    xmin = as.Date("2021-03-01"), xmax = as.Date("2021-05-15"),
+    ymin = 0, ymax = 3,
+    fill = NA, color = "red", linewidth = 0.3
+  ) +
+  labs(x = 'Date', y = expression("Leaf area index"~(m^2~m^-2)), 
+       title = "Drought at US-Var in 2015 and 2021", tag = 'j') + 
+  theme_classic()
+
+
+p1_8 <- plot_grid(p1, p2, p3, p4, p5, p6, p7, p8, nrow=2, ncol=4) 
+p9_10 <- plot_grid(p9, p10, nrow=1, ncol=2) 
+plot_grid(p1_8, p9_10, nrow=2, ncol=1, rel_heights = c(2,1)) 
+ggsave(file.path("exploratory", 'FigS7_verify_disturbance.png'), width = 15, height = 9, units = "in")
+
+# too much time will be used. 
+
+```
+

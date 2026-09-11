@@ -38,6 +38,7 @@
 /reports/
 .DS_Store
 scripts/.DS_Store
+scripts2026/.DS_Store
 /exploratory/
 /deprecated/
 /ccg_filter/

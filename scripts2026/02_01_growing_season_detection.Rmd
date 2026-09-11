@@ -1,0 +1,1054 @@
+---
+title: "calculate the start and the end of growing season for each site-year"
+output: pdf_document
+date: "2025-02-25"
+author: "Junna Wang"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r raw data location}
+rm(list=ls())
+# change this location where the raw data will be saved accordingly
+# dir_rawdata <- '/Users/jw2946/Documents/stability_project/SiteData/'
+# dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
+#
+dir_rawdata <- '/Volumes/WZZ_disk/Carbon_trend/SiteData'
+#
+library(librarian)
+shelf(tidyverse, phenofit, data.table, cowplot, ggpubr)
+#
+```
+
+
+```{r try the phenofit}
+d = MOD13A1$dt %>% subset(site == "CA-NS6" & date >= "2010-01-01" & date <= "2016-12-31") %>%
+    .[, .(date, y = EVI/1e4, DayOfYear, QC = SummaryQA)]
+d %<>% mutate(t = getRealDate(date, DayOfYear)) %>%
+    cbind(d[, as.list(qc_summary(QC, wmin = 0.2, wmid = 0.5, wmax = 0.8))]) %>%
+    .[, .(date, t, y, QC_flag, w)]
+print(d)
+#
+#
+lambda         <- 8
+nptperyear     <- 23
+minExtendMonth <- 0.5
+maxExtendMonth <- 1
+minPercValid   <- 0
+wFUN           <- wTSM   # wBisquare
+wmin           <- 0.2    # minimum weight of bad points
+methods_fine <- c("AG", "Zhang", "Beck", "Elmore", "Gu")
+#
+#
+# useful variables: t-date of compositing image; w: weights of data point (related to QC_flag, try this); y: EVI; 
+# nptperyear: number of images per year.
+# wmin: minimum weight of bad points
+# south: whether it is in southern hemisphere?
+# ylu: 1% and 99% percentiles. 
+INPUT <- check_input(d$t, d$y, d$w,
+    QC_flag = d$QC_flag,
+    nptperyear = nptperyear,
+    maxgap = nptperyear / 4, wmin = 0.2, 
+    mask_spike = TRUE, 
+    south = FALSE
+)
+#
+# Moving growing season division
+brks <- season_mov(INPUT,
+    list(FUN = "smooth_wWHIT", wFUN = wFUN,
+        maxExtendMonth = 3,
+        wmin = wmin, r_min = 0.1, 
+        lambda = 10
+    ))
+plot_season(INPUT, brks)
+
+#
+# 2.4 Curve fitting
+fit <- curvefits(INPUT, brks,
+    list(
+        methods = methods_fine, # ,"klos",, 'Gu'
+        wFUN = wFUN,
+        iters = 2,
+        wmin = wmin,
+        # constrain = FALSE,
+        nextend = 2,
+        maxExtendMonth = maxExtendMonth, minExtendMonth = minExtendMonth,
+        minPercValid = minPercValid
+    ))
+#
+l_param <- get_param(fit)
+print(l_param$Beck)
+# I need to sos and eos of each method: Zhang, Beck, Gu
+#
+TRS <- c(0.1, 0.2, 0.5)  # Threshold for PhenoTrs
+l_pheno <- get_pheno(fit, TRS = TRS, IsPlot = FALSE) # %>% map(~melt_list(., "meth"))
+print(l_pheno$doy$Beck)  # I should use Beck, Elmore, and Gu logistics have a more stable performance. 
+#
+print(l_pheno$doy$Gu)
+
+####how does this package work?
+####(1) prepare for INPUT files; (2) smooth the time series; (3) fit the curve; (4) get parameter values. 
+
+```
+
+
+```{r use GPP to calculate start and end of growing season}
+# it takes ~30 mins. 
+####it turns out I cannot use NEE for this package. 
+outlier <- function(ts) {
+  Q1 <- quantile(ts, 0.25)
+  Q2 <- quantile(ts, 0.5)
+  Q3 <- quantile(ts, 0.75)
+  if (Q3 - Q2 > (Q2 - Q1) * 1.5) {
+    Q3 <- Q2 + Q2 - Q1
+  } else if (Q2 - Q1 > (Q3 - Q2) * 1.5) {
+    Q1 <- Q2 + Q2 - Q3
+  }
+  IQ <- Q3 - Q1
+  return(!between(ts, Q1 - 1.0 * IQ, Q3 + 1.0 * IQ))
+}
+
+## This will take 10-20 mins to finish running. 
+# a function to merge multiple growing seasons within one year
+merge_pheno <- function(df=data.frame()) {
+  #
+  df$year <- year(df$origin)
+  #
+  Lgs_mean <- mean(df$DER.eos - df$DER.sos, na.rm=T)
+  # merge pulse-growing period within a year
+  df_m <- data.frame()
+  for (iyear in unique(df$year)) {
+    # print(iyear)
+    df_sub <- subset(df, year==iyear & !is.na(DER.sos))
+    #
+    if (nrow(df_sub) > 1) {
+      ##check if I need to remove the first and last sub growing season if its duration is longer than 10 days.  
+      if (df_sub$DER.eos[1] - df_sub$DER.sos[1] < 10) {
+        df_sub <- df_sub[-1,]
+      } 
+      if (df_sub$DER.eos[nrow(df_sub)] - df_sub$DER.sos[nrow(df_sub)] < 10) {
+        df_sub <- df_sub[-nrow(df_sub),]
+      }
+    }
+    df_m <- rbind(df_m, df_sub)
+  }
+  
+  # browser()
+  df_m$pulse <- as.vector(sapply(df_m$flag, function(x) {return(as.numeric(strsplit(x, "_")[[1]][2]))}))
+  df_m <- df_m %>% group_by(year) %>%
+    mutate(npulse = n_distinct(pulse)) %>%
+    ungroup()
+  
+  df_m_start <- df_m[df_m$pulse==1, ]
+  df_m_end <- df_m[df_m$pulse==df_m$npulse, ]
+  #
+  start.outlier <- outlier(df_m_start$TRS1.sos) & outlier(df_m_start$TRS2.5.sos) & 
+                   outlier(df_m_start$TRS5.sos) & outlier(df_m_start$DER.sos)
+  flag <- df_m_start$flag[start.outlier]
+  ids <- which(df_m$flag %in% flag)
+  ids2rm <- c()
+  for (id in ids) {
+    if (df_m$npulse[id] > 1 & df_m$DER.eos[id] < mean(df_m_start$DER.sos, na.rm=T) + Lgs_mean / 4) {    # this year multiple pulse, this is only a small pulse
+      ids2rm <- c(ids2rm, id)
+    }
+  }
+  # df_m$DER.eos[id] - df_m$DER.sos[id] < Lgs_mean / 2
+  
+  #
+  end.outlier <- (outlier(df_m_end$TRS1.eos) | outlier(df_m_end$TRS2.5.eos) | 
+                 outlier(df_m_end$TRS5.eos)) & outlier(df_m_end$DER.eos)
+  flag <- df_m_end$flag[end.outlier]
+  ids <- which(df_m$flag %in% flag)
+  for (id in ids) {
+    if (df_m$npulse[id] > 1 & df_m$DER.sos[id] > mean(df_m_end$DER.eos, na.rm=T) - Lgs_mean / 4 & 
+                              df_m$DER.eos[id] > mean(df_m_end$DER.eos, na.rm=T) + 45) {
+      ids2rm <- c(ids2rm, id)
+    }
+  }
+  if (length(ids2rm) > 0) {
+    df_m <- df_m[-ids2rm, ]
+  }
+  #------------------------------------------------------
+  df_new <- data.frame()
+  for (iyear in unique(df$year)) {
+    # print(iyear)
+    df_sub <- subset(df_m, year==iyear & !is.na(DER.sos))
+    length_gw_piece_DER <- sum(df_sub$DER.eos - df_sub$DER.sos, na.rm=T)
+    length_gw_piece_TRS <- sum(df_sub$TRS2.5.eos - df_sub$TRS2.5.sos, na.rm=T)    
+    #
+    if (nrow(df_sub) > 1) {
+      df_sub$DER.eos[1]    <- df_sub$DER.eos[nrow(df_sub)]
+      df_sub$TRS1.eos[1]   <- df_sub$TRS1.eos[nrow(df_sub)]          
+      df_sub$TRS2.5.eos[1] <- df_sub$TRS2.5.eos[nrow(df_sub)]
+      df_sub$TRS5.eos[1]   <- df_sub$TRS5.eos[nrow(df_sub)]
+    }
+    df_new <- rbind(df_new, data.frame(year=df_sub$year[1], df_sub[1, 3:11], 
+                                       length_piece_DER=length_gw_piece_DER, 
+                                       length_piece_TRS=length_gw_piece_TRS))
+  }
+  return(df_new)
+}
+#
+#
+####parameter values to run phenofit functions
+nptperyear <- 365
+wFUN       <- wTSM
+wmin = 0.2
+methods_fine <- c("AG", "Zhang", "Beck", "Elmore", "Gu")
+minExtendMonth <- 0.5
+maxExtendMonth <- 1
+minPercValid   <- 0
+lambda         <- 10000        # for daily data
+##
+####only working at sites that have clear growing seasons
+sites_long <- read.csv(file.path('data2026', 'long_term_ec_sites.csv'))
+rm_years   <- read.csv(file.path('data2026', 'years_to_remove.csv'))
+#
+source(file.path("scripts2026", "00_functions.R"))
+df_file_structure <- get_rawflux_file_structure(dir_rawdata)
+#
+#
+data_grow_season <- data.frame(site_ID=character(), year=integer(), sos_Beck=double(), eos_Beck=double(), 
+                               sos_Elmore=double(), eos_Elmore=double(), sos_Gu=double(), eos_Gu=double(), 
+                               sos_TRS=double(), eos_TRS=double(), sos_DER=double(), eos_DER=double(), 
+                               length_gs=double(), length_gs_piece=double())
+id = 1
+#
+for (i in 1:nrow(sites_long)) {
+# for (i in 1:56) {
+  # i = 66
+  print(i)
+  site_ID <- sites_long$site_ID[i]
+  print(site_ID)
+  # do not calculate growing season for sites that grows year long. 
+  if (site_ID %in% sites_grow_yearlong) {
+    next
+  }
+  # only need to read daily data
+  folder <- unlist(df_file_structure$folders[df_file_structure$sources == sites_long$source[i]])
+  DDfile <- df_file_structure$DDfiles[df_file_structure$sources == sites_long$source[i]]
+  a_DD <- read.csv(folder[grepl(pattern=paste0(site_ID, DDfile), folder)])
+  a_DD[a_DD==-9999] <- NA
+  #
+  #
+  ####read in daily data
+  a_DD$TIMESTAMP <- ymd(a_DD$TIMESTAMP)
+  
+  # decide if this is in the southern hemisphere
+  south_hemisphere <- ifelse(sites_long$Lat[i] < -10, TRUE, FALSE)
+  # for southern sites, using growing year and DOY from July first
+  if (south_hemisphere) {
+    a_DD$TIMESTAMP <- a_DD$TIMESTAMP - ifelse(leap_year(year(a_DD$TIMESTAMP[1])), 182, 181)
+  }
+  
+  #
+  # # Junna temporarily use these lines in order to test effects of partition methods
+  # if (i %in% c(6, 7, 15, 33, 36, 56, 66, 68, 69, 76, 79, 81,
+  #              92, 93, 95, 98, 100, 115, 116, 118, 121, 125, 133, 
+  #              134, 138, 141, 142, 144, 154, 155, 157)) {
+  #   if (sites_long$NEEpartition[i] == 'DT') {
+  #     a_DD$GPP <- pmax(a_DD$GPP_NT_VUT_REF, 0.0)
+  #   } else {
+  #     next
+  #   }
+  # } else {
+  #   next
+  # }
+  
+
+  # # have at least 5-year data and not in the bad daytime partitioned sites and GPP should be positive
+  # This is the daytime dominated method
+  if (sum(!is.na(a_DD$GPP_DT_VUT_REF)) >= 5*365 & sites_long$NEEpartition[i] == 'DT') {
+    a_DD$GPP <- pmax(a_DD$GPP_DT_VUT_REF, 0.0)
+  } else {
+    a_DD$GPP <- pmax(a_DD$GPP_NT_VUT_REF, 0.0)
+  }
+  
+  # This is the nighttime dominated method
+  # if (sum(!is.na(a_DD$GPP_NT_VUT_REF)) >= 8*365 & !site_ID %in% c("BE-Vie", "CZ-RAJ", "US-Wjs", "AU-Stp", "CA-Ca3", "CH-Dav")) {
+  #   a_DD$GPP <- pmax(a_DD$GPP_NT_VUT_REF, 0.0)
+  # } else {
+  #   a_DD$GPP <- pmax(a_DD$GPP_DT_VUT_REF, 0.0)
+  # }
+
+
+  # deal with US-Ho1, use GPP_DT if available, otherwise use GPP_NT
+  if (site_ID %in% c("US-Ho1", "US-Ho2")) {
+    # US-Ho2 has missing years
+    a_DD$GPP[!is.na(a_DD$GPP_DT_VUT_REF)] <- a_DD$GPP_DT_VUT_REF[!is.na(a_DD$GPP_DT_VUT_REF)]
+  }
+  
+  # remove bad years' GPP
+  a_DD$GPP[year(a_DD$TIMESTAMP) %in% rm_years$years[rm_years$site_ID==site_ID]] <- NA
+  if (site_ID == 'AU-Dry') {
+    a_DD$GPP[year(a_DD$TIMESTAMP) <= 2015] <- NA
+  }
+  if (site_ID == 'AU-Gin') {
+    a_DD$GPP[year(a_DD$TIMESTAMP) == 2015] <- NA
+  } 
+  if (site_ID == 'AU-DaS') {
+    a_DD$GPP[year(a_DD$TIMESTAMP) > 2020] <- NA
+  }
+  if (site_ID == 'AU-ASM') {
+    a_DD$GPP[year(a_DD$TIMESTAMP) == 2018] <- NA
+  }
+  #
+  ggplot(data=a_DD, aes(x=TIMESTAMP, y=GPP)) +
+    geom_point()
+  
+  # add fake years to gap years
+  res <- fill_gap_years_clim(data = a_DD,
+  date_col = "TIMESTAMP", gpp_col = "GPP", gap_frac_threshold = 0.8)
+  
+  gap_years <- res$gap_years
+  if (length(gap_years) > 0) {
+    a_DD <- a_DD %>% left_join(res$data, by = 'TIMESTAMP') %>%
+      mutate(GPP = coalesce(GPP, GPP_filled))
+  }
+
+  # if (site_ID == 'DE-Hai') {
+  #   a_fake_year <- a_DD %>% filter(year(TIMESTAMP) == 2024) %>% 
+  #     mutate(TIMESTAMP = TIMESTAMP - years(1)) %>% filter(!is.na(TIMESTAMP))
+  #   a_DD <- bind_rows(a_DD[year(a_DD$TIMESTAMP) < 2023, ],
+  #                     a_fake_year, 
+  #                     a_DD[year(a_DD$TIMESTAMP) >= 2024, ])
+  # } 
+  
+  #
+  a_DD$w <- 1.0     # Data quality of this partition?? this is missing. 
+  a_DD$QC_flag <- "good"
+  #
+  # remove the years without GPP measurements for better interpolation
+  # missed_years <- a_DD %>% mutate(year=year(TIMESTAMP)) %>% group_by(year) %>% summarise(nNaGPP=sum(is.na(GPP))) %>% filter(nNaGPP > 300)
+  # if (nrow(missed_years) > 0) {
+  #   a_DD <- a_DD[!year(a_DD$TIMESTAMP) %in% missed_years$year, ]
+  # }
+  # # just for testing
+  
+  ####prepare for input
+  INPUT <- check_input(t=a_DD$TIMESTAMP, y=a_DD$GPP, a_DD$w,
+      QC_flag = a_DD$QC_flag,
+      nptperyear = nptperyear,
+      maxgap = nptperyear / 4, wmin = wmin, 
+      mask_spike = TRUE, 
+      south = FALSE
+  )
+  #
+  ####moving growing season division
+  if (site_ID %in% c("US-KM4", "US-Me2")) {
+    # year 2012 needs large lambda at this site
+    brks <- season_mov(INPUT,
+        list(FUN = "smooth_wWHIT", wFUN = wFUN,
+            maxExtendMonth = 2,
+            wmin = 0.0, r_min = 0.00,
+            lambda = 1000000,
+            iters = 5,
+            MaxPeaksPerYear = 1,
+            MaxTroughsPerYear = 2
+        ))
+  } else if (site_ID %in% c("AU-ASM", "AU-Gin", "AU-GWW", "AU-Stp", "AU-Ync", "AU-Dry")) {
+     brks <- season_mov(INPUT,
+        list(FUN = "smooth_wWHIT", wFUN = wFUN,
+            maxExtendMonth = 4,
+            wmin = 0.0, r_min = 0.02,
+            lambda = 8000,
+            iters = 5,
+            MaxPeaksPerYear = 1,
+            MaxTroughsPerYear =2
+        ))
+  } else if (site_ID %in% c("AU-DaS", "AU-Cpr")) {
+     brks <- season_mov(INPUT,
+        list(FUN = "smooth_wWHIT", wFUN = wFUN,
+            maxExtendMonth = 4,
+            wmin = 0.0, r_min = 0.00,
+            lambda = 2000,
+            iters = 5,
+            MaxPeaksPerYear = 2,
+            MaxTroughsPerYear = 3
+        ))    
+  } else {
+    brks <- season_mov(INPUT,
+        list(FUN = "smooth_wWHIT", wFUN = wFUN,
+            maxExtendMonth = 2,
+            wmin = 0.0, r_min = 0.00,
+            lambda = 10000,
+            iters = 5,
+            MaxPeaksPerYear = 1,
+            MaxTroughsPerYear = 2
+        ))
+  }
+  plot_season(INPUT, brks, title=site_ID)
+  
+  ####
+  fit <- curvefits(INPUT, brks,
+      list(
+          methods = methods_fine, # ,"klos",, 'Gu'
+          wFUN = wFUN,
+          iters = 2,
+          wmin = wmin,
+          # constrain = FALSE,
+          maxExtendMonth = maxExtendMonth, minExtendMonth = minExtendMonth,
+          minPercValid = minPercValid
+      ))
+  #
+  TRS <- c(0.1, 0.25, 0.5)  # Threshold for PhenoTrs
+  l_pheno <- get_pheno(fit, TRS = TRS, IsPlot = FALSE) # %>% map(~melt_list(., "meth"))
+  print(l_pheno$doy$Beck)  # I should use Beck, Elmore, and Gu logistics have a more stable 
+  #
+  # use the average of the three methods; and then the average of TSR_0.25, DER.sos, and DER.eos
+  ggplot(data=l_pheno$doy$Gu, aes(x=origin)) +
+    geom_point(aes(y=DER.sos, col="blue")) +
+    geom_point(aes(y=DER.eos, col="red")) +
+    labs(title=paste0(site_ID, "_Gu"))
+  #
+  ggplot(data=l_pheno$doy$Beck, aes(x=origin)) +
+    geom_point(aes(y=DER.sos, col="blue")) +
+    geom_point(aes(y=DER.eos, col="red")) +
+    labs(title=paste0(site_ID, "_Beck"))
+  #
+  ggplot(data=l_pheno$doy$Elmore, aes(x=origin)) +
+    geom_point(aes(y=DER.sos, col="blue")) +
+    geom_point(aes(y=DER.eos, col="red")) +
+    labs(title=paste0(site_ID, "_Elmore"))
+  #
+  # put results into data frame 
+  # remove extreme small peaks before growing season especially for dry climate
+  if (site_ID == 'US-SRG') {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[l_pheno$doy$Beck$DER.sos > 150, ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[l_pheno$doy$Elmore$DER.sos > 150, ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[l_pheno$doy$Gu$DER.sos > 150, ]
+  }
+  if (site_ID %in% c('US-Wjs')) {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[l_pheno$doy$Beck$DER.eos > 200, ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[l_pheno$doy$Elmore$DER.eos > 200, ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[l_pheno$doy$Gu$DER.eos > 200, ]
+  }  
+  if (site_ID == 'CN-HZZ') {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[between(l_pheno$doy$Beck$DER.eos, 150, 366), ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[between(l_pheno$doy$Elmore$DER.eos, 150, 366), ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[between(l_pheno$doy$Gu$DER.eos, 150, 366), ]
+  }  
+  if (site_ID %in% c("ES-Agu", "ES-LJu")) {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[l_pheno$doy$Beck$DER.eos < 220, ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[l_pheno$doy$Elmore$DER.eos < 220, ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[l_pheno$doy$Gu$DER.eos < 220, ]
+  } 
+  if (site_ID %in% c("AU-Ync")) {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[l_pheno$doy$Beck$DER.eos < 240, ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[l_pheno$doy$Elmore$DER.eos < 240, ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[l_pheno$doy$Gu$DER.eos < 240, ]
+  }  
+  if (site_ID %in% c("IT-Noe")) {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[l_pheno$doy$Beck$DER.eos < 250, ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[l_pheno$doy$Elmore$DER.eos < 250, ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[l_pheno$doy$Gu$DER.eos < 250, ]
+  }  
+  
+  if (site_ID %in% c("US-Rls", "US-Rms", "US-Rws")) {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[l_pheno$doy$Beck$DER.sos < 200, ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[l_pheno$doy$Elmore$DER.sos < 200, ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[l_pheno$doy$Gu$DER.sos < 200, ]
+  }
+  if (site_ID %in% c("AU-DaS")) {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[l_pheno$doy$Beck$DER.eos < 400, ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[l_pheno$doy$Elmore$DER.eos < 400, ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[l_pheno$doy$Gu$DER.eos < 400, ]
+  }
+  if (site_ID %in% c("AU-ASM")) {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[l_pheno$doy$Beck$DER.sos > 60, ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[l_pheno$doy$Elmore$DER.sos > 60, ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[l_pheno$doy$Gu$DER.sos > 60, ]
+  }
+  if (site_ID %in% c("BE-Vie")) {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[l_pheno$doy$Beck$DER.sos > 91, ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[l_pheno$doy$Elmore$DER.sos > 91, ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[l_pheno$doy$Gu$DER.sos > 91, ]
+  }
+  if (site_ID %in% c("FR-FBn")) {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[l_pheno$doy$Beck$DER.eos < 270, ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[l_pheno$doy$Elmore$DER.eos < 275, ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[l_pheno$doy$Gu$DER.eos < 260, ]
+  }
+  if (site_ID %in% c("IL-Yat")) {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[l_pheno$doy$Beck$DER.eos < 200, ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[l_pheno$doy$Elmore$DER.eos < 200, ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[l_pheno$doy$Gu$DER.eos < 200, ]
+  }
+  if (site_ID %in% c("CZ-RAJ")) {
+    l_pheno$doy$Beck <- l_pheno$doy$Beck[l_pheno$doy$Beck$DER.sos > 80, ]
+    l_pheno$doy$Elmore <- l_pheno$doy$Elmore[l_pheno$doy$Elmore$DER.sos > 80, ]
+    l_pheno$doy$Gu <- l_pheno$doy$Gu[l_pheno$doy$Gu$DER.sos > 80, ]
+  }
+  
+  
+  # Merge two sub growing seasons if their distance is shorter than 2 months
+  doy_Beck <- merge_pheno(l_pheno$doy$Beck)
+  doy_Elmore <- merge_pheno(l_pheno$doy$Elmore)
+  doy_Gu <- merge_pheno(l_pheno$doy$Gu)
+  if (site_ID == "FR-FBn") {
+    doy_Beck <- doy_Beck[doy_Beck$year!=2018, ]
+    doy_Elmore <- doy_Elmore[doy_Elmore$year!=2018, ]
+    doy_Gu <- doy_Gu[doy_Gu$year!=2018, ]
+  }
+  # abnormal year 2020 for US-SRM
+  if (site_ID == "US-SRM") {
+    doy_Beck <- doy_Beck[doy_Beck$year!=2020, ]
+    doy_Elmore <- doy_Elmore[doy_Elmore$year!=2020, ]
+    doy_Gu <- doy_Gu[doy_Gu$year!=2020, ]
+  }  
+  # abnormal year 2017 for AU-Ync
+  if (site_ID == "AU-Ync") {
+    doy_Beck <- doy_Beck[doy_Beck$year!=2017, ]
+    doy_Elmore <- doy_Elmore[doy_Elmore$year!=2017, ]
+    doy_Gu <- doy_Gu[doy_Gu$year!=2017, ]
+  }
+  
+  # remove the fake year for sites with gap years
+  if (length(gap_years) > 0) {
+    doy_Beck <- doy_Beck[!doy_Beck$year %in% gap_years, ]
+    doy_Elmore <- doy_Elmore[!doy_Elmore$year %in% gap_years, ]
+    doy_Gu <- doy_Gu[!doy_Gu$year %in% gap_years, ]
+  }
+
+  # first year measurement for US-Aud is not reliable 
+  if (site_ID == "US-Aud") {
+    doy_Beck <- doy_Beck[doy_Beck$year!=2003, ]
+    doy_Elmore <- doy_Elmore[doy_Elmore$year!=2003, ]
+    doy_Gu <- doy_Gu[doy_Gu$year!=2003, ]
+  } 
+  
+  # the two years' measurement is incomplete
+  if (site_ID == "ZA-Kru") {
+    doy_Beck <- doy_Beck[!doy_Beck$year %in% c(2005, 2007), ]
+    doy_Elmore <- doy_Elmore[!doy_Elmore$year %in% c(2005, 2007), ]
+    doy_Gu <- doy_Gu[!doy_Gu$year %in% c(2005, 2007), ]
+  } 
+  
+  # abnormal year 2013
+  if (site_ID == "US-ICs") {
+    doy_Beck <- doy_Beck[!doy_Beck$year %in% c(2013), ]
+    doy_Elmore <- doy_Elmore[!doy_Elmore$year %in% c(2013), ]
+    doy_Gu <- doy_Gu[!doy_Gu$year %in% c(2013), ]
+  } 
+  # the first year's start growing season is abnormal
+  if (site_ID == "IT-MBo") {
+    doy_Beck <- doy_Beck[!doy_Beck$year %in% c(2003), ]
+    doy_Elmore <- doy_Elmore[!doy_Elmore$year %in% c(2003), ]
+    doy_Gu <- doy_Gu[!doy_Gu$year %in% c(2003), ]
+  }
+  # the first few years after land-use conversion should be removed.
+  if (site_ID %in% c("US-KL3", "US-KL2", "US-KM2", "US-KM3")) {
+    doy_Beck <- doy_Beck[!doy_Beck$year %in% c(2010, 2011, 2012), ]
+    doy_Elmore <- doy_Elmore[!doy_Elmore$year %in% c(2010, 2011, 2012), ]
+    doy_Gu <- doy_Gu[!doy_Gu$year %in% c(2010, 2011, 2012), ]
+  }
+  # first year after disturbance
+  if (site_ID %in% c("CH-Dav")) {
+    doy_Beck <- doy_Beck[!doy_Beck$year %in% c(2006), ]
+    doy_Elmore <- doy_Elmore[!doy_Elmore$year %in% c(2006), ]
+    doy_Gu <- doy_Gu[!doy_Gu$year %in% c(2006), ]
+  } 
+  if (site_ID %in% c("TH-Mae")) {
+    doy_Beck <- doy_Beck[!doy_Beck$year %in% c(2005, 2009), ]
+    doy_Elmore <- doy_Elmore[!doy_Elmore$year %in% c(2005, 2009), ]
+    doy_Gu <- doy_Gu[!doy_Gu$year %in% c(2005, 2009), ]
+  }
+  if (site_ID %in% c("CN-Dsh")) {
+    doy_Beck <- doy_Beck[!doy_Beck$year %in% c(2013, 2022, 2024), ]
+    doy_Elmore <- doy_Elmore[!doy_Elmore$year %in% c(2013, 2022, 2024), ]
+    doy_Gu <- doy_Gu[!doy_Gu$year %in% c(2013, 2022, 2024), ]
+  }  
+  # some years' sos are too early, before soil temperature above 0 degree; ref: https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2023JG007839  
+  if ("TS_F_MDS_1" %in% names(a_DD)) {
+    soil_season <- soil_temp_season(data = a_DD, date_col = "TIMESTAMP", temp_col = "TS_F_MDS_1", min_obs_frac = 0.95, threshold = 0.1, window = 7)
+    doy_Beck <- doy_Beck %>% left_join(soil_season[, c("year", "start_doy", "end_doy")], by = "year") %>%
+      mutate(TRS2.5.sos = ifelse(!is.na(TRS2.5.sos) & !is.na(start_doy) & TRS2.5.sos < start_doy, start_doy, TRS2.5.sos), 
+             DER.sos = ifelse(!is.na(DER.sos) & !is.na(start_doy) & DER.sos < start_doy, start_doy, DER.sos), 
+             TRS2.5.eos = ifelse(!is.na(TRS2.5.eos) & !is.na(end_doy) & TRS2.5.eos > end_doy, end_doy, TRS2.5.eos), 
+             DER.eos = ifelse(!is.na(DER.eos) & !is.na(end_doy) & DER.eos > end_doy, end_doy, DER.eos) )
+    #
+    doy_Elmore <- doy_Elmore %>% left_join(soil_season[, c("year", "start_doy", "end_doy")], by = "year") %>%
+      mutate(TRS2.5.sos = ifelse(!is.na(TRS2.5.sos) & !is.na(start_doy) & TRS2.5.sos < start_doy, start_doy, TRS2.5.sos), 
+             DER.sos = ifelse(!is.na(DER.sos) & !is.na(start_doy) & DER.sos < start_doy, start_doy, DER.sos), 
+             TRS2.5.eos = ifelse(!is.na(TRS2.5.eos) & !is.na(end_doy) & TRS2.5.eos > end_doy, end_doy, TRS2.5.eos), 
+             DER.eos = ifelse(!is.na(DER.eos) & !is.na(end_doy) & DER.eos > end_doy, end_doy, DER.eos) )
+    #
+    doy_Gu <- doy_Gu %>% left_join(soil_season[, c("year", "start_doy", "end_doy")], by = "year") %>%
+      mutate(TRS2.5.sos = ifelse(!is.na(TRS2.5.sos) & !is.na(start_doy) & TRS2.5.sos < start_doy, start_doy, TRS2.5.sos), 
+             DER.sos = ifelse(!is.na(DER.sos) & !is.na(start_doy) & DER.sos < start_doy, start_doy, DER.sos), 
+             TRS2.5.eos = ifelse(!is.na(TRS2.5.eos) & !is.na(end_doy) & TRS2.5.eos > end_doy, end_doy, TRS2.5.eos), 
+             DER.eos = ifelse(!is.na(DER.eos) & !is.na(end_doy) & DER.eos > end_doy, end_doy, DER.eos) )
+  }
+
+  nyears <- nrow(doy_Beck)
+  #
+  data_grow_season[id:(id+nyears-1), 1] <- site_ID
+  data_grow_season[id:(id+nyears-1), 2] <- doy_Beck$year
+  data_grow_season[id:(id+nyears-1), 3] <- doy_Beck$DER.sos
+  data_grow_season[id:(id+nyears-1), 4] <- doy_Beck$DER.eos
+  #
+  data_grow_season[id:(id+nyears-1), 5] <- doy_Elmore$DER.sos
+  data_grow_season[id:(id+nyears-1), 6] <- doy_Elmore$DER.eos  
+  #
+  data_grow_season[id:(id+nyears-1), 7] <- doy_Gu$DER.sos
+  data_grow_season[id:(id+nyears-1), 8] <- doy_Gu$DER.eos    
+  #
+  data_grow_season[id:(id+nyears-1), 9]  <- rowMeans(cbind(doy_Beck$TRS2.5.sos, doy_Elmore$TRS2.5.sos, doy_Gu$TRS2.5.sos), na.rm=T) 
+  data_grow_season[id:(id+nyears-1), 10] <- rowMeans(cbind(doy_Beck$TRS2.5.eos, doy_Elmore$TRS2.5.eos, doy_Gu$TRS2.5.eos), na.rm=T)
+  #
+  data_grow_season[id:(id+nyears-1), 11] <- rowMeans(cbind(doy_Beck$DER.sos, doy_Elmore$DER.sos, doy_Gu$DER.sos), na.rm=T)
+  data_grow_season[id:(id+nyears-1), 12] <- rowMeans(cbind(doy_Beck$DER.eos, doy_Elmore$DER.eos, doy_Gu$DER.eos), na.rm=T)
+  #
+  data_grow_season[id:(id+nyears-1), 13] <- (data_grow_season[id:(id+nyears-1), 12] - data_grow_season[id:(id+nyears-1), 11]) / 2 + 
+                                            (data_grow_season[id:(id+nyears-1), 10] - data_grow_season[id:(id+nyears-1), 9]) / 2
+  #
+  data_grow_season[id:(id+nyears-1), 14] <- (doy_Beck$length_piece_DER + doy_Beck$length_piece_TRS +
+                                             doy_Elmore$length_piece_DER + doy_Elmore$length_piece_TRS +
+                                             doy_Gu$length_piece_DER + doy_Gu$length_piece_TRS) / 6
+  #
+  p0 <- ggplot(data=data_grow_season[id:(id+nyears-1), ], aes(x=year)) +
+    geom_point(aes(y=sos_DER, col="blue")) +
+    geom_point(aes(y=eos_DER, col="red")) +
+    labs(title=paste0(site_ID, "_average"))
+  print(p0)
+  #
+  id <- id + nyears
+}
+#
+data_grow_season <- data_grow_season[!is.na(data_grow_season$year), ]
+write.csv(data_grow_season, file.path('data2026', 'growing_season_yearly.csv'), row.names = F)
+# save the data frame
+# look into these sites
+# dryland flux should be modeled in different ways. to understand their drivers in more detail. 
+# dryland in general can have second/multiple growing season. 
+# ES_Agu(97), ES_Lju(98); should be dealt specifically. 
+# US-ICs: 2007 and 2013, we have very small GPP peaks.  
+
+```
+
+
+```{r use LAI data to validate growing season length}
+
+source(file.path("scripts2026", "00_functions.R"))
+
+outlier <- function(ts) {
+  Q1 <- quantile(ts, 0.25)
+  Q2 <- quantile(ts, 0.5)
+  Q3 <- quantile(ts, 0.75)
+  if (Q3 - Q2 > (Q2 - Q1) * 1.5) {
+    Q3 <- Q2 + Q2 - Q1
+  } else if (Q2 - Q1 > (Q3 - Q2) * 1.5) {
+    Q1 <- Q2 + Q2 - Q3
+  }
+  IQ <- Q3 - Q1
+  return(!between(ts, Q1 - 1.0 * IQ, Q3 + 1.0 * IQ))
+}
+
+## This will take 10-20 mins to finish running. 
+# a function to merge multiple growing seasons within one year
+merge_pheno <- function(df=data.frame()) {
+  #
+  df$year <- year(df$origin)
+  #
+  Lgs_mean <- mean(df$DER.eos - df$DER.sos, na.rm=T)
+  # merge pulse-growing period within a year
+  df_m <- data.frame()
+  for (iyear in unique(df$year)) {
+    # print(iyear)
+    df_sub <- subset(df, year==iyear & !is.na(DER.sos))
+    #
+    if (nrow(df_sub) > 1) {
+      ##check if I need to remove the first and last sub growing season if its duration is longer than 10 days.  
+      if (df_sub$DER.eos[1] - df_sub$DER.sos[1] < 10) {
+        df_sub <- df_sub[-1,]
+      } 
+      if (df_sub$DER.eos[nrow(df_sub)] - df_sub$DER.sos[nrow(df_sub)] < 10) {
+        df_sub <- df_sub[-nrow(df_sub),]
+      }
+    }
+    df_m <- rbind(df_m, df_sub)
+  }
+  
+  # browser()
+  df_m$pulse <- as.vector(sapply(df_m$flag, function(x) {return(as.numeric(strsplit(x, "_")[[1]][2]))}))
+  df_m <- df_m %>% group_by(year) %>%
+    mutate(npulse = n_distinct(pulse)) %>%
+    ungroup()
+  
+  df_m_start <- df_m[df_m$pulse==1, ]
+  df_m_end <- df_m[df_m$pulse==df_m$npulse, ]
+  #
+  start.outlier <- outlier(df_m_start$TRS1.sos) & outlier(df_m_start$TRS2.5.sos) & 
+                   outlier(df_m_start$TRS5.sos) & outlier(df_m_start$DER.sos)
+  flag <- df_m_start$flag[start.outlier]
+  ids <- which(df_m$flag %in% flag)
+  ids2rm <- c()
+  for (id in ids) {
+    if (df_m$npulse[id] > 1 & df_m$DER.eos[id] < mean(df_m_start$DER.sos, na.rm=T) + Lgs_mean / 4) {    # this year multiple pulse, this is only a small pulse
+      ids2rm <- c(ids2rm, id)
+    }
+  }
+  # df_m$DER.eos[id] - df_m$DER.sos[id] < Lgs_mean / 2
+  
+  #
+  end.outlier <- (outlier(df_m_end$TRS1.eos) | outlier(df_m_end$TRS2.5.eos) | 
+                 outlier(df_m_end$TRS5.eos)) & outlier(df_m_end$DER.eos)
+  flag <- df_m_end$flag[end.outlier]
+  ids <- which(df_m$flag %in% flag)
+  for (id in ids) {
+    if (df_m$npulse[id] > 1 & df_m$DER.sos[id] > mean(df_m_end$DER.eos, na.rm=T) - Lgs_mean / 4 & 
+                              df_m$DER.eos[id] > mean(df_m_end$DER.eos, na.rm=T) + 45) {
+      ids2rm <- c(ids2rm, id)
+    }
+  }
+  if (length(ids2rm) > 0) {
+    df_m <- df_m[-ids2rm, ]
+  }
+  #------------------------------------------------------
+  df_new <- data.frame()
+  for (iyear in unique(df$year)) {
+    # print(iyear)
+    df_sub <- subset(df_m, year==iyear & !is.na(DER.sos))
+    length_gw_piece_DER <- sum(df_sub$DER.eos - df_sub$DER.sos, na.rm=T)
+    length_gw_piece_TRS <- sum(df_sub$TRS2.5.eos - df_sub$TRS2.5.sos, na.rm=T)    
+    #
+    if (nrow(df_sub) > 1) {
+      df_sub$DER.eos[1]    <- df_sub$DER.eos[nrow(df_sub)]
+      df_sub$TRS1.eos[1]   <- df_sub$TRS1.eos[nrow(df_sub)]          
+      df_sub$TRS2.5.eos[1] <- df_sub$TRS2.5.eos[nrow(df_sub)]
+      df_sub$TRS5.eos[1]   <- df_sub$TRS5.eos[nrow(df_sub)]
+    }
+    df_new <- rbind(df_new, data.frame(year=df_sub$year[1], df_sub[1, 3:11], 
+                                       length_piece_DER=length_gw_piece_DER, 
+                                       length_piece_TRS=length_gw_piece_TRS))
+  }
+  return(df_new)
+}
+#
+#
+####parameter values to run phenofit functions
+nptperyear <- 365 / 4
+wFUN       <- wTSM
+wmin = 0.2
+methods_fine <- c("AG", "Zhang", "Beck", "Elmore", "Gu")
+minExtendMonth <- 0.5
+maxExtendMonth <- 1
+minPercValid   <- 0
+lambda         <- 10000        # for daily data
+##
+####only working at sites that have clear growing seasons
+sites_long <- read.csv(file.path('data2026', 'long_term_ec_sites.csv'))
+LAI_data <- read.csv(file.path(dir_rawdata, "LAI_4day_allsites", 'trend-combined-MCD15A3H-061-results.csv'))
+rm_years   <- read.csv(file.path('data2026', 'years_to_remove.csv'))
+#
+#
+#
+data_grow_season <- data.frame(site_ID=character(), year=integer(), sos_Beck=double(), eos_Beck=double(), 
+                               sos_Elmore=double(), eos_Elmore=double(), sos_Gu=double(), eos_Gu=double(), 
+                               sos_TRS=double(), eos_TRS=double(), sos_DER=double(), eos_DER=double(), 
+                               length_gs=double(), length_gs_piece=double())
+id = 1
+#
+for (i in 1:nrow(sites_long)) {
+  if (i == 92) { next }
+# for (i in 1:56) {
+  # i = 66
+  print(i)
+  site_ID <- sites_long$site_ID[i]
+  print(site_ID)
+  # do not calculate growing season for sites that grows year long. 
+  if (site_ID %in% sites_grow_yearlong) {
+    next
+  }
+  a_DD <- LAI_data %>% filter(ID == site_ID) %>% 
+    mutate(LAI = ifelse(MCD15A3H_061_Lai_500m > 50, NA, MCD15A3H_061_Lai_500m))
+  #
+  a_DD <- a_DD %>%
+  mutate(
+    TIMESTAMP = as.Date(Date),
+
+    QC_flag = case_when(
+      is.na(LAI) ~ "cloud",
+      MCD15A3H_061_FparExtra_QC_Snow_Ice == "0b1" ~ "snow",
+      MCD15A3H_061_FparExtra_QC_Cloud_Shadow == "0b1" ~ "shadow",
+      MCD15A3H_061_FparLai_QC_CloudState != "0b00" |
+        MCD15A3H_061_FparExtra_QC_Internal_CloudMask == "0b1" ~ "cloud",
+      MCD15A3H_061_FparExtra_QC_Aerosol == "0b1" |
+        MCD15A3H_061_FparExtra_QC_Cirrus == "0b1" ~ "aerosol",
+      MCD15A3H_061_FparLai_QC_MODLAND == "0b1" |
+        MCD15A3H_061_FparLai_QC_SCF_QC %in% c("0b010", "0b011") ~ "marginal",
+      TRUE ~ "good"
+    ),
+
+    QC_flag = factor(
+      QC_flag,
+      levels = c("snow", "cloud", "shadow", "aerosol", "marginal", "good")
+    ),
+
+    w = case_when(
+      is.na(LAI) ~ wmin,
+      QC_flag %in% c("snow", "cloud", "shadow") ~ wmin,
+      QC_flag == "aerosol" ~ 0.4,
+      MCD15A3H_061_FparLai_QC_SCF_QC == "0b000" &
+        MCD15A3H_061_FparLai_QC_MODLAND == "0b0" ~ 1.0,
+      MCD15A3H_061_FparLai_QC_SCF_QC == "0b001" &
+        MCD15A3H_061_FparLai_QC_MODLAND == "0b0" ~ 0.8,
+      MCD15A3H_061_FparLai_QC_SCF_QC == "0b010" ~ 0.5,
+      MCD15A3H_061_FparLai_QC_SCF_QC == "0b011" ~ wmin,
+      TRUE ~ wmin
+    )
+  )
+  
+  # decide if this is in the southern hemisphere
+  south_hemisphere <- ifelse(sites_long$Lat[i] < -10, TRUE, FALSE)
+  # for southern sites, using growing year and DOY from July first
+  if (south_hemisphere) {
+    a_DD$TIMESTAMP <- a_DD$TIMESTAMP - ifelse(leap_year(year(a_DD$TIMESTAMP[1])), 182, 181)
+  }
+  
+  ####prepare for input
+  INPUT <- check_input(t=a_DD$TIMESTAMP, y=a_DD$LAI, a_DD$w,
+      QC_flag = a_DD$QC_flag,
+      nptperyear = nptperyear,
+      maxgap = nptperyear / 4, wmin = wmin, 
+      wsnow <- 0.8,
+      ymin <- 0,
+      mask_spike = TRUE, 
+      south = FALSE
+  )
+  #
+  ####moving growing season division
+  brks <- season_mov(
+  INPUT,
+  list(
+    FUN = "smooth_wWHIT",
+    wFUN = wFUN,
+
+    maxExtendMonth = 2,
+    wmin = 0.2,
+    r_min = 0.05,
+
+    lambda = 100,
+    iters = 5,
+
+    MaxPeaksPerYear = 1,
+    MaxTroughsPerYear = 2
+  )
+)
+  
+  plot_season(INPUT, brks, title=site_ID)
+  
+  ####
+  fit <- curvefits(INPUT, brks,
+      list(
+          methods = methods_fine, # ,"klos",, 'Gu'
+          wFUN = wFUN,
+          iters = 2,
+          wmin = wmin,
+          # constrain = FALSE,
+          maxExtendMonth = maxExtendMonth, minExtendMonth = minExtendMonth,
+          minPercValid = minPercValid
+      ))
+  #
+  TRS <- c(0.1, 0.25, 0.5)  # Threshold for PhenoTrs
+  l_pheno <- get_pheno(fit, TRS = TRS, IsPlot = FALSE) # %>% map(~melt_list(., "meth"))
+  print(l_pheno$doy$Beck)  # I should use Beck, Elmore, and Gu logistics have a more stable 
+  #
+  # use the average of the three methods; and then the average of TSR_0.25, DER.sos, and DER.eos
+  ggplot(data=l_pheno$doy$Gu, aes(x=origin)) +
+    geom_point(aes(y=DER.sos, col="blue")) +
+    geom_point(aes(y=DER.eos, col="red")) +
+    labs(title=paste0(site_ID, "_Gu"))
+  #
+  ggplot(data=l_pheno$doy$Beck, aes(x=origin)) +
+    geom_point(aes(y=DER.sos, col="blue")) +
+    geom_point(aes(y=DER.eos, col="red")) +
+    labs(title=paste0(site_ID, "_Beck"))
+  #
+  ggplot(data=l_pheno$doy$Elmore, aes(x=origin)) +
+    geom_point(aes(y=DER.sos, col="blue")) +
+    geom_point(aes(y=DER.eos, col="red")) +
+    labs(title=paste0(site_ID, "_Elmore"))
+  #
+  # Merge two sub growing seasons if their distance is shorter than 2 months
+  doy_Beck <- merge_pheno(l_pheno$doy$Beck)
+  doy_Elmore <- merge_pheno(l_pheno$doy$Elmore)
+  doy_Gu <- merge_pheno(l_pheno$doy$Gu)
+ 
+  nyears <- nrow(doy_Beck)
+  #
+  data_grow_season[id:(id+nyears-1), 1] <- site_ID
+  data_grow_season[id:(id+nyears-1), 2] <- doy_Beck$year
+  data_grow_season[id:(id+nyears-1), 3] <- doy_Beck$DER.sos
+  data_grow_season[id:(id+nyears-1), 4] <- doy_Beck$DER.eos
+  #
+  data_grow_season[id:(id+nyears-1), 5] <- doy_Elmore$DER.sos
+  data_grow_season[id:(id+nyears-1), 6] <- doy_Elmore$DER.eos  
+  #
+  data_grow_season[id:(id+nyears-1), 7] <- doy_Gu$DER.sos
+  data_grow_season[id:(id+nyears-1), 8] <- doy_Gu$DER.eos    
+  #
+  data_grow_season[id:(id+nyears-1), 9]  <- rowMeans(cbind(doy_Beck$TRS2.5.sos, doy_Elmore$TRS2.5.sos, doy_Gu$TRS2.5.sos), na.rm=T) 
+  data_grow_season[id:(id+nyears-1), 10] <- rowMeans(cbind(doy_Beck$TRS2.5.eos, doy_Elmore$TRS2.5.eos, doy_Gu$TRS2.5.eos), na.rm=T)
+  #
+  data_grow_season[id:(id+nyears-1), 11] <- rowMeans(cbind(doy_Beck$DER.sos, doy_Elmore$DER.sos, doy_Gu$DER.sos), na.rm=T)
+  data_grow_season[id:(id+nyears-1), 12] <- rowMeans(cbind(doy_Beck$DER.eos, doy_Elmore$DER.eos, doy_Gu$DER.eos), na.rm=T)
+  #
+  data_grow_season[id:(id+nyears-1), 13] <- (data_grow_season[id:(id+nyears-1), 12] - data_grow_season[id:(id+nyears-1), 11]) / 2 + 
+                                            (data_grow_season[id:(id+nyears-1), 10] - data_grow_season[id:(id+nyears-1), 9]) / 2
+  #
+  data_grow_season[id:(id+nyears-1), 14] <- (doy_Beck$length_piece_DER + doy_Beck$length_piece_TRS +
+                                             doy_Elmore$length_piece_DER + doy_Elmore$length_piece_TRS +
+                                             doy_Gu$length_piece_DER + doy_Gu$length_piece_TRS) / 6
+  #
+  p0 <- ggplot(data=data_grow_season[id:(id+nyears-1), ], aes(x=year)) +
+    geom_point(aes(y=sos_DER, col="blue")) +
+    geom_point(aes(y=eos_DER, col="red")) +
+    labs(title=paste0(site_ID, "_average"))
+  print(p0)
+  #
+  id <- id + nyears
+}
+#
+
+data_grow_season <- data_grow_season %>% anti_join(rm_years, by = c("site_ID", "year"="years"))
+
+
+write.csv(data_grow_season, file.path('data2026', 'growing_season_yearly_LAI.csv'), row.names = F)
+
+
+```
+
+
+```{r look at the trends of growing season}
+####
+data_grow_season <- read.csv(file.path('data2026','growing_season_yearly.csv'))
+sites_long <- read.csv(file.path('data2026', 'long_term_ec_sites.csv'))
+#
+gw_trend <- data.frame()
+for (i in 1:length(unique(data_grow_season$site_ID))) {
+  site_ID0 <- unique(data_grow_season$site_ID)[i]
+  df <- subset(data_grow_season, site_ID==site_ID0)
+  ####
+  plot <- ggplot(data=df, aes(x=year)) +
+    geom_point(aes(y=sos_DER, col="blue")) +
+    geom_point(aes(y=eos_DER, col="red")) +
+    geom_point(aes(y=sos_TRS, col="lightblue")) +
+    geom_point(aes(y=eos_TRS, col="pink")) +
+    labs(title=paste0(site_ID0, "_average"))
+  # print(plot)
+  ####
+  sos_TRS <- summary(lm(data=df, scale(sos_TRS) ~ year))$coefficients[2, c(1)]    #, 4
+  eos_TRS <- summary(lm(data=df, scale(eos_TRS) ~ year))$coefficients[2, c(1)]
+  sos_DER <- summary(lm(data=df, scale(sos_DER) ~ year))$coefficients[2, c(1)]
+  eos_DER <- summary(lm(data=df, scale(eos_DER) ~ year))$coefficients[2, c(1)]
+  length_gs <- summary(lm(data=df, scale(length_gs) ~ year))$coefficients[2, c(1)]
+  length_gs_piece <- summary(lm(data=df, scale(length_gs_piece) ~ year))$coefficients[2, c(1)]
+  ####
+  gw_trend <- rbind(gw_trend, data.frame(site_ID=site_ID0, sos_TRS=sos_TRS, eos_TRS=eos_TRS, sos_DER=sos_DER, eos_DER=eos_DER, length_gs=length_gs, length_gs_piece=length_gs_piece) )
+  ####
+}
+
+gw_trend %>% left_join(sites_long, by="site_ID") %>% filter(category=='cold') %>%
+  pivot_longer(cols=2:7, names_to = "gs_metric", values_to = "trend") %>%
+  ggplot(aes(x=gs_metric, y=trend)) +
+  geom_boxplot() +
+  labs(title='Cold climate')
+
+# growing season length increases stronger than cold climate
+gw_trend %>% left_join(sites_long, by="site_ID") %>% filter(category=='dry') %>%
+  pivot_longer(cols=2:7, names_to = "gs_metric", values_to = "trend") %>%
+  ggplot(aes(x=gs_metric, y=trend)) +
+  geom_boxplot() +
+  labs(title='Dry climate')
+
+# meaningless because many sites have no clear growing season. 
+gw_trend %>% left_join(sites_long, by="site_ID") %>% filter(category=='wet') %>%
+  pivot_longer(cols=2:7, names_to = "gs_metric", values_to = "trend") %>%
+  ggplot(aes(x=gs_metric, y=trend)) +
+  geom_boxplot() +
+  labs(title='wet climate')
+
+gw_trend %>% left_join(sites_long, by="site_ID") %>% filter(category=='cold') %>%
+  ggplot(aes(x=abs(Lat), y=eos_TRS)) +       # End of growing season does not vary with latitude!
+  geom_point() +
+  geom_smooth(method='lm') +
+  stat_cor(method = "pearson")
+
+gw_trend %>% left_join(sites_long, by="site_ID") %>% filter(category=='cold') %>%
+  ggplot(aes(x=abs(Lat), y=length_gs)) +      # Length of growing season varies with latitude, but not significant!
+  geom_point() +
+  geom_smooth(method='lm') +
+  stat_cor(method = "pearson")
+
+####################
+# important trends #
+gw_trend %>% left_join(sites_long, by="site_ID") %>% filter(category=='cold') %>%
+  ggplot(aes(x=abs(Lat), y=sos_DER)) +    # start of growing season became later for very high latitude! Start of growing season is limited by light?
+  geom_point() +
+  geom_smooth(method='lm') +
+  stat_cor(method = "pearson")
+
+
+## How are they different between ENF and DBF ?
+sites_20 <- data_grow_season %>% group_by(site_ID) %>% summarise(data_duration=max(year, na.rm=T)-min(year, na.rm=T)+1) %>% filter(data_duration > 19)
+
+## What if we only look at sites longer than 15 years; growing season increase, start growing early, but end at the same time. 
+gw_trend %>% filter(site_ID %in% sites_20$site_ID) %>% left_join(sites_long, by="site_ID") %>% filter(category=='cold') %>%
+  pivot_longer(cols=2:7, names_to = "gs_metric", values_to = "trend") %>%
+  ggplot(aes(x=gs_metric, y=trend)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter() +
+  labs(title='Growing season trends of > 20-year sites')
+
+## ENF
+gw_trend %>% left_join(sites_long, by="site_ID") %>% filter(category=='cold') %>%
+  filter(IGBP == 'ENF') %>%
+  pivot_longer(cols=2:7, names_to = "gs_metric", values_to = "trend") %>%
+  ggplot(aes(x=gs_metric, y=trend)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter() +
+  labs(title='Growing season trends of ENF')
+## Growing season length declines; it starts later and end earlier for ENF (this is obvious!)
+
+## DBF
+gw_trend %>% left_join(sites_long, by="site_ID") %>% filter(category=='cold') %>%
+  filter(IGBP == 'DBF') %>%
+  pivot_longer(cols=2:7, names_to = "gs_metric", values_to = "trend") %>%
+  ggplot(aes(x=gs_metric, y=trend)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter() +
+  labs(title='Growing season trends of DBF')
+## Growing season increase: start earlier and end later;
+
+## MF
+gw_trend %>% left_join(sites_long, by="site_ID") %>% filter(category=='cold') %>%
+  filter(IGBP == 'MF') %>%
+  pivot_longer(cols=2:7, names_to = "gs_metric", values_to = "trend") %>%
+  ggplot(aes(x=gs_metric, y=trend)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter() +
+  labs(title='Growing season trends of MF')
+## increase in growing season length, it starts early/later and ends later. Mixed forests are most sensitive. 
+
+data <- gw_trend %>% left_join(sites_long, by="site_ID") %>% 
+  filter(category=='cold' & IGBP %in% c('ENF', 'DBF', 'MF'))
+summary(aov(data=data, length_gs ~ IGBP))  # p = 0.073 .
+
+summary(aov(data=data, length_gs_piece ~ IGBP))  # p = 0.0627 .
+
+summary(aov(data=data, sos_DER ~ IGBP))  # p = 0.759
+
+summary(aov(data=data, sos_TRS ~ IGBP))  # p = 0.707
+
+summary(aov(data=data, eos_DER ~ IGBP))  # p = 0.0418 *     marginal difference. 
+
+summary(aov(data=data, eos_TRS ~ IGBP))  # p = 0.0281 *       
+# only end of growing season trend differs among forests. 
+
+```
