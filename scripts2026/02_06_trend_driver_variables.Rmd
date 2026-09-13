@@ -622,33 +622,6 @@ for (i in 1:nrow(sites_long)) {
           trend_driver[id, c('ER_at')] <- cal_sens_slope(a_YY_sub$TIMESTAMP, a_YY_sub$RECO_NT_VUT_REF)
         }
       }
-      
-      
-      # # Using nighttime dominated methods temporarily, Junna
-      # if ("GPP_NT_VUT_REF" %in% names(a_YY_sub)) {
-      #   if (sum(!is.na(a_YY_sub$GPP_NT_VUT_REF)) >= nobsv_min) {
-      #     trend_driver[id, c('GPP_t', 'GPP_p')] <- cal_sens_slope_scale(a_YY_sub$TIMESTAMP, a_YY_sub$GPP_NT_VUT_REF, a_YY$GPP_NT_VUT_REF)
-      #     trend_driver[id, c('GPP_at')] <- cal_sens_slope(a_YY_sub$TIMESTAMP, a_YY_sub$GPP_NT_VUT_REF)
-      #   }
-      #   if (sum(!is.na(a_YY_sub$RECO_NT_VUT_REF)) >= nobsv_min) {
-      #     trend_driver[id, c('ER_t', 'ER_p')] <- cal_sens_slope_scale(a_YY_sub$TIMESTAMP, a_YY_sub$RECO_NT_VUT_REF, a_YY$RECO_NT_VUT_REF)
-      #     trend_driver[id, c('ER_at')] <- cal_sens_slope(a_YY_sub$TIMESTAMP, a_YY_sub$RECO_NT_VUT_REF)
-      #   }
-      #   
-      # } else if ("GPP_DT_VUT_REF" %in% names(a_YY_sub)) {
-      #   
-      #   if (sum(!is.na(a_YY_sub$GPP_DT_VUT_REF)) >= nobsv_min) {
-      #     trend_driver[id, c('GPP_t', 'GPP_p')] <- cal_sens_slope_scale(a_YY_sub$TIMESTAMP, a_YY_sub$GPP_DT_VUT_REF, a_YY$GPP_DT_VUT_REF)
-      #     trend_driver[id, c('GPP_at')] <- cal_sens_slope(a_YY_sub$TIMESTAMP, a_YY_sub$GPP_DT_VUT_REF)
-      #   }
-      #   if (sum(!is.na(a_YY_sub$RECO_DT_VUT_REF)) >= nobsv_min) {
-      #     trend_driver[id, c('ER_t', 'ER_p')] <- cal_sens_slope_scale(a_YY_sub$TIMESTAMP, a_YY_sub$RECO_DT_VUT_REF, a_YY$RECO_DT_VUT_REF)
-      #     trend_driver[id, c('ER_at')] <- cal_sens_slope(a_YY_sub$TIMESTAMP, a_YY_sub$RECO_DT_VUT_REF)
-      #   } 
-      # }
-      
-      
-      
       #
       # calculate trends of environmental conditions
       trend_driver[id, c("TA_t", "TA_p")] <- cal_sens_slope_scale(a_YY_sub$TIMESTAMP, a_YY_sub$TA_F_MDS, a_YY$TA_F_MDS)
@@ -818,112 +791,8 @@ trend_driver_filter <- trend_driver %>%
   filter(year_end - year_start + 1 >= data_length_thresh) 
 
 
-write.csv(trend_driver_filter, file.path("data2026", "potential_trend_driver_NT.csv"), row.names = F)
+write.csv(trend_driver_filter, file.path("data2026", "potential_trend_driver.csv"), row.names = F)
 
 # write.csv(data_trend_driver, file.path("data2026", "data_trend_driver.csv"), row.names = F)
 
 ```
-
-
-```{r GPP_trend and ER_trend relationships}
-#
-trend_driver <- read.csv(file.path("data2026", "potential_trend_driver.csv"))
-sites_long <- read.csv(file.path('data2026', 'long_term_ec_sites.csv'))
-#
-if (!'category' %in% names(trend_driver)) {
-  trend_driver <- trend_driver %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category", "NEEpartition", "source")], by = "site_ID")
-}
-#
-trend_driver %>% filter(category == 'cold') %>% filter (IGBP %in% c("DBF", "ENF", "MF", "DNF", "EBF")) %>% 
-  mutate(period = ifelse(year_mid >= 2013, 'after 2013', 'before 2013')) %>%
-  ggplot(aes(x = GPP_at, y = ER_at, col = period)) +
-  geom_point() +
-  geom_smooth(method = "lm") + 
-  theme_classic()
-
-# Wet-cold ecosystems
-trend_driver_cold_forest <- trend_driver %>% filter(category == 'cold') %>% filter (IGBP %in% c("DBF", "ENF", "MF", "DNF", "EBF")) %>%
-  mutate(period = ifelse(year_mid >= 2013, "after", "before"))
-
-summary(lm(data = trend_driver_cold_forest[trend_driver_cold_forest$year_mid >= 2013, ], ER_at ~ GPP_at - 1))
-# Estimate Std. Error
-# GPP_at    1.228      0.076
-
-summary(lm(data = trend_driver_cold_forest[trend_driver_cold_forest$year_mid < 2013, ], ER_at ~ GPP_at - 1))
-# Estimate Std. Error
-# GPP_at  0.69419    0.04521
-
-mod <- lm(ER_at ~ 0 + period + GPP_at * period, data = trend_driver_cold_forest)
-summary(mod)
-
-
-trend_driver_cold_nonforest <- trend_driver %>% filter(category == 'cold') %>% filter (!IGBP %in% c("DBF", "ENF", "MF", "DNF", "EBF"))
-
-# this one is more like dry climate
-summary(lm(data = trend_driver_cold_nonforest[trend_driver_cold_nonforest$year_mid >= 2013, ], ER_at ~ GPP_at - 1))
-# GPP_at  0.78998    0.06144   12.86   <2e-16 ***
-summary(lm(data = trend_driver_cold_nonforest[trend_driver_cold_nonforest$year_mid < 2013, ], ER_at ~ GPP_at - 1))
-# GPP_at   1.0134     0.1114   9.097 1.04e-09 ***
-
-#---------------------------------------------------------------------------------------
-# Wet-warm ecosystems
-summary(lm(data = trend_driver[trend_driver$category == "wet", ], ER_at ~ GPP_at - 1))
-# GPP_at  0.78651    0.06018
-
-summary(lm(data = trend_driver[trend_driver$category == "wet" & trend_driver$year_mid >= 2013, ], ER_at ~ GPP_at - 1))
-# GPP_at  0.84400    0.09388   8.991  1.6e-11 ***
-
-summary(lm(data = trend_driver[trend_driver$category == "wet" & trend_driver$year_mid < 2013, ], ER_at ~ GPP_at - 1))
-# GPP_at  0.71094    0.07268   9.782 8.18e-13 ***
-
-#---------------------------------------------------------------------------------------
-# Dry ecosystems | the separation year is based on equally splitting observation data sets.
-trend_driver_dry <- trend_driver %>% filter(category == 'dry') %>% mutate(period = ifelse(year_mid <= 2015, "before", "after"))
-
-summary(lm(data = trend_driver_dry, ER_at ~ GPP_at - 1))
-# GPP_at  0.63210    0.04517   13.99   <2e-16 ***
-
-# although non-significantly different, but the ER ratio is on average lower! 
-summary(lm(data = trend_driver[trend_driver$category == "dry" & trend_driver$year_mid >= 2015, ], ER_at ~ GPP_at - 1))
-# GPP_at  0.59308    0.05742   10.33 8.72e-16 ***
-
-summary(lm(data = trend_driver[trend_driver$category == "dry" & trend_driver$year_mid < 2015, ], ER_at ~ GPP_at - 1))
-# GPP_at  0.73353    0.07392   9.923 2.08e-13 ***
-
-library(emmeans)
-mod <- lm(ER_at ~ 0 + period + GPP_at * period, data = trend_driver_dry)
-summary(mod)
-
-slopes <- emtrends(mod, ~ period, var = "GPP_at")
-slopes
-
-pairs(slopes) # p = 0.2396  pairwise contrasts of estimated marginal trends
-
-#########simply NEE ~ GPP relationships-------------------------------------------------------------------------------
-summary(lm(data = trend_driver[trend_driver$category == "cold", ], ER ~ GPP - 1))
-summary(lm(data = trend_driver[trend_driver$category == "dry", ], ER ~ GPP - 1))
-summary(lm(data = trend_driver[trend_driver$category == "wet", ], ER ~ GPP - 1))
-# cold, dry, 0.84; wet 0.88. 
-
-#----------------------------plot them out----------------------------------------------------------------------------
-trend_driver %>% filter(category == 'dry') %>% 
-  mutate(period = ifelse(year_mid >= 2013, 'after 2013', 'before 2013')) %>%
-  ggplot(aes(x = GPP_at, y = ER_at, col = period)) +
-  geom_point() +
-  geom_smooth(method = "lm") + 
-  labs(title = "Dry climate") +
-  theme_classic()
-
-trend_driver %>% filter(category == 'wet') %>% 
-  mutate(period = ifelse(year_mid >= 2013, 'after 2013', 'before 2013')) %>%
-  ggplot(aes(x = GPP_at, y = ER_at, col = period)) +
-  geom_point() +
-  geom_smooth(method = "lm") + 
-  labs(title = "Wet-warm climate") +
-  theme_classic()
-
-
-
-
-```
-

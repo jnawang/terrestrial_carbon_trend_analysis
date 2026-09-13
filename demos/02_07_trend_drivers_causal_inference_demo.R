@@ -1,11 +1,13 @@
 # A demostration script to estimate drivers of NEE trend for each climate-vegetation class
-# Sep 13, 2026; Junna Wang
+# Junna Wang
 
 rm(list=ls())
 
 library(librarian)
 shelf(tidyverse, ggpubr, lme4, dagitty, lmerTest, brms, randomForest, glmmTMB, performance, MuMIn)
 
+# please set your working directory
+setwd("/Users/junnawang/Downloads/demos")
 
 trend_driver <- read.csv("potential_trend_driver.csv")
 sites_long <- read.csv('long_term_ec_sites.csv')
@@ -686,6 +688,6 @@ for (exposure_var in exposure_vars) {
 df_total_effect
 
 ## write out results
-write.csv(row.names = F, df_total_effect, file.path('data2026', 'effect_total_NEE_trend_driver.csv'))
-write.csv(row.names = F, df_direct_effect, file.path('data2026', 'effect_direct_NEE_trend_driver.csv'))
+write.csv(row.names = F, df_total_effect, file.path('effect_total_NEE_trend_driver.csv'))
+write.csv(row.names = F, df_direct_effect, file.path('effect_direct_NEE_trend_driver.csv'))
 

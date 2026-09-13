@@ -35,18 +35,6 @@ get_rawflux_file_structure <- function(dir_rawdata){
 }
 
 #---------------functions to calculate absolute or relative slopes--------------
-# these are old methods ignoring irregular time series
-# cal_sens_slope <- function(x) {
-#   x <- x[!is.na(x)]
-#   return(as.numeric(sens.slope(x)[c(1)]))
-# }
-# 
-# cal_sens_slope_scale <- function(x) {
-#   x <- x[!is.na(x)]
-#   x <- scale(x)
-#   return(as.numeric(sens.slope(x)[c(1,3)]))
-# }
-
 # use new methods covering irregular time series
 library(mblm)
 cal_sens_slope <- function(time, y) {
@@ -80,41 +68,6 @@ cal_sens_slope_scale <- function(time, y, yall) {
 
   return(as.numeric(result))
 }
-
-# library(zyp)
-# cal_sens_slope <- function(time, y) {
-#   id.nonna <- !is.na(y) & !is.na(time)
-#   y <- y[id.nonna]
-#   time <- time[id.nonna]
-#   #
-#   # result <- zyp.trend.vector(y = y, x = time, method = "zhang")
-#   # return(unname(result["trend"]))
-# 
-#   fit <- zyp.sen(y ~ time)
-#   return(fit$coefficients[2])
-# }
-# # the above one is the same as the mblm. 
-#
-# cal_sens_slope_scale <- function(time, y, yall) {
-#   id.nonna <- !is.na(y) & !is.na(time)
-#   y <- y[id.nonna]
-#   time <- time[id.nonna]
-#   #
-#   if (is.null(yall)) {
-#     ymean <- mean(y)
-#     ystd <- sd(y)
-#   } else {
-#     ymean <- mean(yall, na.rm=T)
-#     ystd <- sd(yall, na.rm=T)
-#   }
-#   # scale y
-#   y <- (y - ymean) / ystd
-# 
-#   result <- zyp.trend.vector(y = y, x = time, method = "zhang")
-# 
-#   return(unname(result[c("trend", "sig")]))
-# }
-
 
 sites_grow_yearlong <- c('BR-Ma2', 'BR-Sa1', 'US-Elm', 'US-Esm', 'US-LL1', 'US-SP1', 'US-SP3', 
                          'GF-Guy', 'ID-PaD', 'AU-How', 'AU-Rob', "AU-Tum", "AU-Cum", "AU-Cow")

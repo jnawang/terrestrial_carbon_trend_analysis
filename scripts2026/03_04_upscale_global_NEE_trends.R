@@ -314,8 +314,5 @@ quantile(terra::values(NEE_trend_fut - NEE_trend_past), probs = c(0.95, 0.75, 0.
 quantile(terra::values(NEE_trend_fut), probs = c(0.95, 0.75, 0.5, 0.25, 0.05), na.rm = T)
 quantile(terra::values(NEE_trend_past), probs = c(0.95, 0.75, 0.5, 0.25, 0.05), na.rm = T)
 
-
-# writeRaster(NEE_trend_past, filename = file.path('data2026', 'NEE_trend_2005-2023.tif'), overwrite=TRUE)
-# writeRaster(NEE_trend_fut, filename = file.path('data2026', 'NEE_trend_2026-2045.tif'), overwrite=TRUE)
 writeRaster(NEE_trend_fut - NEE_trend_past, filename = file.path('data2026', 'NEE_trend_change.tif'), overwrite=TRUE)
 

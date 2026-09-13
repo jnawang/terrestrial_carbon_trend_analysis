@@ -6,6 +6,9 @@ rm(list=ls())
 library(librarian)
 shelf(tidyverse, ggpubr, lme4, dagitty, lmerTest, brms, randomForest, glmmTMB, performance, ranger, caret, Metrics, rsample, terra)
 
+# please set your working directory
+# setwd("/Users/junnawang/Downloads/demos")
+
 trend_driver <- read.csv("potential_trend_driver.csv")
 sites_long <- read.csv('long_term_ec_sites.csv')
 #
@@ -40,8 +43,6 @@ min_node_size = 5
 # 5 fold cross validation
 set.seed(128)
 nfolder <- 5
-
-options(mc.cores = parallel::detectCores())
 
 #
 for (iclimate_veg in 1:length(climate_vegs)) {
@@ -225,7 +226,7 @@ for (iclimate_veg in 1:length(climate_vegs)) {
   df_partial_data <- bind_rows(df_partial_data, partial_data)
 }
 
-# I can check results now. 
+# please note that: your result may be different from mine, as different random seeds were used. 
 df_performance %>% filter(var == 'NEE_at') %>% filter(test) %>% group_by(climate_veg) %>% 
   summarise(rmse_rf = sqrt(mean((obs-rf)^2)), r2 = cor(obs, rf)^2, mae = mean(abs(obs-rf)))
 # 1 cold_deciduous_forest    9.69 0.659  7.33

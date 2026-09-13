@@ -41,8 +41,6 @@ min_node_size = 5
 set.seed(128)
 nfolder <- 5
 
-options(mc.cores = parallel::detectCores())
-
 #
 for (iclimate_veg in 1:length(climate_vegs)) {
   climate_veg <- climate_vegs[iclimate_veg]

@@ -15,37 +15,6 @@ trend_driver <- read.csv(file.path("data2026", "potential_trend_driver.csv"))
 sites_long <- read.csv(file.path('data2026', 'long_term_ec_sites.csv'))
 
 sites_long <- sites_long %>% mutate(source = ifelse(source == "AmeriFlux_BASE", "Eddyproc", "Oneflux"))
-# trend_driver <- trend_driver %>% filter(nyear >= 10)
-
-# what if only using sites with >= 15-year data
-# sites_15yr <- trend_driver %>% group_by(site_ID) %>% summarise(n = n()) %>% filter(n > 1) %>% pull(site_ID)
-# trend_driver <- trend_driver %>% filter(site_ID %in% sites_15yr | nyear >= 13)
-
-
-# # what if I use relative values
-# trend_driver$NEE_at <- trend_driver$NEE_t
-# trend_driver$TA_at <- trend_driver$TA_t
-# trend_driver$TA_gs_at <- trend_driver$TA_gs_t
-# trend_driver$TA_ngs_at <- trend_driver$TA_ngs_t
-# trend_driver$P_at <- trend_driver$P_t
-# trend_driver$P_gs_at <- trend_driver$P_gs_t
-# trend_driver$P_ngs_at <- trend_driver$P_ngs_t
-# trend_driver$SW_at <- trend_driver$SW_t
-# trend_driver$SW_gs_at <- trend_driver$SW_gs_t
-# trend_driver$SW_ngs_at <- trend_driver$SW_ngs_t
-# trend_driver$SWC_at <- trend_driver$SWC_t
-# trend_driver$SWC_gs_at <- trend_driver$SWC_gs_t
-# trend_driver$SWC_ngs_at <- trend_driver$SWC_ngs_t
-# trend_driver$VPD_at <- trend_driver$VPD_t
-# trend_driver$VPD_gs_at <- trend_driver$VPD_gs_t
-# trend_driver$VPD_ngs_at <- trend_driver$VPD_ngs_t
-# trend_driver$LE_at <- trend_driver$LE_t
-# trend_driver$LE_gs_at <- trend_driver$LE_gs_t
-# trend_driver$LE_ngs_at <- trend_driver$LE_ngs_t
-# trend_driver$DIST_at <- trend_driver$DIST_t
-# trend_driver$Lgs_at <- trend_driver$Lgs_t
-
-
 
 # adding IGBP, climate, and category into trend driver
 if (!'category' %in% names(trend_driver)) {
