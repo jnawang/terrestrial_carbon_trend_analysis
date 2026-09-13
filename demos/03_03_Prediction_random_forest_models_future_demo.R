@@ -1,13 +1,13 @@
 # Develop ensemble models to project future NEE trend and use cross-validation to test model accuracy. 
-# Junna Wang, March 25, 2026
+# Junna Wang
 
 rm(list=ls())
 
 library(librarian)
 shelf(tidyverse, ggpubr, lme4, dagitty, lmerTest, brms, randomForest, glmmTMB, performance, ranger, caret, Metrics, rsample, terra)
 
-trend_driver <- read.csv(file.path("data2026", "potential_trend_driver.csv"))
-sites_long <- read.csv(file.path('data2026', 'long_term_ec_sites.csv'))
+trend_driver <- read.csv("potential_trend_driver.csv")
+sites_long <- read.csv('long_term_ec_sites.csv')
 #
 sites_long <- sites_long %>% mutate(source = ifelse(source == "AmeriFlux_BASE", "Eddyproc", "Oneflux"))
 
@@ -225,8 +225,6 @@ for (iclimate_veg in 1:length(climate_vegs)) {
   df_partial_data <- bind_rows(df_partial_data, partial_data)
 }
 
-write.csv(df_partial_data, file.path("data2026", "rf_partial_plot_trend_drivers.csv"), row.names = F)
-
 # I can check results now. 
 df_performance %>% filter(var == 'NEE_at') %>% filter(test) %>% group_by(climate_veg) %>% 
   summarise(rmse_rf = sqrt(mean((obs-rf)^2)), r2 = cor(obs, rf)^2, mae = mean(abs(obs-rf)))
@@ -256,99 +254,3 @@ df_performance %>% filter(var == 'SWC_gs_at') %>% filter(!test) %>% group_by(cli
 # 1 cold_non_forest  0.0461 0.937
 # 2 dry              0.0461 0.964
 
-
-## plot the partial plots 
-for (iclimate_veg in 1:length(climate_vegs)) {
-  climate_veg <- climate_vegs[iclimate_veg]
-  partial_data <- df_partial_data %>% filter(climate_veg == climate_vegs[iclimate_veg])
-  key_variables <- unique(partial_data$variable)
-  for (key_variable in key_variables) {
-    # 
-    data_var <- partial_data %>% filter(variable == key_variable)
-    #
-    plot(x = data_var$x_value, y = data_var$yhat, main = paste(climate_veg, "--", key_variable))
-  }
-}
-
-##test performance for projecting past changes
-site_ID_test <- df_performance2 %>% group_by(site_ID) %>% summarise(nwindow = n()) %>% filter(nwindow >=5) %>% pull(site_ID)
-df_change <- data.frame()
-for (site in site_ID_test) {
-  df_performance2_site <- df_performance2 %>% filter(site_ID == site) %>% arrange(year_mid)
-  nwindow = nrow(df_performance2_site)
-  df_change <- bind_rows(df_change, data.frame(site_ID = site, 
-                                               obs_change = df_performance2_site$obs[nwindow] - df_performance2_site$obs[1],
-                                               rf_change = df_performance2_site$rf[nwindow] - df_performance2_site$rf[1]))
-}
-
-caret::postResample(df_change$obs_change, df_change$rf_change)
-# RMSE      Rsquared       MAE 
-# 8.2646250 0.8951494      5.5254670 
-
-# test site-block cross-validation for change in NEE_at
-df_performance3 = data.frame()
-# for (site in sites_long$site_ID) {
-for (site in site_ID_test) {
-  print(site)
-  data_site <- trend_driver %>% filter(site_ID == site)
-  
-  site_character <- sites_long %>% filter(site_ID == site)
-  if (site_character$IGBP %in% c('ENF', 'EBF') & site_character$category == "cold") {
-    data_group <- trend_driver %>% filter(site_ID != site) %>%
-      filter(IGBP %in% c('ENF', 'EBF') & category == "cold")  # %>% dplyr::filter(!is.na(DIST_at))
-    iclimate_veg = 1
-  } else if (site_character$IGBP %in% c('DBF', 'DNF', 'MF') & site_character$category == "cold") {
-    data_group <- trend_driver %>% filter(site_ID != site) %>%
-      filter(IGBP %in% c('DBF', 'DNF', 'MF') & category == "cold") %>% dplyr::filter(!is.na(LE))
-    iclimate_veg = 2
-  } else if (!site_character$IGBP %in% c('ENF', 'EBF', 'DBF', 'DNF', 'MF') & site_character$category == "cold") {
-    data_group <- trend_driver %>% filter(site_ID != site) %>%
-      filter(!IGBP %in% c('ENF', 'EBF', 'DBF', 'DNF', 'MF') & category == "cold") # %>% dplyr::filter(!is.na(LE_gs_at)) 
-    iclimate_veg = 3
-  } else if (site_character$category == "dry") {
-    data_group <- trend_driver %>% filter(site_ID != site) %>%
-      filter(category == "dry") 
-    iclimate_veg = 4
-  } else if (site_character$category == "wet") {
-    data_group <- trend_driver %>% filter(site_ID != site) %>%
-      filter(category == "wet") 
-    iclimate_veg = 5
-  }
-  
-  key_var <- key_vars[iclimate_veg]
-  
-  rf_model <- ranger(
-    formula = paste0("NEE_at ~ ", key_var, " + MAP + MAT + AI + IGBP + Climate.class + GPP_at_mean"),   #  + MAP + MAT + AI + IGBP + Climate.class + GPP_at_mean
-    data = data_group,
-    mtry = 1, 
-    min.node.size = min_node_size,
-    importance = "permutation"
-  )
-  
-  data_site$rf <- predict(rf_model, data = data_site)$predictions
-  data_site$test <- T
-  data_group$rf <- predict(rf_model, data = data_group)$predictions
-  data_group <- data_group %>% filter(site_ID %in% site_ID_test)
-  data_group$test <- F
-  
-  tmp <- bind_rows(data_site, data_group)
-  
-  df_performance3 <- bind_rows(df_performance3, data.frame(site_ID = tmp$site_ID, var = "NEE_at", climate_veg = climate_vegs[iclimate_veg], 
-                                                           year_mid = tmp$year_mid, obs = tmp$NEE_at, rf = tmp$rf, test = tmp$test))
-}
-
-df_change_cv <- data.frame()
-for (site in site_ID_test) {
-  df_performance3_site <- df_performance3 %>% filter(site_ID == site) %>% filter(test) %>% arrange(year_mid)
-  nwindow = nrow(df_performance3_site)
-  df_change_cv <- bind_rows(df_change_cv, data.frame(site_ID = site, climate_veg = df_performance3_site$climate_veg[1],
-                                                     obs = df_performance3_site$obs[nwindow] - df_performance3_site$obs[1],
-                                                     rf = df_performance3_site$rf[nwindow] - df_performance3_site$rf[1]))
-}
-
-df_change_cv %>% group_by(climate_veg) %>% 
-  summarise(rmse_rf = sqrt(mean((obs-rf)^2)), r2 = cor(obs, rf)^2, mae = mean(abs(obs-rf)))
-
-summary(lm(data = df_change_cv, rf ~ obs))
-
-plot(df_change_cv$rf, df_change_cv$obs)

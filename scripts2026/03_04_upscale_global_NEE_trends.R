@@ -1,5 +1,5 @@
 # This script projects for future NEE trends.
-# Junna Wang, 04-07-2026
+# Junna Wang
 # Be mindful that each data source has its own unit. 
 # 
 
