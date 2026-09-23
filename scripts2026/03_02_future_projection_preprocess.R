@@ -7,8 +7,8 @@
 
 # global monthly CO2 is obtained from https://zenodo.org/records/5021361
 # citation: Cheng, W., Dan, L., Deng, X., Feng, J., Wang, Y., Peng, J., Tian, J., Qi, W., Liu, Z., Zheng, X., Zhou, D., Jiang, S., Zhao, H., & Wang, X. (2021). Global monthly distributions of atmospheric CO2 concentrations under the historical and future scenarios [Data set]. Zenodo. https://doi.org/10.5281/zenodo.5021361
-# for disturbance effects: use projections based various climate variables; be consistent. 
 
+# for disturbance effects: using calculated values based on global MODIS LAI, and we need SOS and EOS map for this purpose
 
 rm(list=ls())
 # change this location where the raw data will be saved accordingly
@@ -16,53 +16,131 @@ dir_rawdata <- '/Volumes/WZZ_disk'
 # dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
 #
 library(librarian)
-shelf(tidyverse, ggpubr, terra, ncdf4, future.apply, trend)
+shelf(tidyverse, ggpubr, terra, ncdf4, future.apply, trend, mgcv)
 
 ###########################################
 # 1. get start and end of growing season
 ###########################################
-source(file.path("scripts", "00_functions.R"))
+source(file.path("scripts2026", "00_functions.R"))
 
-data_grow_season <- read.csv(file.path('data', 'growing_season_yearly.csv'))
-sites_long <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
-#
-sos_eos <- data_grow_season %>% group_by(site_ID) %>% 
-  summarise(sos=mean(sos_TRS+sos_DER, na.rm=T)/2, eos=mean(eos_TRS+eos_DER, na.rm=T)/2) %>% 
-  left_join(sites_long[, c('site_ID', 'IGBP', 'Climate.class', 'category')]) %>% 
-  mutate(group = case_when(category=='dry' ~ 'dry', category=='wet' ~ 'wet', 
-                           category=='cold' & IGBP %in% c('ENF', 'EBF') ~ 'cold_ENF',
-                           category=='cold' & IGBP %in% c('DBF', 'MF', 'DNF') ~ 'cold_DBF',
-                           category=='cold' & !IGBP %in% c('ENF', 'EBF', 'DBF', 'MF', 'DNF') ~ 'cold_nonforest')) %>%
-  arrange(group, Climate.class) 
+data_grow_season <- read.csv(file.path("data2026", "growing_season_yearly.csv"))
+sites_long <- read.csv(file.path("data2026", "long_term_ec_sites.csv"))
 
-sos_eos_group <- sos_eos %>% group_by(category, Climate.class) %>% 
-  summarise(sos_group=round(mean(sos)), eos_group=round(mean(eos))) 
-sos_eos_group$sos_group[sos_eos_group$category=='wet'] <- 1
-sos_eos_group$eos_group[sos_eos_group$category=='wet'] <- 365
+mean_na <- function(x) if (all(is.na(x))) NA_real_ else mean(x, na.rm = TRUE)
+year_round <- c("Af", "Am", "Cfa", "Cwa")
 
-# adding three climate groups with year long growth
-sos_eos_group <- rbind(sos_eos_group, data.frame(category = c("wet", "wet", "wet"),
-                                                 Climate.class = c("Af", "Am", "Cwa"), 
-                                                 sos_group = c(1, 1, 1), 
-                                                 eos_group = c(365, 365, 365)))
+data_grow_season$sos_year <- rowMeans(
+  data_grow_season[, c("sos_TRS", "sos_DER")], na.rm = TRUE
+)
+data_grow_season$eos_year <- rowMeans(
+  data_grow_season[, c("eos_TRS", "eos_DER")], na.rm = TRUE
+)
+data_grow_season$sos_year[is.nan(data_grow_season$sos_year)] <- NA
+data_grow_season$eos_year[is.nan(data_grow_season$eos_year)] <- NA
 
-# we added 10 climate classes whose start and end of growing season were given based on similar climates
-sos_eos_group <- rbind(sos_eos_group, data.frame(category = c("cold", "cold", "cold", "cold", "cold", "cold", "cold", "cold", "cold", "cold"),
-                                                 Climate.class = c("Cfc", "Csc", "Cwb", "Cwc", "Dsa", "Dsc", "Dsd", "Dwa", "Dwd", 'EF'), 
-                       sos_group = sos_eos_group$sos_group[match(c('Cfb', 'Csb', 'Cfb', 'Cfb', "Dsb", "Dsb", "Dsb", "Dwb", "Dwc", 'ET'), sos_eos_group$Climate.class[1:10])], 
-                       eos_group = sos_eos_group$eos_group[match(c('Cfb', 'Csb', 'Cfb', 'Cfb', "Dsb", "Dsb", "Dsb", "Dwb", "Dwc", 'ET'), sos_eos_group$Climate.class[1:10])]))
-sos_eos_group <- sos_eos_group %>% arrange(category, Climate.class)
-# we have 30 climates now. 
+sos_eos_site <- data_grow_season %>%
+  group_by(site_ID) %>%
+  summarise(
+    sos = mean_na(sos_year),
+    eos = mean_na(eos_year),
+    .groups = "drop"
+  ) %>%
+  left_join(
+    sites_long %>%
+      select(site_ID, Climate.class) %>%
+      distinct(),
+    by = "site_ID"
+  ) %>%
+  mutate(
+    climate_parent = substr(Climate.class, 1, 2),
+    climate_grandparent = substr(Climate.class, 1, 1)
+  ) %>%
+  filter(!is.na(Climate.class), is.finite(sos), is.finite(eos))
 
-sos_eos_group <- sos_eos_group %>% left_join(df_koppen_climate, by = 'Climate.class')
+sos_eos_exact <- sos_eos_site %>%
+  group_by(Climate.class) %>%
+  summarise(
+    nsite_exact = n_distinct(site_ID),
+    sos_exact = mean(sos),
+    eos_exact = mean(eos),
+    .groups = "drop"
+  )
+
+sos_eos_parent <- sos_eos_site %>%
+  group_by(climate_parent) %>%
+  summarise(
+    nsite_parent = n_distinct(site_ID),
+    sos_parent = mean(sos),
+    eos_parent = mean(eos),
+    .groups = "drop"
+  )
+
+sos_eos_grandparent <- sos_eos_site %>%
+  group_by(climate_grandparent) %>%
+  summarise(
+    nsite_grandparent = n_distinct(site_ID),
+    sos_grandparent = mean(sos),
+    eos_grandparent = mean(eos),
+    .groups = "drop"
+  )
+
+sos_eos_group <- df_koppen_climate %>%
+  mutate(
+    climate_parent = substr(Climate.class, 1, 2),
+    climate_grandparent = substr(Climate.class, 1, 1)
+  ) %>%
+  left_join(sos_eos_exact, by = "Climate.class") %>%
+  left_join(sos_eos_parent, by = "climate_parent") %>%
+  left_join(sos_eos_grandparent, by = "climate_grandparent") %>%
+  mutate(
+    assignment_source = case_when(
+      Climate.class %in% year_round ~ "year_round",
+      nsite_exact >= 2 ~ "exact_class",
+      nchar(Climate.class) > 2 & !is.na(sos_parent) ~
+        paste0("parent_", climate_parent),
+      !is.na(sos_grandparent) ~
+        paste0("grandparent_", climate_grandparent),
+      TRUE ~ "missing"
+    ),
+    sos_group = case_when(
+      Climate.class %in% year_round ~ 1,
+      nsite_exact >= 2 ~ sos_exact,
+      nchar(Climate.class) > 2 & !is.na(sos_parent) ~ sos_parent,
+      !is.na(sos_grandparent) ~ sos_grandparent,
+      TRUE ~ NA_real_
+    ),
+    eos_group = case_when(
+      Climate.class %in% year_round ~ 366,
+      nsite_exact >= 2 ~ eos_exact,
+      nchar(Climate.class) > 2 & !is.na(eos_parent) ~ eos_parent,
+      !is.na(eos_grandparent) ~ eos_grandparent,
+      TRUE ~ NA_real_
+    ),
+    sos_group = pmin(pmax(round(sos_group), 1), 366),
+    eos_group = pmin(pmax(round(eos_group), 1), 366),
+    nsite_exact = replace_na(nsite_exact, 0L),
+    nsite_parent = replace_na(nsite_parent, 0L),
+    nsite_grandparent = replace_na(nsite_grandparent, 0L)
+  ) %>%
+  select(
+    Climate.class, climate_id,
+    # climate_parent, climate_grandparent,
+    sos_group, eos_group, 
+    # assignment_source, nsite_exact, nsite_parent, nsite_grandparent
+  ) %>%
+  arrange(climate_id)
+
+if (anyNA(sos_eos_group$sos_group) ||
+    anyNA(sos_eos_group$eos_group)) {
+  stop("Some climate classes still lack SOS/EOS information.")
+}
+
+# print(sos_eos_group, n = Inf)
 
 
-###########################################################
-# 2. get global zonation based on climate and vegetation
-###########################################################
-
-koppen_climate <- terra::rast(file.path('data', 'koppen_geiger_0p00833333.tif'))
-land_cover <- terra::rast(file.path('data', '968_Land_Cover_Class_0.25degree_layer2.tif'))
+# -------------------- create SOS/EOS raster for Google Earth Engine --------------------
+koppen_climate <- terra::rast(file.path('data2026', 'koppen_geiger_0p00833333.tif'))
+land_cover <- terra::rast(file.path('data2026', '968_Land_Cover_Class_0.25degree_layer2.tif'))
 # we only extract layer 2 of the 968_Land_Cover_Class_0.25degree.nc file. 
 #
 # linked information about global land_cover_class maps
@@ -83,28 +161,81 @@ land_cover <- terra::rast(file.path('data', '968_Land_Cover_Class_0.25degree_lay
 koppen_climate_0.25 <- terra::resample(koppen_climate, land_cover, method="near")
 # plot(koppen_climate_0.25)
 
+SOS <- subst(
+  koppen_climate_0.25,
+  from = sos_eos_group$climate_id,
+  to = sos_eos_group$sos_group,
+  others = NA
+)
+
+EOS <- subst(
+  koppen_climate_0.25,
+  from = sos_eos_group$climate_id,
+  to = sos_eos_group$eos_group,
+  others = NA
+)
+
+names(SOS) <- "SOS"
+names(EOS) <- "EOS"
+
+SOS_EOS <- c(SOS, EOS)
+# 
+# writeRaster(
+#   SOS_EOS,
+#   file.path("data2026", "global_SOS_EOS_025degree.tif"),
+#   datatype = "INT2S",
+#   NAflag = -9999,
+#   overwrite = TRUE
+# )
+
+plot(SOS, main = "Start of growing season")
+plot(EOS, main = "End of growing season")
+
+###########################################################
+# 2. get global zonation based on climate and vegetation
+###########################################################
+
 # aridity index
-AI_0.25 <- terra::rast(file.path('data', 'Global-AI.tif'))
+AI_0.25 <- terra::rast(file.path('data2026', 'Global-AI.tif'))
 AI_0.25 <- terra::resample(AI_0.25, land_cover) / 10000       # values are enlarged by 10000
 # Zomer, R.J., Xu, J. & Trabucco, A. Version 3 of the Global Aridity Index and Potential Evapotranspiration Database. Sci Data 9, 409 (2022). https://doi.org/10.1038/s41597-022-01493-1
+
+# mean annual temperature
+MAT <- terra::rast(file.path('data2026', 'baseline_mat.tif'))
+MAT <- terra::resample(MAT, land_cover)
 #
 # a data frame to store zone info
 df_zone <- data.frame(koppen_climate=as.integer(terra::values(koppen_climate_0.25)),
                       land_cover=as.integer(terra::values(land_cover)),
-                      AI = terra::values(AI_0.25))
-names(df_zone)[3] <- "AI"
+                      AI = terra::values(AI_0.25),
+                      MAT = terra::values(MAT))
+names(df_zone)[3:4] <- c("AI", "MAT")
 
-# the classification of dry and wet in tropics should based on aridity index. 
-df_zone <- df_zone %>% mutate(group = case_when(
-  koppen_climate %in% c(1:3, 11, 14) & !land_cover %in% c(12,13,14,15,16,17,0) & AI > 0.5 ~ "wet", 
-  koppen_climate %in% c(1:3, 11, 14) & !land_cover %in% c(12,13,14,15,16,17,0) & AI < 0.5 ~ "dry", 
-  koppen_climate %in% c(4:10) & !land_cover %in% c(12,13,14,15,16,17,0) ~ "dry",  # remove 0water, 12cropland, 13urban, 15ice, 16barren
-  koppen_climate %in% c(12:13, 15:30) & land_cover %in% c(6:9, 14) ~ "cold_nonforest", 
-  koppen_climate %in% c(12:13, 15:30) & land_cover %in% c(10) ~ "cold_nonforest", 
-  koppen_climate %in% c(12:13, 15:30) & land_cover %in% c(11) ~ "cold_nonforest", 
-  koppen_climate %in% c(12:13, 15:30) & land_cover %in% c(1:2) ~ "cold_ENF",
-  koppen_climate %in% c(12:13, 15:30) & land_cover %in% c(3:5) ~ "cold_DBF"))
-# if is hard to define Mediterean climate
+# using the same rules as we classify study sites
+# Step 1: classify climate into: dry, wet-warm (wet), wet-cold (cold)
+# rule 1: all arctic and subarctic climates ("Dfc", "Dfd", "Dsc", "Dsd", "Dwc", "Dwd", "ET") are cold
+# rule 2: for the rest grid-cells, all grids with AI <= 0.5, as dry climate
+# rule 3: all grids with AI > 0.5, as wet climate, and then wet climates are divided into cold and warm
+# rule 4: climates in tropical and subtropical ("Am", "Af", "Aw", "Cfa", "Cwa", "Cwb", "Cwc", "Csa") are warm 
+# rule 5: climates in continental climates ("Dfa", "Dfb", "Dsa", "Dsb", "Dwa", "Dwb") are cold
+# rule 6: sites in temperate climate dependent vegetation type: evergreen broadleaf forest EBF is warm, and other vegetation types are cold
+# rule 7: sites in dry climate (arid, semi-arid, mediterrean climate, and tropical dry climate): MAT > 10C, warm; MAT < 10C, cold. 
+
+# Step 2: classify vegetation into ENF, DBF&MF (DBF), nonforest
+df_zone <- df_zone %>% mutate(group_climate = case_when(
+  koppen_climate %in% c(19:20, 23:24, 27:30) ~ "cold",
+  AI < 0.5 & koppen_climate %in% (1:30) ~ "dry",           # ensure not in the ocean
+  AI >= 0.5 & koppen_climate %in% c(17:18, 21:22, 25:26) ~ "cold", 
+  AI >= 0.5 & koppen_climate %in% c(1:2, 11:14) ~ "wet", 
+  AI >= 0.5 & koppen_climate %in% c(15:16) & land_cover %in% c(2) ~ "wet", 
+  AI >= 0.5 & koppen_climate %in% c(15:16) & !land_cover %in% c(2) ~ "cold", 
+  AI >= 0.5 & koppen_climate %in% c(3:10) & MAT >= 10 ~ "wet", 
+  AI >= 0.5 & koppen_climate %in% c(3:10) & MAT < 10 ~ "cold")) %>%
+  mutate(group = case_when(group_climate == "wet" ~ "wet",
+                           group_climate == "dry" ~ "dry",
+                           group_climate == "cold" & land_cover %in% c(6:11, 14) ~ "cold_nonforest",
+                           group_climate == "cold" & land_cover %in% c(1:2) ~ "cold_ENF",
+                           group_climate == "cold" & land_cover %in% c(3:5) ~ "cold_DBF"))
 
 zone_grow_season <- koppen_climate_0.25
 
@@ -115,7 +246,7 @@ terra::values(zone_group) <- df_zone$group
 plot(zone_group)
 # why there are so many missing points? these are croplands, urban, ice, and barren.  
 
-writeRaster(zone_group, filename = file.path('data', 'zones_climate_vegetation_group.tif'), overwrite=TRUE)
+writeRaster(zone_group, filename = file.path('data2026', 'zones_climate_vegetation_group.tif'), overwrite=TRUE)
 
 #------------------------------------
 # calculate zone_grow_season masks
@@ -234,11 +365,11 @@ for (i in 1:nrow(df_file_info_subset)) {
   
   rm(met_data)
   gc()
-  terra::tmpFiles(remove = TRUE)
-}
-writeRaster(t2m_gs, filename = file.path('data', 't2m_gs_2005_2023.tif'), overwrite=TRUE)
-writeRaster(t2m_ngs, filename = file.path('data', 't2m_ngs_2005_2023.tif'), overwrite=TRUE)
 
+}
+writeRaster(t2m_gs, filename = file.path('data2026', 't2m_gs_2005_2023.tif'), overwrite=TRUE)
+writeRaster(t2m_ngs, filename = file.path('data2026', 't2m_ngs_2005_2023.tif'), overwrite=TRUE)
+terra::tmpFiles(remove = TRUE)
 #-----------------------------------
 # work on tp, unit: m
 # tp_data <- list()
@@ -258,11 +389,11 @@ for (i in 1:nrow(df_file_info_subset)) {
   
   rm(met_data)
   gc()
-  terra::tmpFiles(remove = TRUE)
+  
 }
-writeRaster(tp_gs, filename = file.path('data', 'tp_gs_2005_2023.tif'), overwrite=TRUE)
-writeRaster(tp_ngs, filename = file.path('data', 'tp_ngs_2005_2023.tif'), overwrite=TRUE)
-
+writeRaster(tp_gs, filename = file.path('data2026', 'tp_gs_2005_2023.tif'), overwrite=TRUE)
+writeRaster(tp_ngs, filename = file.path('data2026', 'tp_ngs_2005_2023.tif'), overwrite=TRUE)
+terra::tmpFiles(remove = TRUE)
 #-----------------------------------
 # work on ssrd, unit: J m**-2
 # ssrd_data <- list()
@@ -279,10 +410,10 @@ for (i in 1:nrow(df_file_info_subset)) {
 
   rm(met_data)
   gc()
-  terra::tmpFiles(remove = TRUE)
+  
 }
-writeRaster(ssrd_gs, filename = file.path('data', 'ssrd_gs_2005_2023.tif'), overwrite=TRUE)
-
+writeRaster(ssrd_gs, filename = file.path('data2026', 'ssrd_gs_2005_2023.tif'), overwrite=TRUE)
+terra::tmpFiles(remove = TRUE)
 ###########################################################
 # 5. process ET data from FLUXCOM in the past
 ###########################################################
@@ -305,10 +436,10 @@ for (i in 1:length(ET_files)) {
   
   rm(met_data)
   gc()
-  terra::tmpFiles(remove = TRUE)
 }
-writeRaster(et_gs_past, filename = file.path('data', 'et_gs_2005_2023.tif'), overwrite=TRUE)
-
+rm(met_data,test)
+gc()
+terra::tmpFiles(current=FALSE,orphan=TRUE,old=FALSE,remove=TRUE)
 ######################################################################
 # 6. get future climate average during growing and non-growing season
 ######################################################################
@@ -346,7 +477,8 @@ for (var in vars) {
     tp_gs_fut <- c(tp_gs_fut, test)
     print(i)
   }
-  writeRaster(tp_gs_fut, filename = paste0('data/', var, '_gs_2026_2050.tif'), overwrite=TRUE)
+  writeRaster(tp_gs_fut, filename = paste0('data2026/', var, '_gs_2026_2050.tif'), overwrite=TRUE)
+  
   
   # non-growing season
   if (var %in% c('pr', 'tas')) {
@@ -356,25 +488,29 @@ for (var in vars) {
       tp_ngs_fut <- c(tp_ngs_fut, test)
       print(i)
     }
-    writeRaster(tp_ngs_fut, filename = paste0('data/', var, '_ngs_2026_2050.tif'), overwrite=TRUE)      
+    writeRaster(tp_ngs_fut, filename = paste0('data2026/', var, '_ngs_2026_2050.tif'), overwrite=TRUE)
   }
+  
+  rm(tp_gs_fut,test)
+  gc()
+  terra::tmpFiles(current=FALSE,orphan=TRUE,old=FALSE,remove=TRUE)  
 }
 
 #########################################################################################################
 # 7. get baseline (2005~2021) information about NEE, GPP, ET, MAT, MAP, climate and vegetation group 
 #########################################################################################################
-folder <- 'gpp_fluxcom_2005_2021'
-nc_files <- list.files(file.path(dir_rawdata, 'ScaleUp_Global', folder), pattern='.nc$', full.names = T)
-gpp_baseline <- terra::rast()
-for (i in 1:length(nc_files)) {
-  print(i)
-  gpp_data <- terra::rast(nc_files[i])
-  gpp_data <- terra::app(gpp_data, fun=sum, na.rm=T)
-  gpp_baseline <- c(gpp_baseline, gpp_data)
-}
-gpp_baseline <- terra::app(gpp_baseline, fun=mean, na.rm=T)
-
-writeRaster(gpp_baseline, filename = file.path('data', 'baseline_gpp_2005-2021.tif'), overwrite=TRUE)
+# folder <- 'gpp_fluxcom_2005_2021'
+# nc_files <- list.files(file.path(dir_rawdata, 'ScaleUp_Global', folder), pattern='.nc$', full.names = T)
+# gpp_baseline <- terra::rast()
+# for (i in 1:length(nc_files)) {
+#   print(i)
+#   gpp_data <- terra::rast(nc_files[i])
+#   gpp_data <- terra::app(gpp_data, fun=sum, na.rm=T)
+#   gpp_baseline <- c(gpp_baseline, gpp_data)
+# }
+# gpp_baseline <- terra::app(gpp_baseline, fun=mean, na.rm=T)
+# 
+# writeRaster(gpp_baseline, filename = file.path('data2026', 'baseline_gpp_2005-2021.tif'), overwrite=TRUE)
 
 #-----------
 folder <- 'nee_fluxcom_2005_2021'
@@ -387,31 +523,31 @@ for (i in 2005:2021) {
 }
 nee_baseline <- terra::app(nee_baseline, fun=mean, na.rm=T)
 
-writeRaster(nee_baseline, filename = file.path('data', 'baseline_nee_2005-2021.tif'), overwrite=TRUE) 
+writeRaster(nee_baseline, filename = file.path('data2026', 'baseline_nee_2005-2021.tif'), overwrite=TRUE) 
 
 #-----------
-folder <- 'et_day_2005_2021'
-nc_files <- list.files(file.path(dir_rawdata, 'ScaleUp_Global', folder), pattern='.nc$', full.names = T)
-et_baseline <- terra::rast()
-for (i in 1:length(nc_files)) {
-  print(i)
-  et_data <- terra::rast(nc_files[i])
-  et_data <- terra::app(et_data, fun=mean, na.rm=T)
-  et_baseline <- c(et_baseline, et_data)
-}
-et_baseline <- terra::app(et_baseline, fun=mean, na.rm=T)
-
-writeRaster(et_baseline, filename = file.path('data', 'baseline_et_2005-2021.tif'), overwrite=TRUE) 
+# folder <- 'et_day_2005_2021'
+# nc_files <- list.files(file.path(dir_rawdata, 'ScaleUp_Global', folder), pattern='.nc$', full.names = T)
+# et_baseline <- terra::rast()
+# for (i in 1:length(nc_files)) {
+#   print(i)
+#   et_data <- terra::rast(nc_files[i])
+#   et_data <- terra::app(et_data, fun=mean, na.rm=T)
+#   et_baseline <- c(et_baseline, et_data)
+# }
+# et_baseline <- terra::app(et_baseline, fun=mean, na.rm=T)
+# 
+# writeRaster(et_baseline, filename = file.path('data2026', 'baseline_et_2005-2021.tif'), overwrite=TRUE) 
 
 #--------MAT, MAP
-# mat_baseline <- terra::rast(file.path('data', 'MAT.tif'))
-# map_baseline <- terra::rast(file.path('data', 'MAP.tif'))
+# mat_baseline <- terra::rast(file.path('data2026', 'MAT.tif'))
+# map_baseline <- terra::rast(file.path('data2026', 'MAP.tif'))
 # 
 # mat_baseline <- terra::resample(mat_baseline, gpp_baseline) 
 # map_baseline <- terra::resample(map_baseline, gpp_baseline)
 # 
-# writeRaster(mat_baseline, filename = file.path('data', 'baseline_mat.tif'), overwrite=TRUE)
-# writeRaster(map_baseline, filename = file.path('data', 'baseline_map.tif'), overwrite=TRUE)
+# writeRaster(mat_baseline, filename = file.path('data2026', 'baseline_mat.tif'), overwrite=TRUE)
+# writeRaster(map_baseline, filename = file.path('data2026', 'baseline_map.tif'), overwrite=TRUE)
 
 # climate_baseline <-  koppen_climate
 # igbp_baseline <-     land_cover
@@ -473,57 +609,459 @@ et_at_past_fut_change <- et_at_model_fut - et_at_model_past
 et_at_past_fut_change <- et_at_past_fut_change * 3600   # convert unit from mm/s to mm/hr
 et_at_past_fut_change <- terra::resample(et_at_past_fut_change, et_gs_past)
 
-writeRaster(et_at_past_fut_change, filename = file.path('data', 'et_at_past_fut_change.tif'), overwrite=TRUE)
+writeRaster(et_at_past_fut_change, filename = file.path('data2026', 'et_at_past_fut_change.tif'), overwrite=TRUE)
 
 ################################################################################
 # 9. get current and future disturbance effects
 ################################################################################
-#
-df_disturbance <- read.csv(file.path("data2026", "LAI_reduction_disturbance.csv"))
-df_disturbance_at <- df_disturbance %>% arrange(ID, year) %>% 
-  group_by(ID) %>% summarise(DIST_at = sens.slope(deficit_obs)$estimates, .groups = "drop") %>%
-  rename("site_ID" = "ID")
+data_dir <- file.path(dir_rawdata, "Carbon_trend/SiteData/", "LAI_4day_DBF")
+zone_file <- file.path("data2026", "zones_climate_vegetation_group.tif")
+sos_eos_file <- file.path("data2026", "global_SOS_EOS_025degree.tif")
 
-if (!'category' %in% names(df_disturbance_at)) {
-  df_disturbance_at <- df_disturbance_at %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category")], by = "site_ID")
+files <- list.files(data_dir,pattern="^MODIS_LAI_QC_1000points_[0-9]{4}\\.csv$",full.names=TRUE)
+if(!length(files)) stop("No GEE CSV files found.")
+files <- files[1:19]       # get the first 19 lines, just use 2005-2023
+
+read_GEE <- function(f) readr::read_csv(f,show_col_types=FALSE) %>%
+  dplyr::select(sample_ID,sample_type,latitude,longitude,zone,
+                tidyselect::matches("^\\d{4}_\\d{2}_\\d{2}_")) %>%
+  tidyr::pivot_longer(
+    tidyselect::matches("^\\d{4}_\\d{2}_\\d{2}_"),
+    names_to=c("Date",".value"),
+    names_pattern="^(\\d{4}_\\d{2}_\\d{2})_(.*)$"
+  ) %>%
+  mutate(Date=lubridate::ymd(str_replace_all(Date,"_","-")))
+
+data_LAI <- map_dfr(files,read_GEE) %>%
+  filter(sample_type=="random") %>%
+  mutate(
+    across(c(LAI,MODLAND,CloudState,Aerosol,Cloud_Shadow,Internal_CloudMask),as.numeric),
+    LAI=if_else(LAI>20,NA_real_,LAI),
+    year=lubridate::year(Date),
+    doy=case_when(
+      latitude < -10 & lubridate::leap_year(year) & lubridate::month(Date)<7 ~ lubridate::yday(Date)-182+366,
+      latitude < -10 & lubridate::leap_year(year) & lubridate::month(Date)>=7 ~ lubridate::yday(Date)-182,
+      latitude < -10 & !lubridate::leap_year(year) & lubridate::month(Date)<7 ~ lubridate::yday(Date)-181+365,
+      latitude < -10 & !lubridate::leap_year(year) & lubridate::month(Date)>=7 ~ lubridate::yday(Date)-181,
+      TRUE ~ lubridate::yday(Date)
+    )
+  ) %>%
+  filter(is.finite(longitude),is.finite(latitude),
+         between(longitude,-180,180),between(latitude,-90,90)) %>%
+  arrange(sample_ID,Date)
+
+sos_eos <- rast(sos_eos_file)
+if(nlyr(sos_eos)<2) stop("SOS/EOS raster must contain two layers.")
+names(sos_eos)[1:2] <- c("SOS","EOS")
+
+point_info <- data_LAI %>%
+  distinct(sample_ID,latitude,longitude)
+
+point_vect <- vect(
+  as.matrix(point_info[,c("longitude","latitude")]),
+  type="points",
+  crs="+proj=longlat +datum=WGS84"
+)
+
+sos_eos_values <- as.data.frame(
+  terra::extract(sos_eos,point_vect,ID=FALSE)
+)
+
+point_info <- bind_cols(point_info,sos_eos_values) %>%
+  transmute(sample_ID,latitude,longitude,SOS=round(SOS),EOS=round(EOS))
+
+data_LAI <- data_LAI %>%
+  left_join(point_info,by=c("sample_ID","latitude","longitude"))
+
+calculate_deficit <- function(x) {
+  x <- x %>% arrange(Date)
+  sos <- first(na.omit(x$SOS))
+  eos <- first(na.omit(x$EOS))
+  
+  if(!length(sos) || !length(eos) ||
+     !is.finite(sos) || !is.finite(eos) || eos<sos) return(NULL)
+  
+  x <- x %>%
+    mutate(
+      strict_qc=CloudState==0 & Aerosol==0 &
+        Cloud_Shadow==0 & Internal_CloudMask==0,
+      weight=case_when(
+        strict_qc & MODLAND==0 ~ 1,
+        strict_qc & !is.na(MODLAND) & MODLAND!=0 ~ 0.5,
+        TRUE ~ 0
+      )
+    )
+  
+  seasonal <- x %>%
+    filter(strict_qc,is.finite(LAI)) %>%
+    group_by(doy) %>%
+    summarise(LAI=mean(LAI,na.rm=TRUE),.groups="drop")
+  
+  if(nrow(seasonal)<10 || n_distinct(seasonal$doy)<10) return(NULL)
+  
+  gam_model <- tryCatch(
+    mgcv::gam(LAI~s(doy),data=seasonal),
+    error=function(e) NULL
+  )
+  
+  if(is.null(gam_model)) return(NULL)
+  
+  seasonal_smooth <- tibble(doy=sos:eos)
+  pred <- predict(gam_model,newdata=seasonal_smooth,se.fit=TRUE)
+  seasonal_smooth$LAI_gam <- as.numeric(pred$fit-1.96*pred$se.fit)
+  
+  x <- x %>%
+    left_join(seasonal_smooth,by="doy")
+  
+  good_years <- x %>%
+    group_by(year) %>%
+    summarise(f=sum(weight==1)/n(),.groups="drop")
+  
+  mean_good <- mean(good_years$f,na.rm=TRUE)
+  
+  bad_years <- good_years %>%
+    filter(is.finite(mean_good),f<mean_good*0.5) %>%
+    pull(year)
+  
+  x <- x %>%
+    filter(!year %in% bad_years)
+  
+  if(!nrow(x)) return(NULL)
+  
+  x$LAI_intp <- x$LAI
+  x$LAI_intp[x$weight==0] <- NA_real_
+  
+  reject <- x$weight==0.5 &
+    is.finite(x$LAI_intp) &
+    is.finite(x$LAI_gam) &
+    x$LAI_intp<0.5*x$LAI_gam
+  
+  x$LAI_intp[reject] <- NA_real_
+  ok <- is.finite(x$LAI_intp) & !is.na(x$Date)
+  
+  if(sum(ok)<2) return(NULL)
+  
+  x$LAI_intp <- approx(
+    x=as.numeric(x$Date[ok]),
+    y=x$LAI_intp[ok],
+    xout=as.numeric(x$Date),
+    method="linear",
+    rule=2
+  )$y
+  
+  yearly_LAI <- x %>%
+    filter(between(doy,sos,eos)) %>%
+    group_by(year) %>%
+    summarise(LAI_gs=mean(LAI_intp,na.rm=TRUE),.groups="drop") %>%
+    filter(is.finite(LAI_gs))
+  
+  x$LAI_intp_detrend <- x$LAI_intp
+  
+  if(nrow(yearly_LAI)>=3 && n_distinct(yearly_LAI$year)>=3) {
+    lm_model <- lm(LAI_gs~year,data=yearly_LAI)
+    trend_p <- summary(lm_model)$coefficients["year","Pr(>|t|)"]
+    
+    if(is.finite(trend_p) && trend_p<0.05) {
+      yearly_LAI$annual_trend <- fitted(lm_model)
+      
+      x <- x %>%
+        left_join(
+          yearly_LAI %>% dplyr::select(year,annual_trend),
+          by="year"
+        )
+      
+      x$LAI_intp_detrend <- x$LAI_intp-x$annual_trend+
+        mean(x$annual_trend,na.rm=TRUE)
+    }
+  }
+  
+  LAI_gs <- mean(
+    x$LAI_gam[between(x$doy,sos,eos)],
+    na.rm=TRUE
+  )*(eos-sos+1)
+  
+  if(!is.finite(LAI_gs) || LAI_gs<=0) return(NULL)
+  
+  x %>%
+    filter(between(doy,sos,eos)) %>%
+    mutate(deficit_obs=pmax(LAI_gam-LAI_intp_detrend,0)) %>%
+    group_by(sample_ID,latitude,longitude,year) %>%
+    summarise(
+      deficit_obs=sum(deficit_obs,na.rm=TRUE)*4/LAI_gs,
+      .groups="drop"
+    )
 }
 
-DIST_climate_IGBP_wet <- df_disturbance_at %>% filter(category == 'wet') %>%
-  group_by(Climate.class, IGBP) %>%
-  summarise(DIST_at = mean(DIST_at, na.rm = T), .groups = "drop")
+data_split <- split(data_LAI,data_LAI$sample_ID)
 
-DIST_climate_wet <- df_disturbance_at %>% filter(category == 'wet') %>%
-  group_by(Climate.class) %>%
-  summarise(DIST_at = mean(DIST_at, na.rm = T), .groups = "drop")
-# add information of missing climate class Af
-DIST_climate_wet <- DIST_climate_wet %>%
-  bind_rows(
-    DIST_climate_wet %>%
-      filter(Climate.class == "Am") %>%
-      mutate(Climate.class = "Af"))
+annual_deficit <- map_dfr(
+  data_split,
+  ~tryCatch(calculate_deficit(.x),error=function(e) NULL)
+)
 
-unique_climate_veg_groups <- levels(zone_group)[[1]]
-cells <- which(terra::values(zone_group) == unique_climate_veg_groups$value[unique_climate_veg_groups$label=='wet'])
-df_wet_DIST_at <- data.frame(icell = cells,
-                             climate_id = terra::values(koppen_climate_0.25)[cells],
-                             IGBP_id = terra::values(land_cover)[cells])
-df_wet_DIST_at <- df_wet_DIST_at %>% left_join(df_koppen_climate, by = "climate_id") %>%
-  left_join(df_IGBP, by = "IGBP_id")
+if(!nrow(annual_deficit))
+  stop("No annual LAI-deficit estimates were produced.")
 
-Climate_IGBP_all <- df_wet_DIST_at[, c("Climate.class", "IGBP")] %>% distinct() %>% arrange(Climate.class, IGBP)
-DIST_climate_IGBP_wet <- Climate_IGBP_all %>% left_join(DIST_climate_IGBP_wet, by = c("Climate.class", "IGBP")) %>%
-  left_join(DIST_climate_wet, by = "Climate.class", suffix = c("", "_fill")) %>%
-  mutate(DIST_at = coalesce(DIST_at, DIST_at_fill)) %>%
-  dplyr::select(-DIST_at_fill)
+source(file.path("scripts2026","00_functions.R"))
 
-df_wet_DIST_at <- df_wet_DIST_at %>% left_join(DIST_climate_IGBP_wet, by = c("Climate.class", "IGBP"))
+point_trends <- annual_deficit %>%
+  group_by(sample_ID,latitude,longitude) %>%
+  summarise(
+    n_year=n_distinct(year[is.finite(deficit_obs)]),
+    DIST_at=if(n_year>=8)
+      cal_sens_slope(year,deficit_obs)
+    else NA_real_,
+    .groups="drop"
+  ) %>%
+  filter(n_year>=8,is.finite(DIST_at))
 
-DIST_at_past <- zone_group
-terra::values(DIST_at_past) <- NA
-terra::values(DIST_at_past)[df_wet_DIST_at$icell] <- df_wet_DIST_at$DIST_at
-plot(DIST_at_past)
+print(nrow(point_trends))
+summary(point_trends$DIST_at)
 
-writeRaster(DIST_at_past, filename = file.path('data2026', 'DIST_at_wet_past.tif'), overwrite=TRUE)
+if(nrow(point_trends)<20)
+  stop("Only ",nrow(point_trends),
+       " valid point trends were obtained; at least 20 are required.")
+
+zone_raster <- rast(zone_file)
+zone_mask <- zone_raster
+values(zone_mask) <- ifelse(values(zone_raster,mat=FALSE)==1,1,NA_real_)
+
+zone_df <- as.data.frame(zone_mask,xy=TRUE,na.rm=TRUE)
+names(zone_df)[3] <- "zone"
+
+trend_limit <- max(abs(point_trends$DIST_at),na.rm=TRUE)
+if(!is.finite(trend_limit) || trend_limit==0) trend_limit <- 1
+
+p_point_trends <- ggplot() +
+  geom_raster(data=zone_df,aes(x=x,y=y),fill="grey85") +
+  geom_point(
+    data=point_trends,
+    aes(x=longitude,y=latitude,color=DIST_at),
+    size=1.8,
+    alpha=0.9
+  ) +
+  scale_color_gradient2(
+    low="#2166AC",
+    mid="white",
+    high="#B2182B",
+    midpoint=0,
+    limits=c(-trend_limit,trend_limit),
+    name=expression("LAI deficit trend (yr"^{-1}*")")
+  ) +
+  coord_equal(
+    xlim=c(-180,180),
+    ylim=c(-60,85),
+    expand=FALSE
+  ) +
+  labs(
+    x="Longitude",
+    y="Latitude",
+    title=paste0(
+      "LAI-deficit trends at ",
+      nrow(point_trends),
+      " sample points"
+    )
+  ) +
+  theme_classic()
+
+# print(p_point_trends)
+
+lonlat_to_xyz <- function(longitude,latitude) {
+  r <- 6371008.8
+  lon <- as.numeric(longitude)*pi/180
+  lat <- as.numeric(latitude)*pi/180
+  
+  m <- cbind(
+    x=r*cos(lat)*cos(lon),
+    y=r*cos(lat)*sin(lon),
+    z=r*sin(lat)
+  )
+  
+  storage.mode(m) <- "double"
+  m
+}
+
+point_xyz <- lonlat_to_xyz(
+  point_trends$longitude,
+  point_trends$latitude
+)
+
+point_trends$x <- point_xyz[,1]
+point_trends$y <- point_xyz[,2]
+point_trends$z <- point_xyz[,3]
+
+xyz_matrix <- function(x) {
+  m <- cbind(
+    x=as.numeric(x$x),
+    y=as.numeric(x$y),
+    z=as.numeric(x$z)
+  )
+  
+  storage.mode(m) <- "double"
+  m
+}
+
+idw_predict <- function(train_xyz,train_value,new_xyz,k,power,
+                        max_distance=1500000) {
+  train_xyz <- matrix(
+    as.numeric(as.matrix(train_xyz)),
+    ncol=3
+  )
+  
+  new_xyz <- matrix(
+    as.numeric(as.matrix(new_xyz)),
+    ncol=3
+  )
+  
+  train_value <- as.numeric(train_value)
+  
+  if(!nrow(train_xyz) || !nrow(new_xyz))
+    stop("Empty coordinate matrix.")
+  
+  if(any(!is.finite(train_xyz)) || any(!is.finite(new_xyz)))
+    stop("Coordinate matrices contain non-finite values.")
+  
+  if(length(train_value)!=nrow(train_xyz) ||
+     any(!is.finite(train_value)))
+    stop("Invalid IDW training values.")
+  
+  r <- 6371008.8
+  k <- min(as.integer(k),nrow(train_xyz))
+  
+  prediction <- rep(NA_real_,nrow(new_xyz))
+  nearest_distance_km <- rep(NA_real_,nrow(new_xyz))
+  n_neighbors <- integer(nrow(new_xyz))
+  
+  for(i in seq_len(nrow(new_xyz))) {
+    difference <- sweep(
+      train_xyz,
+      MARGIN=2,
+      STATS=new_xyz[i,],
+      FUN="-"
+    )
+    
+    chord <- sqrt(rowSums(difference^2))
+    distance <- 2*r*asin(pmin(chord/(2*r),1))
+    index <- order(distance)[seq_len(k)]
+    distance_k <- distance[index]
+    valid <- distance_k<=max_distance
+    
+    nearest_distance_km[i] <- distance_k[1]/1000
+    n_neighbors[i] <- sum(valid)
+    
+    if(any(valid)) {
+      weights <- pmax(distance_k[valid],1)^(-power)
+      
+      prediction[i] <- weighted.mean(
+        train_value[index[valid]],
+        weights
+      )
+    }
+  }
+  
+  tibble(
+    DIST_at=prediction,
+    nearest_distance_km=nearest_distance_km,
+    n_neighbors=n_neighbors
+  )
+}
+
+set.seed(123)
+
+point_trends <- point_trends %>%
+  mutate(
+    block=paste(
+      floor((longitude+180)/10),
+      floor((latitude+90)/10),
+      sep="_"
+    )
+  )
+
+blocks <- sample(unique(point_trends$block))
+
+if(length(blocks)<5)
+  stop("Fewer than five spatial blocks are available.")
+
+block_folds <- tibble(
+  block=blocks,
+  fold=rep(1:5,length.out=length(blocks))
+)
+
+point_trends <- point_trends %>%
+  left_join(block_folds,by="block")
+
+parameters <- expand_grid(
+  k=c(5,10,15,20),
+  power=c(1,1.5,2,3)
+)
+
+cv_results <- pmap_dfr(parameters,function(k,power) {
+  fold_results <- map_dfr(1:5,function(f) {
+    train <- point_trends %>% filter(fold!=f)
+    test <- point_trends %>% filter(fold==f)
+    
+    if(!nrow(train) || !nrow(test)) return(NULL)
+    
+    pred <- idw_predict(
+      xyz_matrix(train),
+      train$DIST_at,
+      xyz_matrix(test),
+      k,
+      power
+    )
+    
+    tibble(
+      obs=test$DIST_at,
+      pred=pred$DIST_at
+    ) %>%
+      filter(is.finite(obs),is.finite(pred))
+  })
+  
+  tibble(
+    k=k,
+    power=power,
+    RMSE=if(nrow(fold_results))
+      sqrt(mean((fold_results$obs-fold_results$pred)^2))
+    else Inf
+  )
+})
+
+best <- cv_results %>%
+  filter(is.finite(RMSE)) %>%
+  slice_min(RMSE,n=1,with_ties=FALSE)
+
+if(!nrow(best))
+  stop("No IDW parameter combination produced valid predictions.")
+
+print(best)
+
+zone_cells <- which(values(zone_raster,mat=FALSE)==1)
+zone_xy <- xyFromCell(zone_raster,zone_cells)
+zone_xyz <- lonlat_to_xyz(zone_xy[,1],zone_xy[,2])
+
+interpolated <- idw_predict(
+  xyz_matrix(point_trends),
+  point_trends$DIST_at,
+  zone_xyz,
+  best$k[[1]],
+  best$power[[1]]
+)
+
+output_raster <- zone_raster
+values(output_raster) <- NA_real_
+values(output_raster)[zone_cells] <- interpolated$DIST_at
+names(output_raster) <- "DIST_at"
+
+terra::writeRaster(
+  output_raster,
+  file.path(
+    "data2026",
+    "LAI_deficit_trends_DBF.tif"
+  ),
+  overwrite=TRUE,
+  datatype="FLT4S",
+  NAflag=-9999
+)
 
 ################################################################################
 # 10. get current and future CO2 concentration
@@ -537,14 +1075,14 @@ terra::ext(co2_1850_2013) <- terra::ext(co2_2015_2150)
 co2_baseline1 <- terra::app(co2_1850_2013[[1873:1968]], fun = mean, na.rm=T)  # 2005-2013
 co2_baseline2 <- terra::app(co2_2015_2150[[1:96]], fun = mean, na.rm=T)       # 2015-2023
 
-co2_baseline1 <- terra::resample(co2_baseline1, gpp_baseline)
-co2_baseline2 <- terra::resample(co2_baseline2, gpp_baseline)
+co2_baseline1 <- terra::resample(co2_baseline1, nee_baseline)
+co2_baseline2 <- terra::resample(co2_baseline2, nee_baseline)
 
 co2_baseline <- (co2_baseline1 + co2_baseline2) / 2
 # plot(co2_baseline)
 
 co2_fut <- terra::app(co2_2015_2150[[121:(120+12*20)]], fun = mean, na.rm=T)  # 2025-2045
-co2_fut <- terra::resample(co2_fut, gpp_baseline)
+co2_fut <- terra::resample(co2_fut, nee_baseline)
 # plot(co2_fut - co2_baseline)
 
 writeRaster(co2_baseline, filename = file.path('data2026', 'co2_mean_2005-2023.tif'), overwrite=TRUE)
@@ -554,7 +1092,7 @@ writeRaster(co2_fut, filename = file.path('data2026', 'co2_mean_2025-2045.tif'),
 # 11. get global GPP trends in 2001-2020
 ################################################################################
 files <- list.files(
-  file.path("/Users/junnawang/Downloads/", "ST_CFE-ML_DT"),
+  file.path(dir_rawdata, "CEDAR-GPP", "ST_CFE-ML_DT"),
   pattern = "\\.nc$|\\.tif$",
   full.names = TRUE
 )

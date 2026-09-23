@@ -32,6 +32,13 @@ data_LAI <- read.csv(file.path(dir_rawdata, "LAI_4day_allsites", 'trend-combined
 # 
 data_LAI$MCD15A3H_061_Lai_500m[data_LAI$MCD15A3H_061_Lai_500m > 20] = NA
 
+
+
+# do one study site only
+data_LAI_be_vie <- data_LAI %>% filter(ID == "BE-Vie") %>% filter(between(year(ymd(Date)), 2010, 2023))
+data_LAI <- bind_rows(data_LAI_be_vie, data_LAI[data_LAI$ID != "BE-Vie", ])
+
+
 # plot(data_LAI$MCD15A3H_061_Lai_500m)
 
 # If a site is in southern hemisphere
@@ -70,8 +77,6 @@ data_LAI <- bind_rows(data_LAI_north, data_LAI_south)
   # LAI data at IT-Cp2 and >= 2020 had abrupt change, so not used.
 data_LAI <- data_LAI %>% filter(!(ID == "IT-Cp2" & year >= 2020))
 
-# write.csv(data_LAI, file.path("data", 'modis_LAI.csv'), row.names = F)
-# data_LAI <- read.csv(file.path("data", 'modis_LAI.csv'))
 
 LAI_seasonal_pattern <- data_LAI %>% 
   filter(MCD15A3H_061_FparLai_QC_CloudState == '0b00') %>% 
@@ -83,7 +88,7 @@ LAI_seasonal_pattern <- data_LAI %>%
   summarise(LAI = mean(LAI, na.rm = T), .groups = "drop") 
 
 # read in start and end of growing season
-data_grow_season <- read.csv(file.path('data2026', 'growing_season_yearly_NT.csv'))
+data_grow_season <- read.csv(file.path('data2026', 'growing_season_yearly.csv'))
 grow_season_site <- data_grow_season %>%
   group_by(site_ID) %>% 
   summarise(sos=floor((mean(sos_DER) + mean(sos_TRS)) / 2), 
@@ -259,7 +264,7 @@ SWC_YY_GL_ZaH <- bind_rows(data.frame(year = c(2001, 2002), SWC = c(25.53, 23.27
 a_YY_SWC <- a_DD_SWC %>% mutate(year = year(a_DD_SWC$date)) %>%
   group_by(name, year) %>% summarise(SWC_ERA5 = mean(SWC, na.rm = T))
 #
-data_grow_season <- read.csv(file.path('data2026', 'growing_season_yearly_NT.csv'))
+data_grow_season <- read.csv(file.path('data2026', 'growing_season_yearly.csv'))
 grow_season_site <- data_grow_season %>%
   group_by(site_ID) %>% 
   summarise(sos=floor((mean(sos_DER) + mean(sos_TRS)) / 2), 
@@ -276,7 +281,7 @@ trend_driver <- data.frame(site_ID = character(), year_mid = integer(), nyear = 
                            year_start = integer(), year_end = integer(),
                      NEE = double(), GPP = double(), ER = double(), 
                      LE = double(), SW = double(), GPP_at_mean = double(), 
-                     NEE_t = double(), NEE_p = double(), NEE_at = double(), # at: actual trend
+                     NEE_t = double(), NEE_p = double(), NEE_at = double(),  NEE_at_sd = double(),     # at: actual trend; _sd standard deviation
                      GPP_t = double(), GPP_p = double(), GPP_at = double(), 
                      ER_t = double(), ER_p = double(), ER_at = double(), 
                      TA_t=double(), TA_p=double(), TA_at=double(), 
@@ -601,7 +606,7 @@ for (i in 1:nrow(sites_long)) {
       }
       #
       trend_driver[id, c('NEE_t', 'NEE_p')] <- cal_sens_slope_scale(a_YY_sub$TIMESTAMP, a_YY_sub$NEE_VUT_REF, a_YY$NEE_VUT_REF)
-      trend_driver[id, c('NEE_at')] <- cal_sens_slope(a_YY_sub$TIMESTAMP, a_YY_sub$NEE_VUT_REF)
+      trend_driver[id, c('NEE_at', 'NEE_at_sd')] <- cal_sens_slope_NEP(a_YY_sub$TIMESTAMP, a_YY_sub$NEE_VUT_REF)
       
       if (sites_long$NEEpartition[i] == 'DT') {
         if (sum(!is.na(a_YY_sub$GPP_DT_VUT_REF)) >= nobsv_min) {

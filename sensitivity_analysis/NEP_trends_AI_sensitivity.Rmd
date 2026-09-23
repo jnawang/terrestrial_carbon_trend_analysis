@@ -1,0 +1,192 @@
+---
+title: "detect abrupt change"
+output: pdf_document
+date: "2025-02-07"
+author: "Junna Wang"
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r raw data location}
+rm(list=ls())
+# change this location where the raw data will be saved accordingly
+# dir_rawdata <- '/Users/jw2946/Documents/stability_project/SiteData/'
+# dir_rawdata <- '/Volumes/MaloneLab/Research/Stability_Project/SiteData'
+dir_rawdata <- '/Volumes/WZZ_disk/Carbon_trend/SiteData'
+#
+library(librarian)
+shelf(tidyverse, Kendall, Rbeast, cowplot, ggpubr, tidyterra, ggpubr, viridis, RColorBrewer, grid, terra, trend)
+#
+```
+
+
+```{r moving window for decadal carbon flux trend analysis}
+library(librarian)
+shelf(lme4, ggplot2, tidyverse, lmerTest)
+
+# read files
+sites_long <- read.csv(file.path('data2026', 'long_term_ec_sites.csv'))
+a_YY_all <- read.csv(file.path("data2026", "a_YY_carbon_flux_all.csv"))
+
+a_YY_all$GPP_VUT_REF <- a_YY_all$GPP_DT_VUT_REF
+a_YY_all$RECO_VUT_REF <- a_YY_all$RECO_DT_VUT_REF
+
+for (i in 1:nrow(sites_long)) {
+  if (sites_long$NEEpartition[i] == 'NT') {
+    a_YY_all$GPP_VUT_REF[ a_YY_all$site_ID == sites_long$site_ID[i] ] <- a_YY_all$GPP_NT_VUT_REF[ a_YY_all$site_ID == sites_long$site_ID[i] ]
+    a_YY_all$RECO_VUT_REF[ a_YY_all$site_ID == sites_long$site_ID[i] ] <- a_YY_all$RECO_NT_VUT_REF[ a_YY_all$site_ID == sites_long$site_ID[i] ]
+  }
+}
+
+#---------------------------------
+# get trends using local regressions
+window_size = 15
+
+# plant composition
+df_IGBP_composition <- data.frame()
+
+# try these without intervals
+NEEtrend_all <- data.frame()
+# using all sites or sites within certain category. 
+climate_vegs <- c('cold_evergreen_forest', 'cold_deciduous_forest', 'cold_non_forest', 'dry', 'wet-warm')
+
+#
+AI_thresholds = c(0.4, 0.50, 0.6, 0.65)
+
+for (AI_threshold in AI_thresholds) {
+  sites_long <- sites_long %>% mutate(category=case_when(Climate.class %in% c("Dfc", "Dfd", "Dsc", "Dsc", "Dwc", "Dwd", "ET") ~ "cold",
+                                                         # the above are Arctic and subarctic climate, where PET calculation is not accurate, assign cold climate. 
+                                                         # the rest climate using AI to determine wet and dry; temperature to determine warm and cold. 
+                                                         AI < AI_threshold ~ "dry",
+                                                         AI >= AI_threshold & Climate.class %in% c("Dfa", "Dfb", "Dsa", "Dsb", "Dwa", "Dwb") ~ "cold", 
+                                                         AI >= AI_threshold & Climate.class %in% c("Am", "Af", "Aw", "Cfa", "Cwa", "Cwb", "Cwc", "Csa") ~ "wet", 
+                                                         # these are lingering things. 
+                                                         AI >= AI_threshold & Climate.class %in% c("BSh", "BWh", "BWk", "BSk") & MAT >= 10 ~ "wet", 
+                                                         AI >= AI_threshold & Climate.class %in% c("BSh", "BWh", "BWk", "BSk") & MAT < 10 ~ "cold", 
+                                                         # Deal with two specific climate "Cfb", "Cfc"; most times they are cold, except IGBP == EBF
+                                                         AI >= AI_threshold & Climate.class %in% c("Cfb", "Cfc", "Csb") & IGBP == 'EBF' ~ "wet", 
+                                                         # EBF: evergreen broadleaf forests. only one site in this climate fall into this category: AU-Tum.
+                                                         AI >= AI_threshold & Climate.class %in% c("Cfb", "Cfc", "Csb") & IGBP != 'EBF' ~ "cold"))
+  #
+  a_YY_all <- a_YY_all %>% dplyr::select(-any_of(c("IGBP", "Climate.class", "category", "NEEpartition")))
+  a_YY_all <- a_YY_all %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category", "NEEpartition")], by = "site_ID")
+  
+  
+  for (climate_veg in climate_vegs) {
+    NEEtrend <- data.frame(year_mid=integer(), nsite = integer(),
+              Tlm=double(), plm=double(), Tlmlow=double(), Tlmup=double(), 
+              Tlmer=double(), plmer=double(), Tlmerlow=double(), Tlmerup=double())  
+    #
+    if (climate_veg == 'cold_evergreen_forest') {
+      data <- a_YY_all %>%   
+        filter(IGBP %in% c('ENF', 'EBF') & category == "cold")
+    } else if (climate_veg == 'cold_deciduous_forest') {
+      data <- a_YY_all %>%  
+        filter(IGBP %in% c('DBF', 'DNF', 'MF') & category == "cold")
+    } else if (climate_veg == 'cold_non_forest') {
+      data <- a_YY_all %>%  
+        filter(!IGBP %in% c('ENF', 'EBF', 'DBF', 'DNF', 'MF') & category == "cold") 
+    } else if (climate_veg == 'dry') {
+      data <- a_YY_all %>% filter(category == 'dry')
+    } else if (climate_veg == 'wet-warm') {
+      data <- a_YY_all %>% filter(category == 'wet')
+    } else if (climate_veg == 'all') {
+      data <- a_YY_all 
+    }
+    
+    # data <- a_YY_all %>% filter(category == 'cold')
+    
+    #
+    year_start <- min(data$TIMESTAMP)
+    year_end <- max(data$TIMESTAMP)
+    
+    #
+    for (iwindow in year_start:(year_end - window_size + 1)) {
+      print(iwindow)
+      subdata <- data %>% filter(between(TIMESTAMP, iwindow, iwindow + window_size - 1))   
+      # this part can be adjusted, the part about window_size
+      site_ID_selected <- subdata %>% group_by(site_ID) %>% 
+        summarise(nyear = max(TIMESTAMP) - min(TIMESTAMP) + 1) %>% 
+        filter(nyear >= min(window_size - 2, 10)) %>% pull(site_ID) 
+      
+      # recent dryland sites: "ES-LM2" "ES-LM1" "AU-GWW" "CN-HeM" "CN-Sdq" "US-Rls" "US-Rws"
+      # whether including these Spain, Australia, and China sites does not change the trend. 
+      # site_ID_selected <- site_ID_selected[!site_ID_selected %in% c("AU-GWW", "CN-HeM", "CN-Sdq")]
+      
+      # get IGBP composition for each group
+      tmp <- sites_long %>%
+      filter(site_ID %in% site_ID_selected) %>%
+      count(IGBP) %>%
+      mutate(n = n / sum(n)) %>%
+      tidyr::pivot_wider(names_from = IGBP, values_from = n, values_fill = 0) %>%
+      mutate(cv = climate_veg, window = iwindow, .before = 1)
+      df_IGBP_composition <- bind_rows(df_IGBP_composition, tmp)
+      #
+    
+      # deal with the special case of BE-Vie: 
+      if ("BE-Vie" %in% site_ID_selected) {
+        years_BE_Vie <- subdata$TIMESTAMP[subdata$site_ID == "BE-Vie"]
+        period1 <- intersect(years_BE_Vie, 1997:2008)
+        period2 <- intersect(years_BE_Vie, 2010:2024)
+        if (length(period2) >= 10) {
+          # use this site
+          subdata <- subdata %>% filter( !(site_ID == "BE-Vie" & !TIMESTAMP %in% period2) )
+        } else if (length(period1) >= 10) {
+          # use this site
+          subdata <- subdata %>% filter( !(site_ID == "BE-Vie" & !TIMESTAMP %in% period1) )
+        } else {
+          # do not use this site
+          site_ID_selected <- site_ID_selected[site_ID_selected != "BE-Vie"]
+        }
+      }
+      
+      if (length(site_ID_selected) <= 10) {
+        next
+      }
+      subdata <- subdata %>% filter(site_ID %in% site_ID_selected)
+      mod_lm <- lm(data=subdata, NEE_VUT_REF ~ TIMESTAMP + site_ID)
+      # print(summary(mod_lm))
+      mod_lmer <- lmer(data=subdata, NEE_VUT_REF ~ TIMESTAMP + (1 | site_ID))   # singular if random effects on TIMESTAMP
+      # print(summary(mod_lmer))
+      NEEtrend[iwindow-year_start, 1] <- iwindow + (window_size - 1) / 2
+      NEEtrend[iwindow-year_start, 2] <- length(site_ID_selected)
+      NEEtrend[iwindow-year_start, 3:4] <- summary(mod_lm)$coefficients[2,c(1,4)]
+      NEEtrend[iwindow-year_start, 5:6] <- confint(mod_lm)[2, 1:2]
+      NEEtrend[iwindow-year_start, 7:8] <- summary(mod_lmer)$coefficients[2,c(1,5)]
+      NEEtrend[iwindow-year_start, 9:10] <- confint(mod_lmer, parm = "beta_", method = "profile")[2,1:2]
+    }
+    
+    # try these with intervals
+    # ggplot(data = NEEtrend, aes(x=year_mid, y = Tlm)) +
+    #   geom_line(col = 'red') +
+    # #  geom_line(aes(x=year_mid, y = Tlmer), col = 'green') +
+    #  geom_errorbar(aes(ymin=Tlmlow, ymax=Tlmup)) +
+    #   geom_hline(yintercept = 0) +
+    #   lims(x=c(2000, 2020)) +
+    #   theme_classic()
+    
+    #-----------
+    p1 <- ggplot(data = NEEtrend, aes(x=year_mid, y = Tlmer)) +
+      geom_line(col = 'green') +
+      geom_point(col = 'green') +
+      geom_errorbar(aes(ymin=Tlmerlow, ymax=Tlmerup)) +
+      geom_hline(yintercept = 0) +
+      lims(x=c(2000, 2020)) +
+      labs(title = climate_veg) +
+      theme_classic()
+    # print(p1)
+    
+    # merge them together
+    NEEtrend_all <- bind_rows(NEEtrend_all, data.frame(AI = AI_threshold, climate_veg = climate_veg, NEEtrend))
+  }
+}
+
+write.csv(NEEtrend_all, file = file.path('sensitivity_analysis', 'NEEtrend_AI_sensitivity.csv'), row.names = F)
+
+```
+

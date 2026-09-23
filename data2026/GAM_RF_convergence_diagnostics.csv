@@ -1,0 +1,9 @@
+"climate_veg","response","method","converged","iterations"
+"cold_evergreen_forest","SWC_gs_at","GAM + RF",TRUE,3
+"cold_evergreen_forest","NEE_at","GAM + RF",TRUE,4
+"cold_deciduous_forest","NEE_at","GAM + RF",TRUE,2
+"cold_non_forest","SWC_gs_at","GAM + RF",TRUE,5
+"cold_non_forest","NEE_at","GAM + RF",TRUE,4
+"dry","SWC_gs_at","GAM + RF",TRUE,6
+"dry","NEE_at","GAM + RF",TRUE,2
+"wet-warm","NEE_at","GAM + RF",TRUE,6

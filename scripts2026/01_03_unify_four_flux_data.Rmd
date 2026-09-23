@@ -25,10 +25,6 @@ dir_rawdata <- '/Volumes/WZZ_disk/Carbon_trend/SiteData'
 library(librarian)
 shelf(tidyverse, terra)
 #
-# I need to check this again. 
-# site: CA-Cbo, US-Ho1, US-Me2, US-Ton, US-UMB, AmeriFlux FLUXNET data has problems. use partitioned data by ReddyProc. 
-# CA-Cbo in FLUXNET_shuttle results look good, not like previous AmeriFlux_FLUXNET data.  
-# CA-Ca3 ?
 
 source(file.path("scripts2026", "00_functions.R"))
 
@@ -191,7 +187,8 @@ sites_all$Climate.class[sites_all$Site.ID=='US-MBP'] <- 'Dfb'
 sites_all$Climate.class[sites_all$Site.ID=='IT-Tor'] <- 'Dfc'
 # adjust based on JapanFlux meta data
 sites_all$Climate.class[sites_all$Site.ID=='JP-Fhk'] <- 'Cfa'
-
+# adjust based on measured climate data
+sites_all$Climate.class[sites_all$Site.ID=='US-Me2'] <- 'Dfb'
 #
 # remove duplicated sites
 sites_all <- sites_all %>% distinct()
@@ -439,13 +436,13 @@ sites_filled <- a_YY_Cflux %>% filter(filled) %>% pull(site_ID) %>% unique
 for (site in sites_filled) {
   data <- a_YY_Cflux %>% filter(site_ID == site)
   # update the col name; "RECO_DT_VUT_REF"
-  if (is_col_exist(data, "GPP_DT_VUT_REF")) {
-    plot <- ggplot(data, aes(x = TIMESTAMP, y = GPP_DT_VUT_REF, col = filled)) +
-      geom_point() +
-      labs(title = site) +
-      theme_bw()
-    print(plot)
-  }
+  # if (is_col_exist(data, "GPP_DT_VUT_REF")) {
+  #   plot <- ggplot(data, aes(x = TIMESTAMP, y = GPP_DT_VUT_REF, col = filled)) +
+  #     geom_point() +
+  #     labs(title = site) +
+  #     theme_bw()
+  #   print(plot)
+  # }
 }
 
 # get statistics of model accuracy 
@@ -649,9 +646,7 @@ write.csv(a_YY_Cflux, file = file.path("data2026", "a_YY_carbon_flux_all.csv"), 
 
 ```{r calculate ET and PET}
 # it takes about half hour.
-####
 #
-# the threshold of P/ETP: > 0.65 wet regions, 0.5-0.65 mediate regions, and < 0.5 dry regions.
 # aridity index calculation using PenmanMonteith
 library(librarian)
 shelf(amerifluxr, Evapotranspiration)
@@ -744,28 +739,31 @@ for (i in 1:nrow(sites_long)) {
       abnormal_method = 'DoY average',
       message = "yes")
   ####Penman-Monteith FAO56 Reference Crop ET
-  if (sites_long$IGBP[i] %in% c("WET", "GRA", "OSH")) {
-    try(results_crop <- Evapotranspiration::ET.PenmanMonteith(mydata_PET, constants, ts='daily', solar='data', crop = "short", save.csv="no"))  ###reference crop ET; short=grass, tall=standard crop; 
+  # try(results_crop <- Evapotranspiration::ET.PenmanMonteith(mydata_PET, constants, ts='daily', solar='data', crop = "short", save.csv="no"))  
+  if (sites_long$IGBP[i] %in% c("GRA", "OSH")) {
+    try(results_crop <- Evapotranspiration::ET.PenmanMonteith(mydata_PET, constants, ts='daily', solar='data', crop = "short", save.csv="no"))
+    ###reference crop ET; short=grass, tall=standard crop;
   } else {
-    if (sites_long$MAT[i] > 5) {
-      #
-      try(results_crop <- Evapotranspiration::ET.PenmanMonteith(mydata_PET, constants, ts='daily', solar='data', crop = "tall", save.csv="no"))  ###reference crop ET; short=grass, tall=standard crop;
-    } else {
-      #  
-      try(results_crop <- Evapotranspiration::ET.PriestleyTaylor(mydata_PET, constants, ts='daily', solar='data', alpha=0.23,
-message="yes", AdditionalStats="yes", save.csv="no"))  ###reference crop ET; short=grass, tall=standard crop; 
-    }
+    try(results_crop <- Evapotranspiration::ET.PenmanMonteith(mydata_PET, constants, ts='daily', solar='data', crop = "tall", save.csv="no"))  ###reference crop ET; short=grass, tall=standard crop;
   }
-  # result_PT <- ET.PriestleyTaylor(mydata_PET, constants, ts="daily",
-  # solar="data", alpha=0.23, message="yes", AdditionalStats="yes", save.csv="no") 
+
 #### get the actual ET values:
   # conversion of LE = λ ET, λ=(2.501−0.00237∗Tair)^106; LE: W/m2; ET: kg m-2 s-1
   # lambda latent heat of evaporisationin = 2.45 MJ.kg^-1 at 20 degree Celcius,
   lambda <- 2.501 - 0.00237 * mean(a_YY$TA_F_MDS, na.rm=T)
   water_flux$AET[i] <- mean(a_YY$LE_F_MDS / lambda * 0.0864 * 365.25, na.rm=T)
   water_flux$PET[i] <- mean(results_crop$ET.Annual,  na.rm=T)
+  
+  # at ecosysteme level, we have to use actual ET, not Precipitation to reflect actual water stress of ecosystems. 
+  # We used AI = max(AET, P) / PET
+  # in water-limited region: 
+  if (sites_long$Climate.class[i] %in% c("Csa", "Csb", "BSh", "BWh", "BWk", "BSk", "Aw")) {
+    water_flux$AI[i] <- water_flux$AET[i] / water_flux$PET[i]
+  } else {
+    water_flux$AI[i] <- sites_long$MAP[i] / water_flux$PET[i]
+  }
 }
-water_flux$AI <- water_flux$AET / water_flux$PET
+
 #####what is the best method for PET calculation in the field? 
 write.csv(water_flux, file.path('data2026', 'water_flux_AI.csv'), row.names = F)
 #
@@ -777,33 +775,44 @@ write.csv(water_flux, file.path('data2026', 'water_flux_AI.csv'), row.names = F)
 #
 water_flux <- read.csv(file.path('data2026', 'water_flux_AI.csv'))
 #
-if (!"AI" %in% names(sites_long)) {
-  sites_long <- sites_long %>% left_join(water_flux, by='site_ID')
+if ("AI" %in% names(sites_long)) {
+  sites_long <- sites_long %>% dplyr::select(-dplyr::any_of(c("PET","AET","AI","category")))
 }
+sites_long <- sites_long %>% left_join(water_flux, by='site_ID')
 
-#
-sites_long <- sites_long %>% 
-  mutate(category=case_when(Climate.class %in% c("Csa", "Csb", "Bsh", "Bsk", "BSh", "BWh", "Bwk", "Aw", "BWk", "BSk") & AI < 0.5 ~ 'dry', 
-                            Climate.class %in% c("Csa", "Csb", "Bsh", "Bsk", "BSh", "BWh", "Bwk", "Aw", "BWk", "BSk") & AI >= 0.5 ~ 'wet', 
-                            Climate.class %in% c("Am", "Cwa", "Af", "Cwb") ~ "wet", 
-                            Climate.class %in% c("Dfa", "Dfb", "Dfc", "Dfd", "Dsb", "ET", "Dwb", "Dwc") ~ "cold", 
-                            Climate.class %in% c("Cfa") ~ "wet",
-                            Climate.class %in% c("Cfb") & IGBP != 'EBF' ~ "cold",  # those sites has winters and in high latitudes
-                            Climate.class %in% c("Cfb") & IGBP == 'EBF' ~ "wet"    # EBF: evergreen broadleaf forests. 
-                            ))
-#
-sites_long$category[sites_long$site_ID %in% c('US-Me2')] <- 'cold'
-# US-Me2 is an Alpine ENF, MAT = 6C, seasonal GPP pattern is close to ENF in cold climate. 
+# The classification of dry and wet in tropics should based on aridity index. 
+# rule 1: all arctic and subarctic climates ("Dfc", "Dfd", "Dsd", "Dsc", "Dwc", "Dwd", "ET") are cold. These climates are obviously cold and AI calculation is not accurate due to uncertainty in calculating PET of snow and iced surface
+# rule 2: for the rest grid-cells, all grids with AI <= 0.5, as dry climate
+# rule 3: all grids with AI > 0.5 are wet climate, and then wet climates are divided into cold and warm
+# rule 4: AI > 0.5 & climates in tropical and subtropical ("Am", "Af", "Aw", "Cfa", "Cwa", "Cwb", "Cwc", "Csa") are warm 
+# rule 5: AI > 0.5 & climates in continental ("Dfa", "Dfb", "Dsa", "Dsb", "Dwa", "Dwb") are cold
+# rule 6: AI > 0.5 & sites in temperate climate dependent vegetation type: evergreen broadleaf forest EBF is warm, and other vegetation types are cold
+# rule 7: AI > 0.5 & sites in arid, semi-arid, mediterrean climates, and tropical dry climates: MAT > 10C, warm; MAT < 10C, cold. 
 
-sites_long$category[sites_long$site_ID == "US-Vcp"] <- "dry"
-# "US-Vcp" was in New Mexico, a semi-arid ENF. 
+# AI threshold
+AI_threshold = 0.50
+
+sites_long <- sites_long %>% mutate(category=case_when(Climate.class %in% c("Dfc", "Dfd", "Dsc", "Dsd", "Dwc", "Dwd", "ET") ~ "cold",
+                                                       # the above are Arctic and subarctic climate, where PET calculation is not accurate, assign cold climate. 
+                                                       # the rest climate using AI to determine wet and dry; temperature to determine warm and cold. 
+                                                       AI < AI_threshold ~ "dry",
+                                                       AI >= AI_threshold & Climate.class %in% c("Dfa", "Dfb", "Dsa", "Dsb", "Dwa", "Dwb") ~ "cold", 
+                                                       AI >= AI_threshold & Climate.class %in% c("Am", "Af", "Aw", "Cfa", "Cwa", "Cwb", "Cwc", "Csa") ~ "wet", 
+                                                       # these are lingering things. 
+                                                       AI >= AI_threshold & Climate.class %in% c("BSh", "BWh", "BWk", "BSk") & MAT >= 10 ~ "wet", 
+                                                       AI >= AI_threshold & Climate.class %in% c("BSh", "BWh", "BWk", "BSk") & MAT < 10 ~ "cold", 
+                                                       # Deal with two specific climate "Cfb", "Cfc"; most times they are cold, except IGBP == EBF
+                                                       AI >= AI_threshold & Climate.class %in% c("Cfb", "Cfc", "Csb") & IGBP == 'EBF' ~ "wet", 
+                                                       # EBF: evergreen broadleaf forests. only one site in this climate fall into this category: AU-Tum.
+                                                       AI >= AI_threshold & Climate.class %in% c("Cfb", "Cfc", "Csb") & IGBP != 'EBF' ~ "cold"))
+
 
 sum(sites_long$category=='dry', na.rm = T)
 # we have 35 dry sites.
 sum(sites_long$category=='wet', na.rm = T)
-# we have 33 wet sites.
+# we have 29 wet sites.
 sum(sites_long$category=='cold', na.rm = T)
-# we have 98 cold sites. 
+# we have 102 cold sites. 
 write.csv(sites_long, file = file.path('data2026', 'long_term_ec_sites.csv'), row.names = F)
 
 # sites_long_old <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
@@ -811,3 +820,4 @@ write.csv(sites_long, file = file.path('data2026', 'long_term_ec_sites.csv'), ro
 # write.csv(sites_long_new, file = file.path('data2026', 'long_term_ec_sites_new.csv'), row.names = F)
 
 ```
+

@@ -3,18 +3,13 @@
 # 1. at least one observation in a month. 
 # 2. at least 15 years between 1995 and 2025. 
 # 3. the annual amplitude is > 7 ppm. 
-
-# Junna Wang, 4/4/2026
-# New ideas for this analysis
-# cluster analysis of these sites
-# use scaled amplitude
-# should we look at the zero-crossing date? this will take more time. 
-# if we only use the sites above 40 degree N, we see the amplitude trend is more consistent with NEE trends. 
-# I really think the shape of the curve is likely to change; larger peak and lower valley; 
+# 4. Please note that although we divided atmospheric CO2 sites into different groups in this script, in our manuscript, we only report annual CO2 amplitude trend results by lumping all sites together. 
 
 
 library(librarian)
 shelf(ggplot2, dplyr, tidyr, cowplot, ggpubr, trend, amerifluxr, lme4, ncdf4, lubridate, tibble, stringr, zoo, terra, rnaturalearthdata, tidyterra, lmerTest)
+
+dir_rawdata <- '/Volumes/WZZ_disk/Carbon_trend/SiteData'
 
 
 # look at atmospheric CO2
@@ -66,8 +61,8 @@ read_obspack_metadata <- function(file) {
   )
 }
 
-# files <- list.files(file.path(dir_rawdata, "obspack_co2", "metadata"), pattern = '.txt$', full.names = T)
-files <- list.files('/Users/junnawang/YaleLab/data_CO2/obspack_co2_1_GLOBALVIEWplus_v11.0_2026-01-12_daily/metadata', pattern = '.txt', full.names = T)
+files <- list.files(file.path(dir_rawdata, "obspack_co2", "obspack_co2_1_GLOBALVIEWplus_v11.0_2026-01-12_daily", "metadata"), pattern = '.txt$', full.names = T)
+# files <- list.files('/Users/junnawang/YaleLab/data_CO2/obspack_co2_1_GLOBALVIEWplus_v11.0_2026-01-12_daily/metadata', pattern = '.txt', full.names = T)
 all_sites_info <- do.call(rbind, lapply(files, read_obspack_metadata))
 
 # ~ 300 stations have >10 years of data
@@ -106,10 +101,10 @@ p1 <- ggplot() +
 p1
 
 # Classification of these sites: dry, cold, warm
-climate_koppen   <- terra::rast(file.path('data', 'koppen_geiger_0p00833333.tif'))
+climate_koppen   <- terra::rast(file.path('data2026', 'koppen_geiger_0p00833333.tif'))
 # plot(climate_koppen)
 # aridicity
-AI_0.25 <- terra::rast(file.path('data', 'Global-AI.tif'))
+AI_0.25 <- terra::rast(file.path('data2026', 'Global-AI.tif'))
 AI_0.25 <- AI_0.25 / 10000       # values are enlarged by 10000
 plot(AI_0.25)
 #
@@ -144,8 +139,8 @@ baseline_sites_info <- all_sites_info_10yr_unique
 
 # take a look at how CO2 concentration change over elevation; the magnitude of CO2 variation should decline with elevation
 df_obspack_co2 <- data.frame()
-dir <- "/Users/junnawang/YaleLab/data_CO2/obspack_co2_1_GLOBALVIEWplus_v11.0_2026-01-12_nc/data/nc/"
-# dir <- file.path(dir_rawdata, "obspack_co2", "obspack_co2_1_GLOBALVIEWplus_v11.0_2026-01-12", "data", "nc")
+# dir <- "/Users/junnawang/YaleLab/data_CO2/obspack_co2_1_GLOBALVIEWplus_v11.0_2026-01-12_nc/data/nc/"
+dir <- file.path(dir_rawdata, "obspack_co2", "obspack_co2_1_GLOBALVIEWplus_v11.0_2026-01-12_nc", "data", "nc")
 
 
 for (dataset in baseline_sites_info$dataset_name) {
@@ -327,7 +322,7 @@ co2_amp_feature <- co2_amp_feature %>% left_join(co2_amp %>% filter(between(year
 sites <- unique(co2_amp$site_ID)
 window_size = 15
 
-source(file.path("scripts", "00_functions.R"))
+source(file.path("scripts2026", "00_functions.R"))
 
 # Characteristics of annual seasonal cycle for each site
 df_amp_at <- data.frame(site_ID = character(), year_mid = integer(), 

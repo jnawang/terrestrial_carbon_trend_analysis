@@ -1,3 +1,4 @@
+library(tidyverse)
 
 data_length_thresh <- 10
 
@@ -47,6 +48,31 @@ cal_sens_slope <- function(time, y) {
   return(suppressWarnings(summary(model)$coefficients[2, 1]))
 }
 
+
+cal_sens_slope_NEP <- function(time, y, nboot=1000) {
+  ok <- complete.cases(time, y)
+  time <- time[ok]
+  y <- y[ok]
+  
+  if (length(y) < 3) return(c(slope=NA, slope_sd=NA))
+  
+  slope <- unname(coef(mblm::mblm(y~time, repeated=FALSE))[2])
+  
+  set.seed(123)
+  boot_slopes <- replicate(nboot, {
+    i <- sample.int(length(y), replace=TRUE)
+    y_sub <- y[i]
+    time_sub <- time[i]
+    tryCatch(
+      unname(coef(mblm::mblm(y_sub~time_sub, repeated=FALSE))[2]),
+      error=function(e) NA_real_
+    )
+  })
+  
+  c(slope=slope, slope_sd=sd(boot_slopes, na.rm=TRUE))
+}
+
+
 cal_sens_slope_scale <- function(time, y, yall) {
   id.nonna <- !is.na(y) & !is.na(time)
   y <- y[id.nonna]
@@ -70,7 +96,7 @@ cal_sens_slope_scale <- function(time, y, yall) {
 }
 
 sites_grow_yearlong <- c('BR-Ma2', 'BR-Sa1', 'US-Elm', 'US-Esm', 'US-LL1', 'US-SP1', 'US-SP3', 
-                         'GF-Guy', 'ID-PaD', 'AU-How', 'AU-Rob', "AU-Tum", "AU-Cum", "AU-Cow")
+                         'GF-Guy', 'ID-PaD', 'AU-Rob', "AU-Tum", "AU-Cum", "AU-Cow")
 
 # match climate class and its coding ID
 df_koppen_climate <- tribble(
@@ -788,3 +814,408 @@ soil_temp_season <- function(data, date_col = "TIMESTAMP", temp_col = "TS",
       .groups = "drop"
     )
 }
+
+
+######################################a function to combine SWC measurements#########
+combine_swc_layers <- function(
+    data,
+    n_layers = 3,
+    min_qc = 0.8,
+    min_overlap = 365,
+    min_overlap_years = 2,
+    min_r2 = 0.70,
+    keep_without_qc = TRUE,
+    allow_extrapolation = FALSE
+) {
+  
+  # Validate n_layers
+  if (
+    length(n_layers) != 1 ||
+    !is.finite(n_layers) ||
+    n_layers < 1
+  ) {
+    stop("n_layers must be one positive integer.")
+  }
+  
+  n_layers <- as.integer(n_layers)
+  
+  # Candidate layers: 1 through n_layers
+  candidate_layers <- paste0(
+    "SWC_F_MDS_",
+    seq_len(n_layers)
+  )
+  
+  available_layers <- intersect(
+    candidate_layers,
+    names(data)
+  )
+  
+  reference_layer <- "SWC_F_MDS_1"
+  
+  # Initialize final output columns
+  data$SWC <- NA_real_
+  data$SWC_source <- NA_character_
+  data$SWC_calibrated <- FALSE
+  
+  # Layer 1 must be available because it is the reference
+  if (!(reference_layer %in% available_layers)) {
+    return(list(
+      data = data,
+      diagnostics = data.frame(
+        layer = reference_layer,
+        role = "reference",
+        n_valid = 0L,
+        n_overlap = NA_integer_,
+        n_overlap_years = NA_integer_,
+        intercept = NA_real_,
+        slope = NA_real_,
+        r_squared = NA_real_,
+        rmse = NA_real_,
+        accepted = FALSE,
+        reason = "Reference layer is absent",
+        stringsAsFactors = FALSE
+      )
+    ))
+  }
+  
+  # Determine calibration year
+  if ("year" %in% names(data)) {
+    
+    calibration_year <- suppressWarnings(
+      as.integer(data$year)
+    )
+    
+  } else if ("TIMESTAMP" %in% names(data)) {
+    
+    calibration_year <- lubridate::year(
+      data$TIMESTAMP
+    )
+    
+  } else {
+    
+    calibration_year <- rep(
+      NA_integer_,
+      nrow(data)
+    )
+  }
+  
+  # ---------------------------------------------------------------------------
+  # Apply QC filtering separately to every available layer
+  # ---------------------------------------------------------------------------
+  
+  for (layer in available_layers) {
+    
+    qc_column <- paste0(layer, "_QC")
+    
+    values <- suppressWarnings(
+      as.numeric(as.character(data[[layer]]))
+    )
+    
+    values[
+      !is.finite(values) |
+        values == -9999
+    ] <- NA_real_
+    
+    if (qc_column %in% names(data)) {
+      
+      qc <- suppressWarnings(
+        as.numeric(as.character(data[[qc_column]]))
+      )
+      
+      qc[
+        !is.finite(qc) |
+          qc == -9999
+      ] <- NA_real_
+      
+      # Larger QC values represent better daily coverage
+      values[
+        is.na(qc) |
+          qc < min_qc
+      ] <- NA_real_
+      
+    } else if (!keep_without_qc) {
+      
+      # Strict option: remove a layer when its QC column is absent
+      values[] <- NA_real_
+    }
+    
+    # Replace the original layer with its QC-filtered values
+    data[[layer]] <- values
+  }
+  
+  reference <- data[[reference_layer]]
+  
+  if (all(is.na(reference))) {
+    return(list(
+      data = data,
+      diagnostics = data.frame(
+        layer = reference_layer,
+        role = "reference",
+        n_valid = 0L,
+        n_overlap = NA_integer_,
+        n_overlap_years = NA_integer_,
+        intercept = NA_real_,
+        slope = NA_real_,
+        r_squared = NA_real_,
+        rmse = NA_real_,
+        accepted = FALSE,
+        reason = "No reliable reference values after QC",
+        stringsAsFactors = FALSE
+      )
+    ))
+  }
+  
+  # ---------------------------------------------------------------------------
+  # Rank secondary layers by valid-data abundance
+  # ---------------------------------------------------------------------------
+  
+  secondary_layers <- setdiff(
+    available_layers,
+    reference_layer
+  )
+  
+  if (length(secondary_layers) > 0) {
+    
+    secondary_counts <- vapply(
+      secondary_layers,
+      function(layer) {
+        sum(is.finite(data[[layer]]))
+      },
+      numeric(1)
+    )
+    
+    secondary_layers <- secondary_layers[
+      order(secondary_counts, decreasing = TRUE)
+    ]
+  }
+  
+  diagnostics <- list(
+    data.frame(
+      layer = reference_layer,
+      role = "reference",
+      n_valid = sum(is.finite(reference)),
+      n_overlap = NA_integer_,
+      n_overlap_years = NA_integer_,
+      intercept = NA_real_,
+      slope = NA_real_,
+      r_squared = NA_real_,
+      rmse = NA_real_,
+      accepted = TRUE,
+      reason = "Reference layer",
+      stringsAsFactors = FALSE
+    )
+  )
+  
+  accepted_calibrated_columns <- character(0)
+  
+  # ---------------------------------------------------------------------------
+  # Calibrate secondary layers to layer 1
+  # ---------------------------------------------------------------------------
+  
+  for (secondary_layer in secondary_layers) {
+    
+    secondary <- data[[secondary_layer]]
+    
+    overlap <- (
+      is.finite(reference) &
+        is.finite(secondary)
+    )
+    
+    n_overlap <- sum(overlap)
+    
+    overlap_years <- unique(
+      calibration_year[
+        overlap &
+          !is.na(calibration_year)
+      ]
+    )
+    
+    n_overlap_years <- length(overlap_years)
+    
+    calibrated_column <- paste0(
+      secondary_layer,
+      "_CAL_TO_1"
+    )
+    
+    data[[calibrated_column]] <- NA_real_
+    
+    accepted <- FALSE
+    reason <- "Calibration not evaluated"
+    intercept <- NA_real_
+    slope <- NA_real_
+    r_squared <- NA_real_
+    rmse <- NA_real_
+    
+    if (n_overlap < min_overlap) {
+      
+      reason <- paste0(
+        "Insufficient overlap: ",
+        n_overlap,
+        " < ",
+        min_overlap
+      )
+      
+    } else if (n_overlap_years < min_overlap_years) {
+      
+      reason <- paste0(
+        "Insufficient overlap years: ",
+        n_overlap_years,
+        " < ",
+        min_overlap_years
+      )
+      
+    } else {
+      
+      calibration_data <- data.frame(
+        reference = reference[overlap],
+        secondary = secondary[overlap]
+      )
+      
+      calibration_model <- tryCatch(
+        lm(
+          reference ~ secondary,
+          data = calibration_data
+        ),
+        error = function(e) NULL
+      )
+      
+      if (is.null(calibration_model)) {
+        
+        reason <- "Regression failed"
+        
+      } else {
+        
+        model_coefficients <- coef(
+          calibration_model
+        )
+        
+        intercept <- unname(
+          model_coefficients["(Intercept)"]
+        )
+        
+        slope <- unname(
+          model_coefficients["secondary"]
+        )
+        
+        r_squared <- summary(
+          calibration_model
+        )$r.squared
+        
+        rmse <- sqrt(
+          mean(
+            residuals(calibration_model)^2,
+            na.rm = TRUE
+          )
+        )
+        
+        if (!is.finite(slope) || slope <= 0) {
+          
+          reason <- "Regression slope is not positive"
+          
+        } else if (
+          !is.finite(r_squared) ||
+          r_squared < min_r2
+        ) {
+          
+          reason <- paste0(
+            "R-squared below threshold: ",
+            round(r_squared, 3),
+            " < ",
+            min_r2
+          )
+          
+        } else {
+          
+          calibrated <- (
+            intercept +
+              slope * secondary
+          )
+          
+          # Avoid predictions outside the observed calibration range
+          if (!allow_extrapolation) {
+            
+            secondary_range <- range(
+              secondary[overlap],
+              na.rm = TRUE
+            )
+            
+            outside_range <- (
+              secondary < secondary_range[1] |
+                secondary > secondary_range[2]
+            )
+            
+            calibrated[outside_range] <- NA_real_
+          }
+          
+          data[[calibrated_column]] <- calibrated
+          
+          accepted <- TRUE
+          reason <- "Accepted"
+          
+          accepted_calibrated_columns <- c(
+            accepted_calibrated_columns,
+            calibrated_column
+          )
+        }
+      }
+    }
+    
+    diagnostics[[length(diagnostics) + 1L]] <- data.frame(
+      layer = secondary_layer,
+      role = "secondary",
+      n_valid = sum(is.finite(secondary)),
+      n_overlap = n_overlap,
+      n_overlap_years = n_overlap_years,
+      intercept = intercept,
+      slope = slope,
+      r_squared = r_squared,
+      rmse = rmse,
+      accepted = accepted,
+      reason = reason,
+      stringsAsFactors = FALSE
+    )
+  }
+  
+  # ---------------------------------------------------------------------------
+  # Coalesce in the required order:
+  # layer 1 -> calibrated most-abundant secondary -> remaining layers
+  # ---------------------------------------------------------------------------
+  
+  combine_columns <- c(
+    reference_layer,
+    accepted_calibrated_columns
+  )
+  
+  data$SWC <- do.call(
+    dplyr::coalesce,
+    data[combine_columns]
+  )
+  
+  # Record which layer supplied each final daily value
+  for (column in combine_columns) {
+    
+    rows_to_fill <- (
+      is.na(data$SWC_source) &
+        is.finite(data[[column]])
+    )
+    
+    original_layer <- sub(
+      "_CAL_TO_1$",
+      "",
+      column
+    )
+    
+    data$SWC_source[rows_to_fill] <- original_layer
+    
+    if (column != reference_layer) {
+      data$SWC_calibrated[rows_to_fill] <- TRUE
+    }
+  }
+  
+  list(
+    data = data,
+    diagnostics = dplyr::bind_rows(diagnostics)
+  )
+}
+  
+

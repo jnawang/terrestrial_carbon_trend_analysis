@@ -17,7 +17,7 @@ shelf(tidyverse, lubridate)
 
 source(file.path("scripts2026", "00_functions.R"))
 
-AmeriFlux <- read.csv(file.path('data', 'AmeriFlux-site-search-results-202512092232.csv'))
+AmeriFlux <- read.csv(file.path('data2026', 'AmeriFlux-site-search-results-202512092232.csv'))
 FLUXNET_shuttle <- read.csv(file.path('data2026', 'fluxnet_shuttle_snapshot_20260717T143751_selectedsites.csv'))
 # excluding croplands
 FLUXNET_shuttle <- FLUXNET_shuttle %>% filter(!igbp %in% c("CRO", "CVM", "BSV", "SNO"))
