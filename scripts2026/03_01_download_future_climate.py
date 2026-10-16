@@ -16,7 +16,7 @@ year = 2005
 
 dataset = ee.ImageCollection('NASA/GDDP-CMIP6') \
     .filterDate('2014-07-01', '2014-07-30') \
-    .filter(ee.Filter.eq('model', 'ACCESS-CM2'))\
+    .filter(ee.Filter.eq('model', model))\
     .sort('system:time_start')
 
 # Select the 'tasmin' band (minimum air temperature)

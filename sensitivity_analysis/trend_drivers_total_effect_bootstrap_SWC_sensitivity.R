@@ -12,6 +12,7 @@ suppressPackageStartupMessages({
   library(readr)
   library(dagitty)
   library(nlme)
+  library(lme4)
   library(MuMIn)
 })
 
@@ -24,7 +25,7 @@ dir_rawdata <- '/Volumes/WZZ_disk/Carbon_trend/SiteData'
 project_dir  <- path.expand("~/YaleLab/carbon_trend")
 data_file    <- file.path(project_dir, "data2026", "potential_trend_driver.csv")
 site_file    <- file.path(project_dir, "data2026", "long_term_ec_sites.csv")
-output_dir   <- file.path(project_dir, "response2review")
+output_dir   <- file.path(project_dir, "sensitivity_analysis")
 
 trend_driver <- read.csv(data_file, check.names = FALSE)
 sites_long   <- read.csv(site_file, check.names = FALSE)

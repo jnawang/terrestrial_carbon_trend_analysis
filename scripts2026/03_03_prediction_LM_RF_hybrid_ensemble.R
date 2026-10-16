@@ -1,6 +1,6 @@
 # Weighted LM, RF, CO2-linear + RF hybrid, and an equal-weight LM-RF ensemble
 # Assessments: (1) LOSO temporal change in NEE trend; (2) five-fold direct prediction
-# what I learned, the way of giving random seeds affect RF performance. 
+# Junna Wang, July 2026
 
 rm(list=ls())
 
@@ -30,25 +30,25 @@ trend_driver$.obs_id <- seq_len(nrow(trend_driver))
 variable_weight <- "model_weight"
 climate_vegs <- c("cold_evergreen_forest","cold_deciduous_forest","cold_non_forest","dry","wet-warm")
 key_vars <- c(
+  "CO2 + TA_gs_at",
+  "CO2",
+  "SWC_gs_at",
   "CO2 + TA_gs_at + SWC_gs_at",
-  "CO2 + TA_gs_at + DIST_at",
-  "CO2 + SWC_gs_at",
-  "CO2 + TA_gs_at + P_gs_at + SWC_gs_at",
-  "CO2 + TA_at + LE_at"
+  "CO2 + LE_at"
 )
 nee_common_predictors <- c("MAP","MAT","IGBP","GPP_at_mean","NEE")
 swc_predictors <- c("CO2","TA_gs_at","SW_gs_at","P_gs_at","MAP","MAT","NEE","IGBP")
 swc_groups <- c("cold_evergreen_forest","cold_non_forest","dry")
 base_methods <- c("LM","RF","LM + RF")
 method_order <- c("Ensemble","LM","RF","LM + RF")
-m_try <- 2
-min_node_size <- 3
+m_try <- 3
+min_node_size <- 2
 num_trees <- 500
 sample_fraction <- 0.8
 replace_samples <- TRUE
 split_rule <- "extratrees"
 
-window_threshold <- 5
+window_threshold <- 5         # 37 sites with 21 years of observations
 
 get_nee_predictors <- function(key_var) unique(c(all.vars(as.formula(paste("~",key_var))),nee_common_predictors))
 
@@ -76,7 +76,7 @@ fit_co2 <- function(y,data) {
 }
 
 fit_hybrid <- function(train,test,rf_predictors,response="NEE_at",mtry=4,min.node.size=1,
-                       num.trees=500,max_iter=30,tol=2e-3,seed=128) {
+                       num.trees=500,max_iter=30,tol=5e-3,seed=128) {
   stopifnot(!"CO2" %in% rf_predictors,length(rf_predictors)>0)
   y <- train[[response]]
   w <- train$.model_weight
@@ -128,7 +128,7 @@ fit_hybrid <- function(train,test,rf_predictors,response="NEE_at",mtry=4,min.nod
 fit_three_models <- function(train,test,response,predictors,seed) {
   train$.model_weight <- train[[variable_weight]]/mean(train[[variable_weight]])
   p <- usable_predictors(train,test,predictors)
-  if(!"CO2" %in% p) stop("CO2 is not estimable for response ",response,".")
+  # if(!"CO2" %in% p) stop("CO2 is not estimable for response ",response,".")
   factor_vars <- p[vapply(train[p],is.factor,logical(1))]
   for(v in factor_vars) test[[v]] <- factor(as.character(test[[v]]),levels=levels(train[[v]]))
   p_no_co2 <- setdiff(p,"CO2")
@@ -152,7 +152,7 @@ fit_three_models <- function(train,test,response,predictors,seed) {
 }
 
 add_ensemble <- function(df) {
-  ensemble <- df %>% filter(method %in% c("LM","RF")) %>%
+  ensemble <- df %>% filter(method %in% c("LM","RF")) %>%      # ,"LM + RF"
     group_by(obs_id,fold,climate_veg,site_ID,var,year_mid,obs) %>%
     summarise(pred=mean(pred),.groups="drop") %>% mutate(method="Ensemble")
   bind_rows(df,ensemble)
@@ -235,9 +235,16 @@ df_metrics_loso <- df_change_loso %>% filter(is.finite(obs_change),is.finite(pre
 df_metrics_cv <- df_metrics_loso
 print(df_metrics_loso)
 
-plot_loso <- df_change_loso %>% ggplot(aes(pred_change,obs_change,color=method))+
-  geom_point()+geom_smooth(method="lm",se=FALSE)+facet_wrap(~method,scales="free")+
-  theme_classic()+labs(x="Predicted change per decade",y="Observed change per decade")
+plot_loso <- df_change_loso %>%
+  ggplot(aes(pred_change,obs_change,color=method))+
+  geom_point()+
+  geom_smooth(method="lm",formula=y~x,se=FALSE)+
+  ggpubr::stat_regline_equation(
+    aes(label=after_stat(paste(eq.label,rr.label,sep="~~~"))),
+    formula=y~x,label.x.npc="left",label.y.npc="top")+
+  facet_wrap(~method,scales="free")+
+  theme_classic()+
+  labs(x="Predicted change per decade",y="Observed change per decade")
 print(plot_loso)
 
 # =============================================================================
@@ -304,7 +311,7 @@ climate_order <- c("cold_evergreen_forest","cold_deciduous_forest","cold_non_for
 table_5fold_publication <- df_metrics_5fold %>%
   filter(var=="NEE_at",method %in% method_order) %>% mutate(
     climate_veg=factor(climate_veg,levels=climate_order),
-    method=factor(method,levels=method_order),value=sprintf("%.3f (%.2f)",R2,MAE)
+    method=factor(method,levels=method_order),value=sprintf("%.3f (%.2f)",r,MAE)
   ) %>% select(climate_veg,method,value) %>% arrange(climate_veg,method) %>%
   pivot_wider(names_from=method,values_from=value) %>%
   select(climate_veg,all_of(method_order)) %>% arrange(climate_veg)
@@ -312,14 +319,14 @@ print(table_5fold_publication)
 
 table_5fold_overall <- df_metrics_5fold_overall %>% filter(method %in% method_order) %>% mutate(
   var=factor(var,levels=c("NEE_at","SWC_gs_at")),method=factor(method,levels=method_order),
-  value=if_else(var=="SWC_gs_at",sprintf("%.3f (%.3f)",r,MAE),sprintf("%.3f (%.2f)",R2,MAE))
+  value=if_else(var=="SWC_gs_at",sprintf("%.3f (%.3f)",r,MAE),sprintf("%.3f (%.2f)",r,MAE))
 ) %>% select(var,method,value) %>% arrange(var,method) %>%
   pivot_wider(names_from=method,values_from=value) %>% select(var,all_of(method_order)) %>%
   mutate(var=as.character(var))
 print(table_5fold_overall)
 
 table_cv_publication <- df_metrics_loso %>% filter(method %in% method_order) %>% mutate(
-  method=factor(method,levels=method_order),value=sprintf("%.3f (%.2f)",R2,MAE)
+  method=factor(method,levels=method_order),value=sprintf("%.3f (%.2f)",r,MAE)
 ) %>% select(method,value) %>% arrange(method) %>% pivot_wider(names_from=method,values_from=value) %>%
   select(all_of(method_order)) %>% mutate(assessment="LOSO NEE change per decade",.before=1)
 print(table_cv_publication)

@@ -33,7 +33,6 @@ data_LAI <- read.csv(file.path(dir_rawdata, "LAI_4day_allsites", 'trend-combined
 data_LAI$MCD15A3H_061_Lai_500m[data_LAI$MCD15A3H_061_Lai_500m > 20] = NA
 
 
-
 # do one study site only
 data_LAI_be_vie <- data_LAI %>% filter(ID == "BE-Vie") %>% filter(between(year(ymd(Date)), 2010, 2023))
 data_LAI <- bind_rows(data_LAI_be_vie, data_LAI[data_LAI$ID != "BE-Vie", ])

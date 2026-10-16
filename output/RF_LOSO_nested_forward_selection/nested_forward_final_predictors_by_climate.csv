@@ -1,0 +1,6 @@
+"climate_veg","selected_key_predictors","final_predictor_set","spatial_CV_RMSE","spatial_CV_MAE","spatial_CV_R2","spatial_CV_slope"
+"cold_evergreen_forest","TA_gs_at + Lgs_at + LE_gs_at + SWC_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + TA_gs_at + Lgs_at + LE_gs_at + SWC_gs_at",15.9462613733949,11.2312545204049,0.00885431079053783,0.0182972486947696
+"cold_deciduous_forest","TA_gs_at + LE_gs_at + Lgs_at + TA_ngs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + TA_gs_at + LE_gs_at + Lgs_at + TA_ngs_at",18.1065798064952,14.1359737696534,0.0583150585969824,-0.039038979932878
+"cold_non_forest","CO2 + TA_ngs_at + P_gs_at + SWC_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + CO2 + TA_ngs_at + P_gs_at + SWC_gs_at",10.7186434787984,7.19975862449671,0.102567678233822,0.0982575272696607
+"dry","P_ngs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + P_ngs_at",9.23601831206487,6.6872028960386,0.171237192688786,0.119747106812798
+"wet-warm","CO2 + SWC_at + LE_at","MAP + MAT + IGBP + GPP_at_mean + NEE + CO2 + SWC_at + LE_at",18.0604654044021,13.7646111080322,0.0714257982670374,0.059433010056054

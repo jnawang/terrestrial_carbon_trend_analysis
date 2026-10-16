@@ -224,7 +224,9 @@ names(df_zone)[3:4] <- c("AI", "MAT")
 # Step 2: classify vegetation into ENF, DBF&MF (DBF), nonforest
 df_zone <- df_zone %>% mutate(group_climate = case_when(
   koppen_climate %in% c(19:20, 23:24, 27:30) ~ "cold",
-  AI < 0.5 & koppen_climate %in% (1:30) ~ "dry",           # ensure not in the ocean
+  AI < 0.5 & koppen_climate %in% (1:30) & land_cover != 11 ~ "dry",                   # ensure not in the ocean and not wetlands
+  AI < 0.5 & koppen_climate %in% (1:30) & land_cover == 11 & MAT >= 10 ~ "wet",       # wetlands in warm zone are wet-warm ecosystems
+  AI < 0.5 & koppen_climate %in% (1:30) & land_cover == 11 & MAT < 10 ~ "cold",       # wetlands in cold zone are wet-cold ecosystems
   AI >= 0.5 & koppen_climate %in% c(17:18, 21:22, 25:26) ~ "cold", 
   AI >= 0.5 & koppen_climate %in% c(1:2, 11:14) ~ "wet", 
   AI >= 0.5 & koppen_climate %in% c(15:16) & land_cover %in% c(2) ~ "wet", 

@@ -644,141 +644,13 @@ write.csv(a_YY_Cflux, file = file.path("data2026", "a_YY_carbon_flux_all.csv"), 
 ```
 
 
-```{r calculate ET and PET}
-# it takes about half hour.
-#
-# aridity index calculation using PenmanMonteith
-library(librarian)
-shelf(amerifluxr, Evapotranspiration)
-data(constants)
-#
-# sites_long <- read.csv('data/long_term_ec_sites.csv')
-#
-# solar radiation should have the unit mega-joule / m2
-# 1 W = 1 J/s; daily data is the average of subhourly data
-# I need to get Tmin, Tmax, RHmin, RHmax, uz (ERA, the height wind speed is measured at 10m), u2, n or Cd, solar radiation;
-#
-source(file.path("scripts2026", "00_functions.R"))
-df_file_structure <- get_rawflux_file_structure(dir_rawdata)
-
-#
-files.Ameri <- list.files(file.path(dir_rawdata, "Ameriflux_BASE"), pattern=".zip$", full.names=T)
-#
-# water characteristics
-water_flux <- data.frame(site_ID=character(), PET=double(), AET=double(), AI=double())
-#
-for (i in 1:nrow(sites_long)) {
-#  i = 9
-#  if (i %in% c(15, 16, 35)) {next}  # 16, 35, 
-  print(i)
-  site_ID <- sites_long$site_ID[i]
-  water_flux[i,1] <- site_ID
-  # read a_HH and a_YY
-  folder <- unlist(df_file_structure$folders[df_file_structure$sources == sites_long$source[i]])
-  HHfile <- df_file_structure$HHfiles[df_file_structure$sources == sites_long$source[i]]
-  YYfile <- df_file_structure$YYfiles[df_file_structure$sources == sites_long$source[i]]
-  a_HH <- read.csv(folder[grepl(pattern=paste0(site_ID, HHfile), folder)])
-  a_YY <- read.csv(folder[grepl(pattern=paste0(site_ID, YYfile), folder)])
-  # get wind speed, RH, and solar radiation in the Ameriflux base data
-  if (sites_long$source[i] == "AmeriFlux_BASE") {
-    a_BASE <- amf_read_base(files.Ameri[grepl(site_ID, files.Ameri)], parse_timestamp=TRUE, unzip = T)
-    a_BASE[a_BASE<=-9999] <- NA
-    if (!site_ID %in% c("US-Los")) {
-      RHname <- sort(names(a_BASE)[grepl("RH", names(a_BASE))])[1]
-      WSname <- sort(names(a_BASE)[grepl("WS", names(a_BASE))])[1]
-      print(WSname)
-      a_HH <- a_HH %>% merge(a_BASE[, c("TIMESTAMP_START", RHname, WSname)], by="TIMESTAMP_START", all.x=T) %>% 
-        rename("RH" = RHname, "WS_F" = WSname)
-    } else {
-      # calculate RH from VPD
-      a_HH$RH <- pmax(100 - a_HH$VPD_F_MDS / 10 / (0.6108 * exp(17.27 * a_HH$TA_F_MDS / (a_HH$TA_F_MDS + 237.3))) * 100, 10.0)
-      a_HH <- a_HH %>% merge(a_BASE[, c("TIMESTAMP_START", "WS_1_1_1")], by="TIMESTAMP_START", all.x=T) %>% 
-        rename("WS_F" = "WS_1_1_1")
-    }
-    # in this data set SW_IN represent PPFD_IN, so convert PPFD_IN to SW_IN to be consistent with FLUXNET
-    a_HH$SW_IN_F_MDS <- a_HH$SW_IN_F_MDS / 2.3 
-  }
-  
-  a_HH[a_HH==-9999] <- NA
-  a_YY[a_YY==-9999] <- NA
-  #
-  a_HH$TIMESTAMP <- ymd_hm(a_HH$TIMESTAMP_START) + (ymd_hm(a_HH$TIMESTAMP_END) - ymd_hm(a_HH$TIMESTAMP_START)) / 2.0
-  # aggregate these data into average hourly within a pattern year
-  climate_hourly <-
-    a_HH %>% mutate(
-      Month = month(a_HH$TIMESTAMP),
-      Day = day(a_HH$TIMESTAMP),
-      Hour = hour(a_HH$TIMESTAMP),
-      Rs = a_HH$SW_IN_F_MDS * 0.0864,      # convert SW_IN to MJ m-2 day-1
-      RH = a_HH$RH,
-      uz = a_HH$WS_F
-    ) %>%
-    group_by(Month, Day, Hour) %>%
-    summarise(
-      Temp = mean(TA_F_MDS, na.rm = T),
-      Rs = mean(Rs, na.rm = T),
-      RH = mean(RH, na.rm = T),
-      uz = mean(WS_F, na.rm = T)
-    ) %>% mutate(Year=2000)
-  # interpolate missing RH. 
-  if (any(is.na(climate_hourly$RH))) {
-    idx <- seq_along(climate_hourly$RH)
-    climate_hourly$RH <- approx(idx, climate_hourly$RH, idx)$y
-  }
-  ####
-  # climate_hourly <- data.frame(Year=year(a_HH$TIMESTAMP), Month=month(a_HH$TIMESTAMP), Day=day(a_HH$TIMESTAMP), Hour=hour(a_HH$TIMESTAMP), Minute=minute(a_HH$TIMESTAMP)/60, Temp=a_HH$TA_F_MDS, Rs = a_HH$SW_IN_F_MDS*0.0864, RH=a_HH$RH, uz=a_HH$WS_F)
-  # climate_hourly <- climate_hourly %>% group_by(Year, Month, Day, Hour) %>% summarise(Temp=mean(Temp,na.rm=T), Rs=mean(Rs,na.rm=T), RH=mean(RH,na.rm=T), uz=mean(uz,na.rm=T))
-#  climate_hourly$Tdew <- climate_hourly$Temp - (100 - climate_hourly$RH) / 5.0
-#  
-  #### Rs - incoming solar radiation in Megajoules per square metres per day: "Tdew";        
-  mydata_PET <- Evapotranspiration::ReadInputs(varnames=c("Temp", "RH", "Rs", "uz"), climate_hourly, constants, stopmissing=c(50,50,50), timestep = "subdaily",
-      interp_missing_days = TRUE,
-      interp_missing_entries = TRUE,
-      interp_abnormal = TRUE,
-      missing_method = 'DoY average',
-      abnormal_method = 'DoY average',
-      message = "yes")
-  ####Penman-Monteith FAO56 Reference Crop ET
-  # try(results_crop <- Evapotranspiration::ET.PenmanMonteith(mydata_PET, constants, ts='daily', solar='data', crop = "short", save.csv="no"))  
-  if (sites_long$IGBP[i] %in% c("GRA", "OSH")) {
-    try(results_crop <- Evapotranspiration::ET.PenmanMonteith(mydata_PET, constants, ts='daily', solar='data', crop = "short", save.csv="no"))
-    ###reference crop ET; short=grass, tall=standard crop;
-  } else {
-    try(results_crop <- Evapotranspiration::ET.PenmanMonteith(mydata_PET, constants, ts='daily', solar='data', crop = "tall", save.csv="no"))  ###reference crop ET; short=grass, tall=standard crop;
-  }
-
-#### get the actual ET values:
-  # conversion of LE = λ ET, λ=(2.501−0.00237∗Tair)^106; LE: W/m2; ET: kg m-2 s-1
-  # lambda latent heat of evaporisationin = 2.45 MJ.kg^-1 at 20 degree Celcius,
-  lambda <- 2.501 - 0.00237 * mean(a_YY$TA_F_MDS, na.rm=T)
-  water_flux$AET[i] <- mean(a_YY$LE_F_MDS / lambda * 0.0864 * 365.25, na.rm=T)
-  water_flux$PET[i] <- mean(results_crop$ET.Annual,  na.rm=T)
-  
-  # at ecosysteme level, we have to use actual ET, not Precipitation to reflect actual water stress of ecosystems. 
-  # We used AI = max(AET, P) / PET
-  # in water-limited region: 
-  if (sites_long$Climate.class[i] %in% c("Csa", "Csb", "BSh", "BWh", "BWk", "BSk", "Aw")) {
-    water_flux$AI[i] <- water_flux$AET[i] / water_flux$PET[i]
-  } else {
-    water_flux$AI[i] <- sites_long$MAP[i] / water_flux$PET[i]
-  }
-}
-
-#####what is the best method for PET calculation in the field? 
-write.csv(water_flux, file.path('data2026', 'water_flux_AI.csv'), row.names = F)
-#
-
-```
-
-
 ```{r dry, wet, and cold sites classification}
-#
-water_flux <- read.csv(file.path('data2026', 'water_flux_AI.csv'))
-#
-if ("AI" %in% names(sites_long)) {
-  sites_long <- sites_long %>% dplyr::select(-dplyr::any_of(c("PET","AET","AI","category")))
-}
-sites_long <- sites_long %>% left_join(water_flux, by='site_ID')
+
+AI_map <- terra::rast(file.path("data2026", "Global-AI.tif"))
+xy <- data.frame(x=sites_long$Long, y=sites_long$Lat)
+tmp <- terra::extract(AI_map, xy)
+# divided by 10000 in order to get real AI values. 
+sites_long$AI <- tmp$awi_pm_sr_yr / 10000
 
 # The classification of dry and wet in tropics should based on aridity index. 
 # rule 1: all arctic and subarctic climates ("Dfc", "Dfd", "Dsd", "Dsc", "Dwc", "Dwd", "ET") are cold. These climates are obviously cold and AI calculation is not accurate due to uncertainty in calculating PET of snow and iced surface
@@ -806,18 +678,20 @@ sites_long <- sites_long %>% mutate(category=case_when(Climate.class %in% c("Dfc
                                                        # EBF: evergreen broadleaf forests. only one site in this climate fall into this category: AU-Tum.
                                                        AI >= AI_threshold & Climate.class %in% c("Cfb", "Cfc", "Csb") & IGBP != 'EBF' ~ "cold"))
 
+# make some site-level exceptions for wetlands
+# CN-Zha: wetland in China, AET/PET = 0.90; change category from "dry" to "cold" because MAT < 10
+# US-Tw1: wetland in California, AET/PET = 0.69; change category from "dry" to "warm" because MAT > 10
 
+sites_long$category[sites_long$site_ID == "CN-Zha"] <- 'cold'
+sites_long$category[sites_long$site_ID == "US-Tw1"] <- 'wet'
+#
 sum(sites_long$category=='dry', na.rm = T)
-# we have 35 dry sites.
+# we have 38 dry sites.
 sum(sites_long$category=='wet', na.rm = T)
-# we have 29 wet sites.
+# we have 28 wet sites.
 sum(sites_long$category=='cold', na.rm = T)
-# we have 102 cold sites. 
+# we have 100 cold sites. 
 write.csv(sites_long, file = file.path('data2026', 'long_term_ec_sites.csv'), row.names = F)
-
-# sites_long_old <- read.csv(file.path('data', 'long_term_ec_sites.csv'))
-# sites_long_new <- sites_long %>% filter(!site_ID %in% sites_long_old$site_ID) 
-# write.csv(sites_long_new, file = file.path('data2026', 'long_term_ec_sites_new.csv'), row.names = F)
 
 ```
 

@@ -1,10 +1,10 @@
-# This script is used to explore CO2's effect using spatial variation, because CO2 is strongly correlated to TIME
+# This script is used to explore CO2's effect using spatial variation, because CO2 is strongly correlated to TIME in wet-cold forests. 
 # Junna Wang, Sep 17, 2026
 # 
 rm(list=ls())
 
 library(librarian)
-shelf(tidyverse, ggpubr, lme4, dagitty, lmerTest, brms, randomForest, glmmTMB, performance, ranger, caret, Metrics, rsample, terra)
+shelf(tidyverse, ggpubr, lme4, dagitty, lmerTest, brms, randomForest, glmmTMB, performance, ranger, caret, Metrics, rsample, terra, car)
 
 trend_driver <- read.csv(file.path("data2026", "potential_trend_driver.csv"))
 sites_long <- read.csv(file.path('data2026', 'long_term_ec_sites.csv'))
@@ -91,7 +91,7 @@ if (!'category' %in% names(trend_driver)) {
 #####--------
 # we only use significant variables
 climate_vegs <- c('cold_ENF', 'cold_DBF', 'cold_non_forest', 'dry', 'wet-warm')
-year_groups <- list(2000:2005, 2006:2010, 2011:2014, 2015:2018)
+year_groups <- list(2001:2005, 2006:2010, 2011:2014, 2015:2018)
 #
 # df_CO2_size = data.frame()
 df_CO2_size <- as.data.frame(matrix(
@@ -106,7 +106,7 @@ names(df_CO2_size) <- as.vector(rbind(
 ))
 
 n_type <- "rows"   # use "rows" or "sites"
-min_n_rows <- 9L
+min_n_rows <- 11L
 min_n_sites <- 4L
 min_n <- switch(
   n_type,
@@ -124,7 +124,7 @@ df_CO2_n <- matrix(
 #
 for (iclimate_veg in 1:length(climate_vegs)) {
   
-  # iclimate_veg = 1
+  # iclimate_veg = 5
   
   climate_veg <- climate_vegs[iclimate_veg]
   #
@@ -147,16 +147,22 @@ for (iclimate_veg in 1:length(climate_vegs)) {
     data_group <- trend_driver %>% 
       filter(category == "wet") 
   }
-
-    m_resid <- lm(CO2 ~ year_mid,
-      data = data_group)
-    data_group$CO2_resid <- residuals(m_resid)
+  
+  # # calculate VIF between CO2 and TAgsT
+  # print(vif(lm(NEE_at ~ CO2 + TA_gs_at, data = data_group)))
+  # print(vif(lm(NEE_at ~ CO2 + year_mid, data = data_group)))
+  # cor(data_group$CO2,  data_group$year_mid)^2
+  
+  
+    # m_resid <- lm(CO2 ~ year_mid,
+    #   data = data_group)
+    # data_group$CO2_resid <- residuals(m_resid)
 
     
     for (j in 1:length(year_groups)) {
       
       year_group = year_groups[[j]]
-      if (iclimate_veg %in% c(1, 3:5) && identical(as.integer(year_group), 2000:2005)) {
+      if (iclimate_veg %in% c(1, 3:5) && identical(as.integer(year_group), 2001:2005)) {
         next
       }
       
@@ -173,24 +179,24 @@ for (iclimate_veg in 1:length(climate_vegs)) {
       if (dplyr::n_distinct(data_sub$protocal, na.rm = TRUE) <= 1) {
         if (dplyr::n_distinct(data_sub$IGBP, na.rm = TRUE) <= 1) {
           mod <- lmer(
-            NEE_at ~ CO2_resid + (1 | year_mid), 
+            NEE_at ~ CO2 + (1 | site_ID) + year_mid, 
             weights = weight, 
             data = data_sub)           
         } else {
           mod <- lmer(
-            NEE_at ~ CO2_resid + (1 | year_mid)  + (1 | IGBP),
+            NEE_at ~ CO2 + (1 | site_ID) + year_mid, #  + (1 | IGBP)
             weights = weight, 
             data = data_sub)          
         }
       } else {
         if (dplyr::n_distinct(data_sub$IGBP, na.rm = TRUE) <= 1) {
           mod <- lmer(
-            NEE_at ~ CO2_resid + (1 | year_mid) + (1 | protocal), 
+            NEE_at ~ CO2 + (1 | site_ID) + year_mid, #  + (1 | protocal)
             weights = weight, 
             data = data_sub) 
           } else {
           mod <- lmer(
-            NEE_at ~ CO2_resid + (1 | year_mid)  + (1 | IGBP) + (1 | protocal), 
+            NEE_at ~ CO2 + (1 | site_ID) + year_mid, #  + (1 | IGBP) + (1 | protocal) 
             weights = weight, 
             data = data_sub)
           }
@@ -198,13 +204,13 @@ for (iclimate_veg in 1:length(climate_vegs)) {
       print(summary(mod))
       coef_table <- summary(mod)$coefficients
       #
-      df_CO2_size[iclimate_veg, 2*j - 1] <- coef_table["CO2_resid", "Estimate"]
-      df_CO2_size[iclimate_veg, 2*j] <- coef_table["CO2_resid", "Std. Error"]
+      df_CO2_size[iclimate_veg, 2*j - 1] <- coef_table["CO2", "Estimate"]
+      df_CO2_size[iclimate_veg, 2*j] <- coef_table["CO2", "Std. Error"]
     }
 
     data_group %>% filter(between(year_mid, 2000, 2018)) %>%
       mutate(year_mid_factor = factor(year_mid)) %>%
-    ggplot(aes(x = CO2_resid, y = NEE_at, col = year_mid_factor)) +
+    ggplot(aes(x = CO2, y = NEE_at, col = year_mid_factor)) +
       geom_point() +
       geom_smooth(method = "lm")
 }
@@ -261,7 +267,7 @@ plot_data <- plot_data %>%
     ),
     
     line_color = if_else(
-      significant_90,
+      significant_95,
       "Significant",
       "Not significant"
     )
@@ -397,3 +403,5 @@ p_CO2 <- ggplot(plot_data_show,aes(y=period)) +
 
 p_CO2
 
+# dir_fig <- '/Users/junnawang/YaleLab/manuscript2/figures'
+# ggsave(file.path(dir_fig, "FigS_CO2_effect_spatial_variation.png"), p_CO2, width = 8.5, height = 4.5, dpi = 300)

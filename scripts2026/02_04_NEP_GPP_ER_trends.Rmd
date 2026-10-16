@@ -200,6 +200,7 @@ shelf(lme4, ggplot2, tidyverse, lmerTest)
 sites_long <- read.csv(file.path('data2026', 'long_term_ec_sites.csv'))
 a_YY_all <- read.csv(file.path("data2026", "a_YY_carbon_flux_all.csv"))
 
+#
 a_YY_all$GPP_VUT_REF <- a_YY_all$GPP_DT_VUT_REF
 a_YY_all$RECO_VUT_REF <- a_YY_all$RECO_DT_VUT_REF
 
@@ -635,8 +636,8 @@ for (climate_veg in climate_vegs) {
   ERtrend_all <- bind_rows(ERtrend_all, data.frame(climate_veg = climate_veg, ERtrend))
 }
 
-# write.csv(GPPtrend_all, file = file.path('data2026', 'GPPtrend_NT.csv'), row.names = F)
-# write.csv(ERtrend_all, file = file.path('data2026', 'ERtrend_NT.csv'), row.names = F)
+write.csv(GPPtrend_all, file = file.path('data2026', 'GPPtrend_NT.csv'), row.names = F)
+write.csv(ERtrend_all, file = file.path('data2026', 'ERtrend_NT.csv'), row.names = F)
 
 ```
 
@@ -770,6 +771,8 @@ write.csv(NEE_mean_overall, file = file.path('data2026', 'NEE_mean_overall_dynam
 
 
 ```{r site-level carbon trend results}
+# this script is not used in the carbon trend manuscript. 
+
 library(librarian)
 shelf(lme4, ggplot2, tidyverse, lmerTest, trend, ggpubr)
 #
@@ -1142,5 +1145,38 @@ write.csv(comb, file = file.path('data2026', 'growing_season_length_trend_DT.csv
 
 ```
 
+
+```{r show that gap-filling does not change NEE trend calculation}
+#
+source(file.path("scripts2026", "00_functions.R"))
+#
+sites_long <- read.csv(file.path('data2026', 'long_term_ec_sites.csv'))
+a_YY_all <- read.csv(file.path("data2026", "a_YY_carbon_flux_all.csv"))
+
+#
+df_NEEtrend_compare <- data.frame(original = double(), filled = double())
+#
+sites_filled <- unique(a_YY_all$site_ID[a_YY_all$filled])
+sites_filled <- intersect(sites_filled, sites_long$site_ID)
+#
+for (site in sites_filled) {
+  #
+  a_YY_all_site <- a_YY_all %>% filter(site_ID == site)
+  
+  if (is.na(a_YY_all_site$RECO_NT_VUT_REF[1])) { next }
+  
+  filled_slope <- cal_sens_slope(a_YY_all_site$TIMESTAMP, a_YY_all_site$RECO_NT_VUT_REF)     # NEE_VUT_REF; ER_DT_VUT_REF
+  original_slope <- cal_sens_slope(a_YY_all_site$TIMESTAMP[!a_YY_all_site$filled], a_YY_all_site$RECO_NT_VUT_REF[!a_YY_all_site$filled])
+  #
+  df_NEEtrend_compare <- bind_rows(df_NEEtrend_compare, data.frame(original = original_slope, 
+                                                                   filled = filled_slope))
+  
+}
+
+plot(df_NEEtrend_compare$original, df_NEEtrend_compare$filled)
+summary(lm(data = df_NEEtrend_compare, filled ~ original))
+# R2 = 0.828 
+
+```
 
 

@@ -2,8 +2,8 @@
 # Criteria of selecting a site-year:
 # 1. at least one observation in a month. 
 # 2. at least 15 years between 1995 and 2025. 
-# 3. the annual amplitude is > 7 ppm. 
-# 4. Please note that although we divided atmospheric CO2 sites into different groups in this script, in our manuscript, we only report annual CO2 amplitude trend results by lumping all sites together. 
+
+# Please note that although we divided atmospheric CO2 sites into different groups in this script. However, in our manuscript, we only report annual CO2 amplitude trend results by lumping all sites together. 
 
 
 library(librarian)

@@ -1,5 +1,5 @@
 # This script is used to correct sites with abnormal CO2 concentrations.
-# It produces a CSV file of yearly CO2 for all modeled sites. (We will do this)
+# It produces a CSV file of yearly CO2 for all modeled sites.
 # Junna Wang, Feb 10, 2026
 # This takes ~1 hour
 

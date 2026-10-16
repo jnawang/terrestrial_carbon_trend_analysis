@@ -1,0 +1,51 @@
+"climate_veg","site_ID","selected_key_predictors","predictor_set","obs_change","pred_change"
+"cold_evergreen_forest","CA-TP3","LE_gs_at + TA_gs_at + SWC_gs_at + Lgs_at + SW_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_gs_at + TA_gs_at + SWC_gs_at + Lgs_at + SW_gs_at",-2.83814981069016,1.43839522976894
+"cold_evergreen_forest","CA-TP4","TA_gs_at + LE_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + TA_gs_at + LE_gs_at",-29.7905188492034,-2.52237951432573
+"cold_evergreen_forest","CH-Dav","TA_gs_at + SWC_gs_at + P_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + TA_gs_at + SWC_gs_at + P_gs_at",46.8776666666669,9.92155048273331
+"cold_evergreen_forest","DE-Tha","TA_ngs_at + TA_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + TA_ngs_at + TA_gs_at",-1.69467881562855,10.8268381199915
+"cold_evergreen_forest","FI-Hyy","TA_gs_at + P_gs_at + LE_gs_at + SWC_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + TA_gs_at + P_gs_at + LE_gs_at + SWC_gs_at",2.83747639905738,0.941407445612652
+"cold_evergreen_forest","IT-Ren","TA_gs_at + LE_gs_at + TA_ngs_at + P_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + TA_gs_at + LE_gs_at + TA_ngs_at + P_gs_at",26.1920617731896,3.8640371164587
+"cold_evergreen_forest","NL-Loo","TA_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + TA_gs_at",24.5411569724547,3.10424271502507
+"cold_evergreen_forest","RU-Fyo","TA_gs_at + LE_gs_at + SW_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + TA_gs_at + LE_gs_at + SW_gs_at",5.51554417301726,-4.27287979127938
+"cold_evergreen_forest","US-Ho1","LE_gs_at + TA_gs_at + Lgs_at + SW_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_gs_at + TA_gs_at + Lgs_at + SW_gs_at",1.55431421157409,-2.56371505965201
+"cold_evergreen_forest","US-Ho2","TA_gs_at + LE_gs_at + TA_ngs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + TA_gs_at + LE_gs_at + TA_ngs_at",13.7980992626955,-1.53559865161923
+"cold_evergreen_forest","US-NR1","TA_gs_at + LE_gs_at + P_gs_at + CO2 + SWC_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + TA_gs_at + LE_gs_at + P_gs_at + CO2 + SWC_gs_at",4.63380614726296,7.55306752393842
+"cold_evergreen_forest","US-Uaf","LE_gs_at + TA_ngs_at + TA_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_gs_at + TA_ngs_at + TA_gs_at",-19.387129287548,0.0947024066034534
+"cold_deciduous_forest","BE-Bra","LE_gs_at + TA_ngs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_gs_at + TA_ngs_at",27.0506055927495,3.43603746703387
+"cold_deciduous_forest","CA-Cbo","LE_gs_at + TA_ngs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_gs_at + TA_ngs_at",9.1361905917193,1.46053653250694
+"cold_deciduous_forest","CH-Lae","CO2","MAP + MAT + IGBP + GPP_at_mean + NEE + CO2",106.775223871385,2.03739947739553
+"cold_deciduous_forest","DE-Hai","LE_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_gs_at",4.49599153536446,0.567538136166375
+"cold_deciduous_forest","DE-Lnf","TA_ngs_at + LE_gs_at + TA_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + TA_ngs_at + LE_gs_at + TA_gs_at",-8.08096463939263,11.0771865600431
+"cold_deciduous_forest","DK-Sor","LE_gs_at + SWC_gs_at + Lgs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_gs_at + SWC_gs_at + Lgs_at",14.7659813730884,-1.30047548040993
+"cold_deciduous_forest","FR-Fon","LE_gs_at + TA_ngs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_gs_at + TA_ngs_at",66.5524005286359,9.55236587047814
+"cold_deciduous_forest","FR-Hes","LE_gs_at + TA_ngs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_gs_at + TA_ngs_at",25.0202047032574,-2.15852057833627
+"cold_deciduous_forest","JP-Api","LE_gs_at + TA_ngs_at + CO2","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_gs_at + TA_ngs_at + CO2",-12.1883925084171,1.40911743277294
+"cold_deciduous_forest","JP-Tef","LE_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_gs_at",17.3173753708029,0.0494974551401172
+"cold_deciduous_forest","US-Bar","LE_gs_at + TA_ngs_at + TA_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_gs_at + TA_ngs_at + TA_gs_at",-9.62368974566337,-2.12479212790314
+"cold_deciduous_forest","US-Ha1","LE_gs_at + TA_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_gs_at + TA_gs_at",-6.26490465605812,0.475439524682506
+"cold_deciduous_forest","US-PFa","LE_gs_at + TA_ngs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_gs_at + TA_ngs_at",22.99240183596,-2.89189302133154
+"cold_deciduous_forest","US-Syv","LE_gs_at + TA_ngs_at + TA_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_gs_at + TA_ngs_at + TA_gs_at",43.5219208672877,-0.386436331592323
+"cold_deciduous_forest","US-UMB","LE_gs_at + TA_ngs_at + Lgs_at + CO2","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_gs_at + TA_ngs_at + Lgs_at + CO2",6.13714890397495,3.69839560787051
+"cold_deciduous_forest","US-WCr","TA_gs_at + LE_gs_at + SWC_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + TA_gs_at + LE_gs_at + SWC_gs_at",20.337186328009,-3.79534970017288
+"cold_non_forest","CA-Mer","TA_ngs_at + SW_gs_at + Lgs_at + TA_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + TA_ngs_at + SW_gs_at + Lgs_at + TA_gs_at",9.69746994047612,3.25185592539331
+"cold_non_forest","DE-Gri","P_gs_at + TA_ngs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + P_gs_at + TA_ngs_at",-1.11827080498827,-3.8743432875473
+"cold_non_forest","IT-MBo","TA_ngs_at + P_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + TA_ngs_at + P_gs_at",-3.07261354202929,1.1675960081097
+"cold_non_forest","SE-Deg","TA_ngs_at + P_gs_at + SW_gs_at + TA_gs_at + SWC_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + TA_ngs_at + P_gs_at + SW_gs_at + TA_gs_at + SWC_gs_at",1.8406137614155,1.60172489503099
+"cold_non_forest","UK-AMo","TA_ngs_at + SW_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + TA_ngs_at + SW_gs_at",2.86103953301128,-2.48720981666215
+"dry","ES-LJu","TA_ngs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + TA_ngs_at",-22.5944992822724,4.0400444933355
+"dry","FR-Pue","P_ngs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + P_ngs_at",9.88599604637791,2.92879483943274
+"dry","IL-Yat","P_ngs_at + TA_ngs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + P_ngs_at + TA_ngs_at",-0.175440977421314,0.178341855662092
+"dry","US-CMW","P_ngs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + P_ngs_at",-6.06921088435358,-0.770175799013562
+"dry","US-SRM","P_ngs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + P_ngs_at",9.76553680555587,0.599681237680459
+"dry","US-Seg","P_ngs_at + TA_gs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + P_ngs_at + TA_gs_at",1.03174325252506,-0.253067954788626
+"dry","US-Ton","P_ngs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + P_ngs_at",-17.2355828258777,-0.537273325557525
+"dry","US-Var","P_gs_at + P_ngs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + P_gs_at + P_ngs_at",-10.7819315367964,0.0210711210103198
+"dry","US-Vcp","","MAP + MAT + IGBP + GPP_at_mean + NEE",-90.0543727916366,-1.10940154115126e-16
+"dry","US-Wkg","P_ngs_at","MAP + MAT + IGBP + GPP_at_mean + NEE + P_ngs_at",-2.39088283730162,-0.0105270397262465
+"wet-warm","AU-How","LE_at + CO2 + SW_at + SWC_at","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_at + CO2 + SW_at + SWC_at",20.8010387983876,8.45106045233312
+"wet-warm","AU-Tum","LE_at + CO2 + SW_at","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_at + CO2 + SW_at",25.6415427927912,5.32350380751203
+"wet-warm","BR-Sa1","CO2 + LE_at + SWC_at","MAP + MAT + IGBP + GPP_at_mean + NEE + CO2 + LE_at + SWC_at",9.6707578158729,0.333023491986488
+"wet-warm","GF-Guy","CO2 + LE_at","MAP + MAT + IGBP + GPP_at_mean + NEE + CO2 + LE_at",47.816325261765,3.91012424008907
+"wet-warm","JP-Fjy","CO2 + SWC_at + LE_at + SW_at","MAP + MAT + IGBP + GPP_at_mean + NEE + CO2 + SWC_at + LE_at + SW_at",17.9491402597419,4.58775042563632
+"wet-warm","JP-Yms","CO2 + LE_at + SWC_at","MAP + MAT + IGBP + GPP_at_mean + NEE + CO2 + LE_at + SWC_at",7.70835966635445,1.16196963387762
+"wet-warm","US-MMS","LE_at + CO2 + SWC_at","MAP + MAT + IGBP + GPP_at_mean + NEE + LE_at + CO2 + SWC_at",-14.9165753451087,-0.695882752441709
