@@ -88,6 +88,13 @@ if (!'category' %in% names(trend_driver)) {
   trend_driver <- trend_driver %>% left_join(sites_long[, c("site_ID", "IGBP", "Climate.class", "category", "NEEpartition", "protocal", "AI")], by = "site_ID")
 }
 
+# trend_driver_ENF <- trend_driver %>% filter(category == 'dry' ) # & !IGBP %in% c("MF", "DBF", "DNF", "ENF")
+# for (year in years) { 
+#   data_sub = trend_driver_ENF %>% filter(year_mid == year) 
+#   diff = max(data_sub$CO2) - min(data_sub$CO2)
+#   print(paste0(range(data_sub$CO2), "-", diff))
+# }
+
 #####--------
 # we only use significant variables
 climate_vegs <- c('cold_ENF', 'cold_DBF', 'cold_non_forest', 'dry', 'wet-warm')
@@ -105,7 +112,7 @@ names(df_CO2_size) <- as.vector(rbind(
   paste0("se_",seq_along(year_groups))
 ))
 
-n_type <- "rows"   # use "rows" or "sites"
+n_type <- "rows"    # use "rows" or "sites"
 min_n_rows <- 11L
 min_n_sites <- 4L
 min_n <- switch(
@@ -208,7 +215,7 @@ for (iclimate_veg in 1:length(climate_vegs)) {
       df_CO2_size[iclimate_veg, 2*j] <- coef_table["CO2", "Std. Error"]
     }
 
-    data_group %>% filter(between(year_mid, 2000, 2018)) %>%
+    data_group %>% # filter(between(year_mid, 2000, 2018)) %>%
       mutate(year_mid_factor = factor(year_mid)) %>%
     ggplot(aes(x = CO2, y = NEE_at, col = year_mid_factor)) +
       geom_point() +

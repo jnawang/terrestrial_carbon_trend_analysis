@@ -14,6 +14,7 @@ suppressPackageStartupMessages({
   library(nlme)
   library(lme4)
   library(MuMIn)
+  library(lubridate)
 })
 
 
@@ -25,7 +26,7 @@ dir_rawdata <- '/Volumes/WZZ_disk/Carbon_trend/SiteData'
 project_dir  <- path.expand("~/YaleLab/carbon_trend")
 data_file    <- file.path(project_dir, "data2026", "potential_trend_driver.csv")
 site_file    <- file.path(project_dir, "data2026", "long_term_ec_sites.csv")
-output_dir   <- file.path(project_dir, "sensitivity_analysis")
+output_dir   <- file.path(project_dir, "sensitivity_analysis")  # , "SWC_multilayer_sensitivity"
 
 trend_driver <- read.csv(data_file, check.names = FALSE)
 sites_long   <- read.csv(site_file, check.names = FALSE)
@@ -54,13 +55,13 @@ if (length(missing_columns) > 0) {
 
 #-----------------------
 
-data_grow_season <- read.csv(file.path('data2026', 'growing_season_yearly.csv'))
+data_grow_season <- read.csv(file.path(project_dir, 'data2026', 'growing_season_yearly.csv'))
 grow_season_site <- data_grow_season %>%
   group_by(site_ID) %>% 
   summarise(sos=floor((mean(sos_DER) + mean(sos_TRS)) / 2), 
             eos=ceiling((mean(eos_DER) + mean(eos_TRS)) / 2))
 # get growing seasons for all sites. 
-source(file.path("scripts2026", "00_functions.R"))
+source(file.path(project_dir, "scripts2026", "00_functions.R"))
 grow_season_site <- bind_rows(grow_season_site, data.frame(site_ID = sites_grow_yearlong, sos = 1, eos = 365))
 
 df_file_structure <- get_rawflux_file_structure(dir_rawdata)
@@ -78,13 +79,158 @@ US-Syv, 2012, 2015
 US-BZB, 2018, 2026
 RU-Fyo, 2018, 2025
 US-EML, 2015, 2025
+US-Wkg, 2005, 2018
 BE-Dor, 2030, 2030
 "
 # we should remove BE-Dor, that is why its good years are unrealistic
 
 sites_SWC_trunck <- read.csv(text = txt)
 
+# The selected FLUXNET_shuttle CSVs can contain only layer 1 even when the
+# corresponding full FLUXMET file has additional layers.
+find_full_swc_file <- function(site_ID, source_name, selected_file, raw_root) {
+  if (source_name == "FLUXNET_shuttle") {
+    folder <- file.path(raw_root, "Fluxnet_shuttle", "unzip")
+    pattern <- paste0("_", site_ID, "_FLUXNET_FLUXMET_DD_")
+  } else if (source_name == "FLUXNET2015") {
+    folder <- file.path(raw_root, "FLUXNET2015", "unzip")
+    pattern <- paste0("_", site_ID, "_FLUXNET2015_FULLSET_DD_")
+  } else {
+    return(selected_file)
+  }
+  candidates <- list.files(folder, full.names = TRUE)
+  candidates <- candidates[grepl(pattern, basename(candidates), fixed = TRUE) &
+                             grepl("\\.csv$", candidates)]
+  if (length(candidates) == 1L) candidates else selected_file
+}
+
+read_swc_depth_metadata <- function(bif_file, available_layers) {
+  empty <- data.frame(layer = character(), depth_m = numeric())
+  if (length(bif_file) != 1L || !file.exists(bif_file)) return(empty)
+  bif <- read.csv(bif_file, check.names = FALSE, stringsAsFactors = FALSE)
+  required <- c("GROUP_ID", "VARIABLE", "DATAVALUE")
+  if (!all(required %in% names(bif))) return(empty)
+  var_rows <- bif[bif$VARIABLE == "VAR_INFO_VARNAME" &
+                    bif$DATAVALUE %in% available_layers,
+                  c("GROUP_ID", "DATAVALUE")]
+  height_rows <- bif[bif$VARIABLE == "VAR_INFO_HEIGHT",
+                     c("GROUP_ID", "DATAVALUE")]
+  names(var_rows)[2] <- "layer"
+  names(height_rows)[2] <- "height_m"
+  out <- merge(var_rows, height_rows, by = "GROUP_ID")
+  out$height_m <- suppressWarnings(as.numeric(out$height_m))
+  out <- out[is.finite(out$height_m) & out$height_m <= 0, ]
+  if (nrow(out) == 0L) return(empty)
+  out$depth_m <- -out$height_m
+  # A layer index can be associated with multiple sensor depths over time.
+  # Use its deepest documented position to avoid admitting a partly deep layer.
+  out <- aggregate(depth_m ~ layer, out, max)
+  out <- out[order(as.integer(sub("SWC_F_MDS_", "", out$layer))), ]
+  out[, c("layer", "depth_m")]
+}
+
+swc_excluded_years <- function(site_ID) {
+  if (site_ID == "US-CMW") c(2008L, 2016L:2021L) else integer()
+}
+
+# Return one averaged slope per trend window, plus the contributing layer slopes.
+# A single-layer site retains its original layer-1 behavior. A multi-layer
+# site with no depth metadata is omitted rather than guessing which layers
+# are shallower than 0.1 m.
+compute_swc_window_trends <- function(data, windows, layer_depths, sos, eos,
+                                      excluded_years = integer(), min_qc = 0.8,
+                                      min_coverage = 0.95, min_years = 10L) {
+  available <- grep("^SWC_F_MDS_[0-9]+$", names(data), value = TRUE)
+  result <- windows
+  result$SWC_at_obs <- NA_real_
+  result$n_layers_used <- 0L
+  details <- list()
+  if (length(available) == 0L || nrow(windows) == 0L ||
+      length(sos) != 1L || length(eos) != 1L ||
+      !is.finite(sos) || !is.finite(eos)) {
+    return(list(summary = result, details = data.frame()))
+  }
+
+  if (length(available) == 1L) {
+    layers <- available
+  } else if (nrow(layer_depths) > 0L) {
+    layers <- intersect(available, layer_depths$layer[
+      is.finite(layer_depths$depth_m) & layer_depths$depth_m < 0.5])
+  } else {
+    layers <- character()
+  }
+
+  #
+  if (length(layers) == 0L) {
+    return(list(summary = result, details = data.frame()))
+  }
+  #
+  for (layer in layers) {
+    values <- suppressWarnings(as.numeric(data[[layer]]))
+    values[!is.finite(values) | values == -9999] <- NA_real_
+    qc_column <- paste0(layer, "_QC")
+    if (qc_column %in% names(data)) {
+      qc <- suppressWarnings(as.numeric(data[[qc_column]]))
+      values[!is.finite(qc) | qc < min_qc] <- NA_real_
+    }
+    annual <- do.call(rbind, lapply(sort(unique(data$year)), function(y) {
+      if (is.na(y) || y %in% excluded_years) return(NULL)
+      in_season <- data$year == y & data$doy >= sos & data$doy <= eos
+      in_season[is.na(in_season)] <- FALSE
+      if (!any(in_season)) return(NULL)
+      n_valid <- sum(is.finite(values[in_season]))
+      mean_swc <- if (n_valid > 0L) mean(values[in_season], na.rm = TRUE) else NA_real_
+      data.frame(year = y, SWC_obs = mean_swc,
+                 coverage = n_valid / (eos - sos + 1))
+    }))
+    if (is.null(annual)) next
+    annual <- annual[is.finite(annual$SWC_obs) &
+                       annual$coverage > min_coverage, ]
+    if (nrow(annual) < min_years) next
+    for (j in seq_len(nrow(windows))) {
+      sub <- annual[annual$year >= windows$year_start[j] &
+                      annual$year <= windows$year_end[j], ]
+      if (nrow(sub) < min_years) next
+      details[[length(details) + 1L]] <- data.frame(
+        window_row = j, layer = layer,
+        depth_m = {
+          match_row <- match(layer, layer_depths$layer)
+          if (is.na(match_row)) NA_real_ else layer_depths$depth_m[match_row]
+        },
+        n_years = nrow(sub), first_year = min(sub$year),
+        last_year = max(sub$year),
+        slope = cal_sens_slope(sub$year, sub$SWC_obs)
+      )
+    }
+  }
+  if (length(details) > 0L) {
+    details <- do.call(rbind, details)
+    for (j in unique(details$window_row)) {
+      slopes <- details$slope[details$window_row == j]
+      slopes <- slopes[is.finite(slopes)]
+      if (length(slopes) > 0L) {
+        result$SWC_at_obs[j] <- mean(slopes)
+        result$n_layers_used[j] <- length(slopes)
+      }
+    }
+  } else {
+    details <- data.frame()
+  }
+  list(summary = result, details = details)
+}
+
+find_swc_bif_file <- function(site_ID, raw_root) {
+  folder <- file.path(raw_root, "Fluxnet_shuttle", "unzip")
+  candidates <- list.files(folder, full.names = TRUE)
+  candidates <- candidates[
+    grepl(paste0("_", site_ID, "_FLUXNET_BIFVARINFO_DD_"),
+          basename(candidates), fixed = TRUE) & grepl("\\.csv$", candidates)]
+  if (length(candidates) == 1L) candidates else NA_character_
+}
+
 trend_driver_SWC <- data.frame()
+swc_layer_diagnostics <- list()
+swc_source_diagnostics <- list()
 
 for (i in 1:nrow(sites_long)) {
   print(i)
@@ -94,7 +240,13 @@ for (i in 1:nrow(sites_long)) {
   folder <- unlist(df_file_structure$folders[df_file_structure$sources == sites_long$source[i]])
   DDfile <- df_file_structure$DDfiles[df_file_structure$sources == sites_long$source[i]]
   #
-  a_DD <- read.csv(folder[grepl(pattern=paste0(site_ID, DDfile), folder)])
+  selected <- folder[grepl(pattern = paste0(site_ID, DDfile), folder)]
+  if (length(selected) != 1L) {
+    warning("Expected one daily source for ", site_ID, "; found ", length(selected))
+    next
+  }
+  swc_file <- find_full_swc_file(site_ID, sites_long$source[i], selected, dir_rawdata)
+  a_DD <- read.csv(swc_file, check.names = FALSE)
   a_DD[a_DD==-9999] <- NA
   #
   a_DD$TIMESTAMP <- ymd(a_DD$TIMESTAMP)
@@ -104,32 +256,20 @@ for (i in 1:nrow(sites_long)) {
   if (sites_long$Lat[i] < -10) {
     a_DD$doy <- southern_hemisphere_doy(a_DD$TIMESTAMP)
   }
-  # find all SWC_F_MDS_ columns
-  # assign NA values if its is poorly fit
-  # layer 1 is the reference layers, calibrate other layers
-  # use coalesce to get the maximum length of reliable values
+  available_layers <- grep("^SWC_F_MDS_[0-9]+$", names(a_DD), value = TRUE)
+  if (length(available_layers) == 0L) next
+  bif_file <- find_swc_bif_file(site_ID, dir_rawdata)
+  layer_depths <- read_swc_depth_metadata(bif_file, available_layers)
+  swc_source_diagnostics[[length(swc_source_diagnostics) + 1L]] <- data.frame(
+    site_ID = site_ID, source_file = swc_file,
+    n_available_layers = length(available_layers),
+    n_layers_with_depth = nrow(layer_depths),
+    shallow_layers = paste(layer_depths$layer[layer_depths$depth_m < 0.1],
+                           collapse = ";"),
+    # skipped_missing_depth = length(available_layers) > 1L && nrow(layer_depths) == 0L
+    skipped_missing_depth = nrow(layer_depths) == 0L
+  )
 
-  swc_result <- combine_swc_layers(
-    data = a_DD,
-    n_layers = 3,
-    min_qc = 0.8,
-    min_overlap = 365,
-    min_overlap_years = 2,
-    min_r2 = 0.70,
-    keep_without_qc = TRUE,
-    allow_extrapolation = FALSE
-  ) 
-  
-  a_DD <- swc_result$data
-  
-  swc_diagnostics_site <- swc_result$diagnostics %>%
-    mutate(site_ID = .env$site_ID)
-  
-  if (all(is.na(a_DD$SWC))) next
-  
-  # print(plot(a_DD$TIMESTAMP, a_DD$SWC, main = site_ID))
-  
-  #
   if (site_ID %in% sites_SWC_trunck$site_ID) {
     goodyear_start <- sites_SWC_trunck$goodyear_start[sites_SWC_trunck$site_ID == site_ID]
     goodyear_end <- sites_SWC_trunck$goodyear_end[sites_SWC_trunck$site_ID == site_ID]
@@ -138,39 +278,53 @@ for (i in 1:nrow(sites_long)) {
   #
   sos <- grow_season_site$sos[grow_season_site$site_ID == site_ID]
   eos <- grow_season_site$eos[grow_season_site$site_ID == site_ID]
-  a_YY_gw <- a_DD %>% filter(doy >= sos & doy <= eos) %>% group_by(year) %>% 
-    summarise(SWC_obs=mean(SWC, na.rm=T), fdays = sum(!is.na(SWC)) / (eos - sos + 1)) %>%
-    filter(!is.na(SWC_obs) & fdays > 0.95) 
-  #
-  if (sum(!is.na(a_YY_gw$SWC_obs)) < 10) { next }
-  #
-  trend_driver_SWC_site <- trend_driver[trend_driver$site_ID == site_ID, c("site_ID", "year_mid", "nyear", "year_start", "year_end")] %>%
-    mutate(SWC_at_obs = NA)
-  
-  for (j in 1:nrow(trend_driver_SWC_site)) {
-    a_YY_sub <- a_YY_gw %>% filter(between(year, trend_driver_SWC_site$year_start[j], trend_driver_SWC_site$year_end[j]))
-    if (nrow(a_YY_sub) >= 10) {
-      trend_driver_SWC_site[j, c("SWC_at_obs")] <- cal_sens_slope(a_YY_sub$year, a_YY_sub$SWC_obs)
-    }
+  windows <- trend_driver[trend_driver$site_ID == site_ID,
+                          c("site_ID", "year_mid", "nyear", "year_start", "year_end")]
+  swc_result <- compute_swc_window_trends(
+    a_DD, windows, layer_depths, sos, eos,
+    excluded_years = swc_excluded_years(site_ID)
+  )
+  trend_driver_SWC <- bind_rows(
+    trend_driver_SWC,
+    swc_result$summary %>% filter(is.finite(SWC_at_obs))
+  )
+  if (nrow(swc_result$details) > 0L) {
+    swc_layer_diagnostics[[length(swc_layer_diagnostics) + 1L]] <-
+      swc_result$details %>%
+      mutate(site_ID = .env$site_ID,
+             year_mid = windows$year_mid[window_row],
+             year_start = windows$year_start[window_row],
+             year_end = windows$year_end[window_row])
   }
-  
-  trend_driver_SWC = bind_rows(trend_driver_SWC, trend_driver_SWC_site %>% filter(!is.na(SWC_at_obs)))
 }
 
-length(unique(trend_driver_SWC$site_ID))  # 83 sites; 50%
-plot(trend_driver_SWC$SWC_at_obs )
-
-
-if (!"SWC_at_obs" %in% names(trend_driver)) {
-  trend_driver <- trend_driver %>% left_join(trend_driver_SWC, by = c("site_ID", "year_mid", "nyear", "year_start", "year_end"))
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+if (length(swc_source_diagnostics) > 0L) {
+  write.csv(bind_rows(swc_source_diagnostics),
+            file.path(output_dir, "SWC_layer_source_diagnostics.csv"), row.names = FALSE)
 }
+if (length(swc_layer_diagnostics) > 0L) {
+  write.csv(bind_rows(swc_layer_diagnostics),
+            file.path(output_dir, "SWC_layer_window_trends.csv"), row.names = FALSE)
+}
+write.csv(trend_driver_SWC,
+          file.path(output_dir, "SWC_window_mean_layer_trends.csv"), row.names = FALSE)
+length(unique(trend_driver_SWC$site_ID))
+plot(trend_driver_SWC$SWC_at_obs)
+
+
+trend_driver <- trend_driver %>%
+  select(-any_of(c("SWC_at_obs", "n_layers_used"))) %>%
+  left_join(trend_driver_SWC %>%
+              select(site_ID, year_mid, nyear, year_start, year_end, SWC_at_obs),
+            by = c("site_ID", "year_mid", "nyear", "year_start", "year_end"))
 
 mod <- lmer(data = trend_driver,  SWC_gs_at ~ SWC_at_obs + (1|site_ID))
 summary(mod)
 MuMIn::r.squaredGLMM(mod)
 # R2m       R2c
-# [1,] 0.07183518 0.5127372
-# SWC_at_obs    8.099e-02  1.973e-02 2.566e+02   4.104 5.45e-05 ***
+# [1,] 0.1180027 0.5788091
+# SWC_at_obs    0.10688    0.01801 307.89503   5.935 7.92e-09 ***
 
 
 # data_group <- trend_driver %>% filter(category == "cold" & IGBP %in% c("DBF", "DNF", "MF"))
@@ -184,7 +338,7 @@ MuMIn::r.squaredGLMM(mod)
 
 
 
-trend_driver <- trend_driver %>% filter(!is.na(SWC_at_obs))  %>% mutate(SWC_at = SWC_at_obs, SWC_gs_at = SWC_at_obs)
+trend_driver <- trend_driver %>% filter(!is.na(SWC_at_obs)) # %>% mutate(SWC_at = SWC_at_obs, SWC_gs_at = SWC_at_obs)
 ##------------------calculation below
 
 thin_interval   <- 2
@@ -935,7 +1089,7 @@ bootstrap_summary <- bootstrap_estimates %>%
 
 write.csv(
   bootstrap_summary,
-  file.path(output_dir, "total_effect_bootstrap_95CI_SWC_measured.csv"),
+  file.path(output_dir, "total_effect_bootstrap_95CI_SWC_modeled.csv"),
   row.names = FALSE
 )
 
