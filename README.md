@@ -37,7 +37,7 @@ This project uses global eddy covariance CO2 flux data from AmeriFlux, EuroFlux,
 
 ## Operation system requirements
 
--   These scripts have been run and tested on the Mac mini system. It should work on window systems.
+-   These scripts have been run and tested on the Mac mini and MacBook Pro M2. It should work on window systems.
 -   We used R version 4.3.2 and Python3 to run the R and python scripts.
 -   It does not need any non-standard hardware.
 
